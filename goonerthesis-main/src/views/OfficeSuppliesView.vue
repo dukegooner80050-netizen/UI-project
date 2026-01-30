@@ -360,10 +360,6 @@ if (max > 0 && qty > max) {
             </tbody>
           </table>
         </div>
-
-        <div class="small text-muted mt-3">
-          Tip: Return will do nothing if selected items have no borrowed quantity.
-        </div>
       </div>
     </div>
     <div v-if="modalOpen" class="modal-backdrop-custom">

@@ -101,7 +101,7 @@ const logsByAction = computed(() => {
       <div class="d-flex gap-2">
         <button
           class="btn"
-          :class="rangeDays === DAYS_WEEKLY ? 'btn-primary' : 'btn-outline-primary'"
+          :class="rangeDays === DAYS_WEEKLY ? 'btn-primary' : 'btn-primary'"
           @click="setRange(DAYS_WEEKLY)"
         >
           Weekly Report
@@ -109,13 +109,13 @@ const logsByAction = computed(() => {
 
         <button
           class="btn"
-          :class="rangeDays === DAYS_MONTHLY ? 'btn-success' : 'btn-outline-success'"
+          :class="rangeDays === DAYS_MONTHLY ? 'btn-success' : 'btn-success'"
           @click="setRange(DAYS_MONTHLY)"
         >
           Monthly Report
         </button>
 
-        <button class="btn btn-outline-dark" @click="window.print()">
+        <button class="btn btn-dark" @click="window.print()">
           Print Report
         </button>
       </div>

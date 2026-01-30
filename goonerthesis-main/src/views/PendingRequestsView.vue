@@ -136,9 +136,6 @@ function statusBadgeClass(status) {
       </div>
     </div>
 
-    <div class="small text-muted mt-3">
-      Approve will subtract stock from inventory. If stock is not enough, you’ll get an error.
-    </div>
   </div>
 </template>
 

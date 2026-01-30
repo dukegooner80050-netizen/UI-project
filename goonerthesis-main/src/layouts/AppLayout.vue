@@ -19,7 +19,7 @@ import Sidebar from "../components/Sidebar.vue"
 </template>
 
 <style scoped>
-/* Keep main content below the sidebar in stacking context */
+
 .sidebar-col {
   position: relative;
   z-index: 9999;
@@ -27,6 +27,7 @@ import Sidebar from "../components/Sidebar.vue"
 
 .main-content {
   position: relative;
+  background-color: #f4f6f9;
   z-index: 1;
   min-height: 100vh;
 }

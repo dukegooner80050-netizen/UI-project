@@ -74,8 +74,8 @@ function clearLogs() {
       </div>
 
       <div class="d-flex gap-2">
-        <button class="btn btn-outline-secondary" @click="refresh">Refresh</button>
-        <button class="btn btn-outline-danger" @click="clearLogs">Clear Logs</button>
+        <button class="btn btn-secondary" @click="refresh">Refresh</button>
+        <button class="btn btn-danger" @click="clearLogs">Clear Logs</button>
       </div>
     </div>
 
