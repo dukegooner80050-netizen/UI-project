@@ -1,4 +1,3 @@
-// src/services/reports.js
 import { getInventory, getRequests, getLogs } from "./storage";
 
 function parseDateLike(d) {

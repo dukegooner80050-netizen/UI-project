@@ -1,6 +1,6 @@
 <script setup>
 const modalOpen = ref(false)
-const modalMode = ref("") // "release" | "restock" | "borrow" | "return"
+const modalMode = ref("")
 const modalQty = ref(1)
 const modalTitle = ref("")
 
@@ -17,13 +17,11 @@ import {
 
 const items = ref([])
 
-// selections
 const selectedConsumableIds = ref(new Set())
 const selectedNonConsumableIds = ref(new Set())
 
-// modal state
 const addOpen = ref(false)
-const addSubCategory = ref("Consumables") // default
+const addSubCategory = ref("Consumables")
 const addName = ref("")
 const addQty = ref(1)
 
@@ -49,13 +47,13 @@ function confirmAdd() {
     const item = autoStatus({
       name,
       category: "Office Supplies",
-      subCategory: addSubCategory.value, // Consumables or Non-Consumables
+      subCategory: addSubCategory.value,
       qty,
       borrowedQty: 0
     })
 
     addItem(item)
-    refresh() // or load(), whichever your file uses to reload items
+    refresh()
     closeAdd()
   } catch (e) {
     alert(String(e.message || e))
@@ -70,7 +68,6 @@ onMounted(() => {
 const modalMax = computed(() => {
   const mode = modalMode.value
 
-  // IDs depend on mode
   const ids =
     mode === "restock" || mode === "release"
       ? consumableIdsArray.value
@@ -78,7 +75,6 @@ const modalMax = computed(() => {
 
   if (!ids.length) return 0
 
-  // RELEASE: max is smallest qty among selected consumables
   if (mode === "release") {
     return Math.min(
       ...ids.map(id => {
@@ -88,7 +84,6 @@ const modalMax = computed(() => {
     )
   }
 
-  // BORROW: max is smallest qty among selected non-consumables
   if (mode === "borrow") {
     return Math.min(
       ...ids.map(id => {
@@ -98,7 +93,6 @@ const modalMax = computed(() => {
     )
   }
 
-  // RETURN: max is smallest borrowedQty among selected non-consumables
   if (mode === "return") {
     const borrowed = ids
       .map(id => {
@@ -110,7 +104,6 @@ const modalMax = computed(() => {
     return borrowed.length ? Math.min(...borrowed) : 0
   }
 
-  // RESTOCK: no max
   return 0
 })
 
@@ -120,7 +113,7 @@ function refresh() {
   items.value = listInventory()
 }
 
-// Split into two tables
+
 const officeItems = computed(() =>
   items.value.filter(i => i.category === "Office Supplies")
 )
@@ -133,7 +126,6 @@ const nonConsumables = computed(() =>
   officeItems.value.filter(i => i.subCategory !== "Consumables")
 )
 
-// --- selection helpers
 function toggleConsumable(id, checked) {
   const s = new Set(selectedConsumableIds.value)
   checked ? s.add(id) : s.delete(id)
@@ -168,16 +160,15 @@ const allNonConsumablesChecked = computed(() => {
   return nonConsumables.value.length > 0 && selectedNonConsumableIds.value.size === nonConsumables.value.length
 })
 
-// --- modal openers
 function openQtyModal(mode) {
-  // selection guard
+
   const ids = mode === "restock" || mode === "release" ? consumableIdsArray.value : nonConsumableIdsArray.value
   if (!ids.length) {
     alert("Select at least one item first.")
     return
   }
 
-  // additional guard: return should do nothing if nothing to return
+
   if (mode === "return") {
     const hasSomethingToReturn = ids.some(id => {
       const item = nonConsumables.value.find(i => i.id === id)
@@ -204,7 +195,7 @@ function closeModal() {
   modalOpen.value = false
 }
 
-// --- action confirm
+
 function confirmModal() {
   const qty = Number(modalQty.value) || 0
   if (qty <= 0) {
@@ -237,7 +228,7 @@ if (max > 0 && qty > max) {
     refresh()
     closeModal()
   } catch (e) {
-    // service throws helpful error codes
+
     alert(String(e.message || e))
   }
 }
@@ -430,7 +421,7 @@ if (max > 0 && qty > max) {
 </template>
 
 <style scoped>
-/* same "table bar" you wanted everywhere */
+
 .table-scroll {
   max-height: 420px;
   overflow-y: auto;
@@ -443,7 +434,7 @@ if (max > 0 && qty > max) {
   box-shadow: 0 1px 0 #dee2e6;
 }
 
-/* lightweight modal */
+
 .modal-backdrop-custom {
   position: fixed;
   inset: 0;

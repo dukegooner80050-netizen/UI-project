@@ -1,4 +1,4 @@
-// src/services/dashboard.js
+
 import { getInventory, getRequests } from "./storage";
 
 export function computeDashboardStats() {

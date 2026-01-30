@@ -3,14 +3,19 @@ import { ref, computed, onMounted, watch, onBeforeUnmount } from "vue"
 import { listInventory } from "../services/inventory"
 import { listRequests } from "../services/requests"
 import { getLogs } from "../services/storage"
+import { getCurrentUser } from "../services/storage"
 
 // Chart.js
 import Chart from "chart.js/auto"
 
-// FullCalendar (Vue 3)
+
 import FullCalendar from "@fullcalendar/vue3"
 import dayGridPlugin from "@fullcalendar/daygrid"
 import interactionPlugin from "@fullcalendar/interaction"
+
+/* ===================== DASHBOARD FEATURES FOR REG. USER ===================== */
+const user = computed(() => getCurrentUser())
+const isAdmin = computed(() => (user.value?.role || "").toLowerCase() === "admin")
 
 /* ===================== STATE ===================== */
 const items = ref([])
@@ -89,7 +94,7 @@ function destroyCharts() {
 }
 
 function renderCharts() {
-  // Status Pie
+
   if (statusCanvas.value) {
     const data = statusCounts.value
     if (statusChart) statusChart.destroy()
@@ -102,12 +107,12 @@ function renderCharts() {
       },
       options: {
         responsive: true,
-        plugins: { legend: { position: "bottom" } }
+        plugins: { legend: { position: "right", labels:{boxWidth: 14, padding: 16, usePointStyle: true} } }
       }
     })
   }
 
-  // Category Doughnut
+
   if (categoryCanvas.value) {
     const data = categoryCounts.value
     if (categoryChart) categoryChart.destroy()
@@ -120,13 +125,13 @@ function renderCharts() {
       },
       options: {
         responsive: true,
-        plugins: { legend: { position: "bottom" } }
+        plugins: { legend: { position: "right", labels:{boxWidth: 14, padding: 16, usePointStyle: true} } }
       }
     })
   }
 }
 
-// If data changes while dashboard is open, redraw charts
+
 watch([items, requests], () => {
   renderCharts()
 })
@@ -136,7 +141,7 @@ onBeforeUnmount(() => {
 })
 
 /* ===================== CALENDAR ===================== */
-// Convert "MM/DD/YYYY" (from toLocaleDateString) into "YYYY-MM-DD" reliably
+
 function toISODate(dateLike) {
   if (!dateLike) return null
   // If it's already ISO-ish, keep it
@@ -156,7 +161,7 @@ const calendarEvents = computed(() => {
       const status = (r.status || "").toLowerCase()
       const title = `${r.itemName || "Request"} x${r.qty || 0}`
 
-      // Keep styling simple; FullCalendar will still show it fine
+
       return {
         id: String(r.id),
         title,
@@ -168,7 +173,7 @@ const calendarEvents = computed(() => {
           purpose: r.purpose || "",
           requester: r.requester || ""
         },
-        // optional: different colors by status
+
         color:
           status === "pending" ? "#f59e0b" :
           status === "approved" ? "#16a34a" :
@@ -209,29 +214,35 @@ const calendarOptions = computed(() => ({
     <!-- SUMMARY CARDS -->
     <div class="row mb-4">
       <div class="col-md-4">
+        <div v-if="isAdmin">
         <div class="card shadow-sm">
           <div class="card-body">
             <h6 class="text-muted">Total Inventory Quantity</h6>
             <h3 class="mb-0">{{ totalItems }}</h3>
           </div>
         </div>
+        </div>
       </div>
 
       <div class="col-md-4">
+        <div v-if="isAdmin">
         <div class="card shadow-sm">
           <div class="card-body">
             <h6 class="text-muted">Low Stock Items</h6>
             <h3 class="mb-0">{{ lowStockCount }}</h3>
           </div>
         </div>
+        </div>
       </div>
 
       <div class="col-md-4">
+        <div v-if="isAdmin">
         <div class="card shadow-sm">
           <div class="card-body">
             <h6 class="text-muted">Pending Requests</h6>
             <h3 class="mb-0">{{ pendingRequests }}</h3>
           </div>
+        </div>
         </div>
       </div>
     </div>
@@ -240,27 +251,37 @@ const calendarOptions = computed(() => ({
     <div class="row">
       <!-- LEFT: 2 CHARTS -->
       <div class="col-md-6 mb-4">
+        <div v-if="isAdmin">
         <div class="card shadow-sm mb-4">
           <div class="card-body">
             <h6 class="mb-3">Inventory Status Distribution</h6>
-            <div style="height: 320px;">
-              <canvas ref="statusCanvas"></canvas>
+            <div class="d-flex align-items-center" style="height: 320px;">
+              <div style="width: 320px; height: 320px;">
+                <canvas ref="statusCanvas"></canvas>
+              </div>
+              <div class="flex-grow-1"></div>
             </div>
           </div>
         </div>
-
+        </div>
+        
+        <div v-if="isAdmin">
         <div class="card shadow-sm">
           <div class="card-body">
             <h6 class="mb-3">Inventory by Category</h6>
-            <div style="height: 320px;">
-              <canvas ref="categoryCanvas"></canvas>
+            <div class="d-flex align-items-center" style="height: 320px;">
+              <div style="width: 370px; height: 370px;">
+                <canvas ref="categoryCanvas"></canvas>
+              </div>
+              <div class="flex-grow-1"></div>
             </div>
           </div>
+        </div>
         </div>
       </div>
 
       <!-- RIGHT: CALENDAR -->
-      <div class="col-md-6 mb-4">
+      <div :class="isAdmin ? 'col-md-6 mb-4' : 'col-12 mb-4'">
         <div class="card shadow-sm h-100">
           <div class="card-body">
             <h6 class="mb-3">Requests Calendar</h6>
@@ -273,6 +294,7 @@ const calendarOptions = computed(() => ({
     <!-- LOW STOCK + RECENT REQUESTS -->
     <div class="row mt-2">
       <div class="col-md-6 mb-4">
+        <div v-if="isAdmin">
         <div class="card p-3 shadow-sm h-100">
           <h6 class="text-danger mb-3">⚠ Low Stock Alerts</h6>
 
@@ -298,8 +320,9 @@ const calendarOptions = computed(() => ({
           </ul>
         </div>
       </div>
+      </div>
 
-      <div class="col-md-6 mb-4">
+      <div :class="isAdmin ? 'col-md-6 mb-4' : 'col-12 mb-4'">
         <div class="card p-3 shadow-sm h-100">
           <h6 class="mb-3">🕘 Recent Requests</h6>
 

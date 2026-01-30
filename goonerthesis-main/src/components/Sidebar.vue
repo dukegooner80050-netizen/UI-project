@@ -1,12 +1,19 @@
 <script setup>
-import { computed, ref, onMounted } from "vue"
+import { computed, ref, onMounted, onBeforeUnmount, watch } from "vue"
 import { useRoute, useRouter } from "vue-router"
-import { getCurrentUser } from "../services/storage"
+import { getCurrentUser, getRequests } from "../services/storage"
 import { logout as doLogout } from "../services/auth"
 
-// Pending count is optional—wire later.
-// For now keep it reactive with a placeholder.
 const pendingCount = ref(0)
+
+function refreshPendingCount() {
+  try {
+    const reqs = getRequests() || []
+    pendingCount.value = reqs.filter(r => (r.status || "").toLowerCase() === "pending").length
+  } catch {
+    pendingCount.value = 0
+  }
+}
 
 const router = useRouter()
 const route = useRoute()
@@ -20,6 +27,25 @@ function logout() {
 }
 
 const active = (path) => route.path === path
+
+watch(() => route.fullPath, () => {
+  refreshPendingCount()
+})
+
+function onStorage(e) {
+
+  if (!e || e.key === "requests") refreshPendingCount()
+}
+
+onMounted(() => {
+  refreshPendingCount()
+  window.addEventListener("storage", onStorage)
+})
+
+onBeforeUnmount(() => {
+  window.removeEventListener("storage", onStorage)
+})
+
 </script>
 
 <template>
@@ -68,28 +94,29 @@ const active = (path) => route.path === path
       Dashboard
     </RouterLink>
 
-    <RouterLink class="sidebar-link" :class="{ active: active('/inventory') }" to="/inventory">
+    <RouterLink v-if="isAdmin" class="sidebar-link" :class="{ active: active('/inventory') }" to="/inventory">
       Inventory
     </RouterLink>
 
-    <!-- Uniforms dropdown (hover like your HTML) -->
+    <!-- Uniforms dropdown -->
     <div class="sidebar-item dropdown-hover">
-      <RouterLink class="sidebar-link" :class="{ active: active('/uniforms') }" to="/uniforms">
+      <RouterLink v-if="isAdmin" class="sidebar-link" :class="{ active: active('/uniforms') }" to="/uniforms">
         Uniforms
       </RouterLink>
 
       <div class="dropdown-menu-hover">
-        <RouterLink class="dropdown-link" to="/uniforms?course=BSMT">BSMT</RouterLink>
-        <RouterLink class="dropdown-link" to="/uniforms?course=BSCrim">BSCrim</RouterLink>
-        <RouterLink class="dropdown-link" to="/uniforms?course=BSHM">BSHM</RouterLink>
-        <RouterLink class="dropdown-link" to="/uniforms?course=BSIT">BSIT</RouterLink>
-        <RouterLink class="dropdown-link" to="/uniforms?course=Senior%20High%20School">
+        <RouterLink v-if="isAdmin" class="dropdown-link" to="/uniforms?course=BSMT">BSMT</RouterLink>
+        <RouterLink v-if="isAdmin" class="dropdown-link" to="/uniforms?course=BSCrim">BSCrim</RouterLink>
+        <RouterLink v-if="isAdmin" class="dropdown-link" to="/uniforms?course=BSHM">BSHM</RouterLink>
+        <RouterLink v-if="isAdmin" class="dropdown-link" to="/uniforms?course=BSIT">BSIT</RouterLink>
+        <RouterLink v-if="isAdmin" class="dropdown-link" to="/uniforms?course=Senior%20High%20School">
           Senior High School
         </RouterLink>
       </div>
     </div>
 
     <RouterLink
+      v-if="isAdmin"
       class="sidebar-link"
       :class="{ active: active('/office-supplies') }"
       to="/office-supplies"
@@ -98,6 +125,7 @@ const active = (path) => route.path === path
     </RouterLink>
 
     <RouterLink
+      v-if="isAdmin"
       class="sidebar-link"
       :class="{ active: active('/school-equipment') }"
       to="/school-equipment"
@@ -114,12 +142,13 @@ const active = (path) => route.path === path
     </router-link> 
 
     <RouterLink
+      v-if="isAdmin"
       class="sidebar-link d-flex justify-content-between align-items-center"
       :class="{ active: active('/pending-requests') }"
       to="/pending-requests"
     >
       Pending Requests
-      <span class="badge bg-danger" id="pendingCount">{{ pendingCount }}</span>
+      <span class="badge bg-danger">{{ pendingCount }}</span>
     </RouterLink>
 
     <RouterLink
@@ -131,7 +160,7 @@ const active = (path) => route.path === path
       Reports
     </RouterLink>
 
-    <RouterLink class="sidebar-link" :class="{ active: active('/logs') }" to="/logs">
+    <RouterLink v-if="isAdmin" class="sidebar-link" :class="{ active: active('/logs') }" to="/logs">
       Logs
     </RouterLink>
   </aside>

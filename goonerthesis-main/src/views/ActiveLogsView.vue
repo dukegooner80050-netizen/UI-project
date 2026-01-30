@@ -48,7 +48,7 @@ function badgeClass(action) {
   return "bg-dark"
 }
 
-// Buttons like your HTML demo buttons
+
 function recordAction(text) {
   try {
     logAction(text, { name: "" }, 1)
@@ -81,14 +81,14 @@ function clearLogs() {
 
     <div class="card shadow-sm">
       <div class="card-body">
-        <!-- Demo buttons (keep/remove anytime) -->
+
         <div class="d-flex gap-2 flex-wrap mb-3">
           <button class="btn btn-primary" @click="recordAction('Added a new user')">Add User</button>
           <button class="btn btn-warning" @click="recordAction('Updated user info')">Update User</button>
           <button class="btn btn-danger" @click="recordAction('Deleted a record')">Delete Record</button>
         </div>
 
-        <!-- Search -->
+
         <div class="row mb-3">
           <div class="col-md-6">
             <input
@@ -102,7 +102,6 @@ function clearLogs() {
           </div>
         </div>
 
-        <!-- Table with internal scroll + sticky header -->
         <div class="table-scroll">
           <table class="table table-striped table-hover align-middle mb-0">
             <thead class="table-light">
@@ -155,7 +154,6 @@ function clearLogs() {
   overflow: auto;
 }
 
-/* Sticky header */
 .table-scroll thead th {
   position: sticky;
   top: 0;

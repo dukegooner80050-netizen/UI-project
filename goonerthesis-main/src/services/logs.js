@@ -1,4 +1,3 @@
-// src/services/logs.js
 import { getLogs, saveLogs } from "./storage";
 import { requireUser } from "./session";
 

@@ -1,4 +1,3 @@
-// src/services/session.js
 import { getCurrentUser, clearCurrentUser } from "./storage";
 
 export function requireUser() {

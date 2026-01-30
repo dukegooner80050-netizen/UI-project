@@ -11,9 +11,9 @@ import {
 const items = ref([])
 const selectedIds = ref(new Set())
 
-// modal state
+// MODAL STATE
 const modalOpen = ref(false)
-const modalMode = ref("") // "borrow" | "return"
+const modalMode = ref("") //for "borrow" and "return"
 const modalQty = ref(1)
 const addOpen = ref(false)
 const addName = ref("")
@@ -57,7 +57,7 @@ onMounted(load)
 const modalMax = computed(() => {
   if (!selectedArray.value.length) return 0
 
-  // BORROW: max is the smallest available qty among selected
+
   if (modalMode.value === "borrow") {
     return Math.min(
       ...selectedArray.value.map(id => {
@@ -67,7 +67,6 @@ const modalMax = computed(() => {
     )
   }
 
-  // RETURN: max is the smallest borrowedQty among selected (must be > 0)
   if (modalMode.value === "return") {
     const borrowedList = selectedArray.value
       .map(id => {
@@ -90,7 +89,6 @@ function load() {
   selectedIds.value = new Set()
 }
 
-// selection helpers
 function toggle(id, checked) {
   const s = new Set(selectedIds.value)
   checked ? s.add(id) : s.delete(id)
@@ -111,7 +109,6 @@ const allChecked = computed(() =>
   selectedIds.value.size === equipments.value.length
 )
 
-// modal open
 function openModal(mode) {
   if (!selectedArray.value.length) {
     alert("Select at least one equipment item.")
@@ -139,7 +136,6 @@ function closeModal() {
   modalOpen.value = false
 }
 
-// confirm
 function confirmModal() {
   const qty = Number(modalQty.value) || 0
   if (qty <= 0) {

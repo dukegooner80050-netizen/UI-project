@@ -7,8 +7,6 @@ const requests = ref([])
 const showAll = ref(false)
 
 onMounted(() => {
-  // Optional: if only admins can approve/reject
-  // Remove this line if you want all users to access the page.
   requireAdmin()
 
   refresh()

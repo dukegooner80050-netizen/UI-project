@@ -1,4 +1,3 @@
-// src/services/requests.js
 import { getRequests, saveRequests, getInventory, saveInventory } from "./storage";
 import { logAction } from "./logs";
 
@@ -40,7 +39,6 @@ export function setRequestStatus(id, status) {
   return req;
 }
 
-/** Approve: subtract inventory qty + log action (matches your pendingrequests.js logic) */
 export function approveRequest(id) {
   const requests = getRequests();
   const req = requests.find(r => r.id === id);
@@ -61,7 +59,6 @@ export function approveRequest(id) {
 
   resolvedItem.qty -= Number(req.qty) || 0;
 
-  // inventory status rule similar to your pendingrequests.js
   if (resolvedItem.category === "Office Supplies" && resolvedItem.subCategory === "Consumables") {
     if (resolvedItem.qty === 0) resolvedItem.status = "Out of Stock";
     else if (resolvedItem.qty <= 5) resolvedItem.status = "Low Stock";

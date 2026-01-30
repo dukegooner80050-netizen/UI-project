@@ -83,11 +83,11 @@ function confirmAddUniform() {
   }
 
   try {
-    // Build new uniform item
+
     const newItem = autoStatus({
       name,
       category: "Uniforms",
-      subCategory: course.value, // current route.query.course
+      subCategory: course.value, 
       qty,
       status: "Available"
     })
@@ -104,7 +104,7 @@ function confirmAddUniform() {
 
 const selectedArray = computed(() => Array.from(selectedIds.value))
 
-// modal open
+
 function openModal(mode) {
   if (!selectedArray.value.length) {
     alert("Select at least one uniform first.")
@@ -120,7 +120,7 @@ function closeModal() {
   modalOpen.value = false
 }
 
-// confirm
+
 function confirmModal() {
   const qty = Number(modalQty.value) || 0
   if (qty <= 0) {
@@ -130,7 +130,7 @@ function confirmModal() {
 
   try {
     if (modalMode.value === "release") {
-      // release behaves like consumables
+
       releaseOfficeConsumables(selectedArray.value, qty)
     } else if (modalMode.value === "restock") {
       restockOfficeSupplies(selectedArray.value, qty)
@@ -157,7 +157,6 @@ function confirmModal() {
       </div>
 
       <div class="d-flex gap-2">
-        <!-- Release: ONLY on ALL -->
         <button
           v-if="isAllView"
           class="btn btn-primary"
@@ -166,7 +165,6 @@ function confirmModal() {
           Release Selected
         </button>
 
-        <!-- Restock: ONLY on subcategories -->
         <button
           v-if="!isAllView"
           class="btn btn-success"

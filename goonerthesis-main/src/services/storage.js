@@ -1,4 +1,3 @@
-// src/services/storage.js
 const INVENTORY_KEY = "inventory";
 const REQUESTS_KEY = "requests";
 const LOG_KEY = "activeLogs";

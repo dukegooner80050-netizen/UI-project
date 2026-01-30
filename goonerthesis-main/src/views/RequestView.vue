@@ -7,7 +7,6 @@ import { getCurrentUser } from "../services/storage"
 const router = useRouter()
 const user = getCurrentUser()
 
-/* form state */
 const category = ref("")
 const itemType = ref("")
 const itemName = ref("")
@@ -15,7 +14,6 @@ const qty = ref(1)
 const purpose = ref("")
 const error = ref("")
 
-/* auto-lock item type based on category */
 watch(category, (val) => {
   if (val === "School Equipment") {
     itemType.value = "Non-Consumable"
@@ -28,7 +26,6 @@ watch(category, (val) => {
 
 const isItemTypeLocked = computed(() => category.value === "School Equipment")
 
-/* submit */
 function submitRequest() {
   error.value = ""
 
@@ -55,7 +52,6 @@ function submitRequest() {
   <div class="card shadow-sm p-4" style="max-width: 600px">
     <h4 class="mb-4">Request Item</h4>
 
-    <!-- Category -->
     <div class="mb-3">
       <label class="form-label">Category</label>
       <select v-model="category" class="form-select">
@@ -65,7 +61,6 @@ function submitRequest() {
       </select>
     </div>
 
-    <!-- Item Type -->
     <div class="mb-3">
       <label class="form-label">
         Item Type
@@ -83,13 +78,11 @@ function submitRequest() {
       </select>
     </div>
 
-    <!-- Item name -->
     <div class="mb-3">
       <label class="form-label">Item Name</label>
       <input v-model="itemName" class="form-control" />
     </div>
 
-    <!-- Quantity -->
     <div class="mb-3">
       <label class="form-label">Quantity</label>
       <input
@@ -100,7 +93,6 @@ function submitRequest() {
       />
     </div>
 
-    <!-- Purpose -->
     <div class="mb-3">
       <label class="form-label">Purpose</label>
       <textarea
@@ -110,12 +102,10 @@ function submitRequest() {
       ></textarea>
     </div>
 
-    <!-- Error -->
     <div v-if="error" class="alert alert-danger py-2">
       {{ error }}
     </div>
-
-    <!-- Submit -->
+    
     <div class="text-end">
       <button class="btn btn-primary" @click="submitRequest">
         Submit Request
