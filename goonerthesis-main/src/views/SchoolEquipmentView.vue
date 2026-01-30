@@ -262,7 +262,7 @@ function confirmModal() {
     </div>
 
     <div class="modal-footer">
-      <button class="btn btn-outline-secondary" @click="closeModal">
+      <button class="btn btn-secondary" @click="closeModal">
         Cancel
       </button>
       <button
@@ -302,7 +302,7 @@ function confirmModal() {
     </div>
 
     <div class="modal-footer">
-      <button class="btn btn-outline-secondary" @click="closeAdd">
+      <button class="btn btn-warning" @click="closeAdd">
         Cancel
       </button>
       <button class="btn btn-primary" @click="confirmAdd">

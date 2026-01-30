@@ -87,7 +87,7 @@ function clearAll() {
     </div>
 
     <div class="mt-3 text-end">
-      <button class="btn btn-outline-danger" @click="clearAll">
+      <button class="btn btn-danger" @click="clearAll">
         Delete Inventory Data
       </button>
     </div>

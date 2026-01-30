@@ -1,4 +1,9 @@
 <script setup>
+const modalOpen = ref(false)
+const modalMode = ref("") // "release" | "restock" | "borrow" | "return"
+const modalQty = ref(1)
+const modalTitle = ref("")
+
 import { ref, computed, onMounted } from "vue"
 import {
   listInventory,
@@ -61,6 +66,55 @@ function confirmAdd() {
 onMounted(() => {
   refresh()
 })
+
+const modalMax = computed(() => {
+  const mode = modalMode.value
+
+  // IDs depend on mode
+  const ids =
+    mode === "restock" || mode === "release"
+      ? consumableIdsArray.value
+      : nonConsumableIdsArray.value
+
+  if (!ids.length) return 0
+
+  // RELEASE: max is smallest qty among selected consumables
+  if (mode === "release") {
+    return Math.min(
+      ...ids.map(id => {
+        const it = consumables.value.find(i => i.id === id)
+        return Number(it?.qty) || 0
+      })
+    )
+  }
+
+  // BORROW: max is smallest qty among selected non-consumables
+  if (mode === "borrow") {
+    return Math.min(
+      ...ids.map(id => {
+        const it = nonConsumables.value.find(i => i.id === id)
+        return Number(it?.qty) || 0
+      })
+    )
+  }
+
+  // RETURN: max is smallest borrowedQty among selected non-consumables
+  if (mode === "return") {
+    const borrowed = ids
+      .map(id => {
+        const it = nonConsumables.value.find(i => i.id === id)
+        return Number(it?.borrowedQty) || 0
+      })
+      .filter(n => n > 0)
+
+    return borrowed.length ? Math.min(...borrowed) : 0
+  }
+
+  // RESTOCK: no max
+  return 0
+})
+
+
 
 function refresh() {
   items.value = listInventory()
@@ -158,6 +212,13 @@ function confirmModal() {
     return
   }
 
+const max = Number(modalMax.value) || 0
+if (max > 0 && qty > max) {
+  alert(`Max allowed is ${max}.`)
+  modalQty.value = max
+  return
+}
+
   try {
     if (modalMode.value === "restock") {
       restockOfficeSupplies(consumableIdsArray.value, qty)
@@ -186,7 +247,7 @@ function confirmModal() {
   <div>
     <h3 class="mb-4">Office Supplies</h3>
 <button class="btn btn-primary" @click="openAdd('Consumables')">
-  + Add Consumable
+  + Add Office Supply
 </button>
     <!-- CONSUMABLES -->
     <div class="card shadow-sm mb-4">
@@ -305,8 +366,6 @@ function confirmModal() {
         </div>
       </div>
     </div>
-
-    <!-- Modal (simple Vue modal, no Bootstrap JS needed) -->
     <div v-if="modalOpen" class="modal-backdrop-custom">
       <div class="modal-custom">
         <div class="modal-header">
@@ -319,9 +378,13 @@ function confirmModal() {
           <input
             type="number"
             min="1"
+            :max="modalMax || undefined"
             class="form-control"
             v-model="modalQty"
           />
+          <small v-if="modalMax" class="text-muted d-block mt-1">
+            Max: {{ modalMax }}
+          </small>
           <div class="small text-muted mt-2">
             This quantity will apply to each selected item (same as your previous modal behavior).
           </div>

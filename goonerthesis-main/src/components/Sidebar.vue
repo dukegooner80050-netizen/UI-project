@@ -105,6 +105,14 @@ const active = (path) => route.path === path
       School Equipments
     </RouterLink>
 
+    <router-link
+      to="/request"
+      class="sidebar-link"
+      active-class="active"
+    >
+      Request Item
+    </router-link> 
+
     <RouterLink
       class="sidebar-link d-flex justify-content-between align-items-center"
       :class="{ active: active('/pending-requests') }"
