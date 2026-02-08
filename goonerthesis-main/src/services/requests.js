@@ -22,6 +22,12 @@ export function createRequest({ itemId = null, itemName, category, itemType, qty
     role: role || "",
     status: "Pending",
     date: new Date().toLocaleDateString(),
+    createdAt: new Date().toISOString(),
+
+  // admin action fields (empty at first)
+    processedAt: null,
+    processedBy: null,
+    rejectReason: "",
   };
 
   requests.push(req);
@@ -39,7 +45,7 @@ export function setRequestStatus(id, status) {
   return req;
 }
 
-export function approveRequest(id) {
+export function approveRequest(id, adminName = "") {
   const requests = getRequests();
   const req = requests.find(r => r.id === id);
   if (!req) throw new Error("REQUEST_NOT_FOUND");
@@ -68,9 +74,30 @@ export function approveRequest(id) {
   }
 
   req.status = "Approved";
+  req.processedAt = new Date().toISOString();
+  req.processedBy = adminName || "Admin";
+  req.rejectReason = "";
   saveInventory(inv);
   saveRequests(requests);
 
   logAction("APPROVE_REQUEST", resolvedItem, req.qty);
+  return req;
+}
+
+export function rejectRequest(id, reason = "", adminName = "") {
+  const requests = getRequests();
+  const req = requests.find(r => r.id === id);
+  if (!req) throw new Error("REQUEST_NOT_FOUND");
+  if (req.status !== "Pending") return req;
+
+  const r = (reason || "").trim();
+  if (!r) throw new Error("REJECT_REASON_REQUIRED");
+
+  req.status = "Rejected";
+  req.rejectReason = r;
+  req.processedAt = new Date().toISOString();
+  req.processedBy = adminName || "Admin";
+
+  saveRequests(requests);
   return req;
 }

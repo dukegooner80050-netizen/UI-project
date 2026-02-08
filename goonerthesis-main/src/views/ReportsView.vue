@@ -86,6 +86,23 @@ const logsByAction = computed(() => {
   })
   return map
 })
+
+/* ===== PRINT BUTTON ===== */
+function printReport() {
+  if (typeof window === "undefined") return
+
+  const originalTitle = document.title
+  document.title = "GOONMAN" // <=== TITLE "CIMS Report"
+
+  const restore = () => {
+    document.title = originalTitle
+    window.removeEventListener("afterprint", restore)
+  }
+
+  window.addEventListener("afterprint", restore)
+
+  requestAnimationFrame(() => window.print())
+}
 </script>
 
 <template>
@@ -98,7 +115,7 @@ const logsByAction = computed(() => {
         </div>
       </div>
 
-      <div class="d-flex gap-2">
+      <div class="d-flex gap-2 no-print">
         <button
           class="btn"
           :class="rangeDays === DAYS_WEEKLY ? 'btn-primary' : 'btn-primary'"
@@ -115,7 +132,7 @@ const logsByAction = computed(() => {
           Monthly Report
         </button>
 
-        <button class="btn btn-dark" @click="window.print()">
+        <button type="button" class="btn btn-dark" @click="printReport">
           Print Report
         </button>
       </div>
@@ -178,3 +195,12 @@ const logsByAction = computed(() => {
     </div>
   </div>
 </template>
+
+<style scoped>
+/* Hides the Buttons */
+@media print {
+  .no-print {
+    display: none !important;
+  }
+}
+</style>

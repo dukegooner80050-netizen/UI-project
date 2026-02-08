@@ -1,10 +1,12 @@
 <script setup>
 import { ref, computed, onMounted } from "vue"
-import { listRequests, approveRequest, setRequestStatus } from "../services/requests"
+import { listRequests, approveRequest, rejectRequest } from "../services/requests"
+import { getCurrentUser } from "../services/storage"
 import { requireAdmin } from "../services/session"
 
 const requests = ref([])
 const showAll = ref(false)
+const admin = getCurrentUser()
 
 onMounted(() => {
   requireAdmin()
@@ -26,7 +28,7 @@ const displayedRequests = computed(() =>
 
 function approve(id) {
   try {
-    approveRequest(id)
+    approveRequest(id, admin?.name || admin?.username || "Admin")
     refresh()
   } catch (e) {
     alert(String(e.message || e))
@@ -34,10 +36,11 @@ function approve(id) {
 }
 
 function reject(id) {
-  if (!confirm("Reject this request?")) return
+  const reason = prompt("Reason for rejection (required):")
+  if (reason === null) return // user cancelled
 
   try {
-    setRequestStatus(id, "Rejected")
+    rejectRequest(id, reason, admin?.name || admin?.username || "Admin")
     refresh()
   } catch (e) {
     alert(String(e.message || e))
@@ -102,6 +105,12 @@ function statusBadgeClass(status) {
                 <span class="badge" :class="statusBadgeClass(r.status)">
                   {{ r.status }}
                 </span>
+                <div
+                v-if="(r.status || '').toLowerCase() === 'rejected' && r.rejectReason"
+                class="text-danger small mt-1"
+                >
+                Reason: {{ r.rejectReason }}
+                </div>
               </td>
               <td>
                 <div class="d-flex gap-2">

@@ -31,4 +31,22 @@ import Sidebar from "../components/Sidebar.vue"
   z-index: 1;
   min-height: 100vh;
 }
+
+@media print {
+  /* Hide navigation */
+  .sidebar,
+  .sidebar-scroll {
+    display: none !important;
+  }
+
+  /* Remove layout offsets caused by sidebar */
+  .main-content {
+    margin-left: 0 !important;
+  }
+
+  /* Hide buttons / controls */
+  .no-print {
+    display: none !important;
+  }
+}
 </style>
