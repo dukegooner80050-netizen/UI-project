@@ -1,8 +1,13 @@
 <script setup>
-import { ref, watch, computed } from "vue"
+import { ref, watch, computed, onMounted } from "vue"
 import { useRouter } from "vue-router"
 import { createRequest, listRequests } from "../services/requests"
 import { getCurrentUser } from "../services/storage"
+import { listInventory } from "../services/inventory"
+
+onMounted(() => {
+  loadInventory()
+})
 
 const router = useRouter()
 const user = getCurrentUser()
@@ -17,8 +22,54 @@ const itemName = ref("")
 const qty = ref(1)
 const purpose = ref("")
 const error = ref("")
+const invItems = ref([])
+const selectedItemId = ref("")
+
+function loadInventory() {
+  invItems.value = listInventory() || []
+}
+
+// Items that can appear in Item Name dropdown (based on category + itemType)
+const itemOptions = computed(() => {
+  const cat = category.value
+  const type = itemType.value
+
+  if (!cat || !type) return []
+
+  return invItems.value
+    .filter(i => (i.category || "") === cat)
+    .filter(i => {
+      if (cat === "Office Supplies") {
+        // Consumable vs Non-Consumable based on subCategory from OfficeSuppliesView.vue
+        if (type === "Consumable") return (i.subCategory || "") === "Consumables"
+        if (type === "Non-Consumable") return (i.subCategory || "") === "Non-Consumables"
+        return false
+      }
+
+      // School Equipment is always Non-Consumable
+      if (cat === "School Equipment") {
+        return type === "Non-Consumable"
+      }
+
+      return false
+    })
+    .filter(i => (Number(i.qty) || 0) > 0) // optional: only show in-stock items
+})
+
+// Resolve selected item from dropdown
+const selectedItem = computed(() =>
+  itemOptions.value.find(i => String(i.id) === String(selectedItemId.value)) || null
+)
+
 
 watch(category, (val) => {
+  // reload inventory so dropdown options are up to date
+  loadInventory()
+
+  // resets selection whenever category changes
+  selectedItemId.value = ""
+  itemName.value = ""
+
   if (val === "School Equipment") {
     itemType.value = "Non-Consumable"
   } else if (val === "Office Supplies") {
@@ -26,6 +77,11 @@ watch(category, (val) => {
   } else {
     itemType.value = ""
   }
+})
+watch(itemType, () => {
+  loadInventory()
+  selectedItemId.value = ""
+  itemName.value = ""
 })
 
 const isItemTypeLocked = computed(() => category.value === "School Equipment")
@@ -43,7 +99,13 @@ function submitRequest() {
   error.value = ""
 
   try {
+    if (!selectedItem.value) {
+  error.value = "Please select an item from the list."
+  return
+}
+itemName.value = selectedItem.value.name || ""
     const req = createRequest({
+  itemId: selectedItem.value.id,
       itemName: itemName.value.trim(),
       category: category.value,
       itemType: itemType.value,
@@ -61,6 +123,7 @@ function submitRequest() {
     category.value = ""
     itemType.value = ""
     itemName.value = ""
+    selectedItemId.value = ""
     qty.value = 1
     purpose.value = ""
 
@@ -128,7 +191,22 @@ function submitRequest() {
 
     <div class="mb-3">
       <label class="form-label">Item Name</label>
-      <input v-model="itemName" class="form-control" />
+        <select
+  v-model="selectedItemId"
+  class="form-select"
+  :disabled="!category || !itemType"
+>
+  <option value="">Select item</option>
+
+  <option
+    v-for="i in itemOptions"
+    :key="i.id"
+    :value="String(i.id)"
+  >
+    {{ i.name }} (Qty: {{ Number(i.qty) || 0 }})
+  </option>
+</select>
+
     </div>
 
     <div class="mb-3">
