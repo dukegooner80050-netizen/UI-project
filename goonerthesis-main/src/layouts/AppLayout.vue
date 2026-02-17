@@ -1,52 +1,42 @@
 <script setup>
+import { ref } from "vue"
 import Sidebar from "../components/Sidebar.vue"
+
+const sidebarCollapsed = ref(false)
+
+function toggleSidebar() {
+  sidebarCollapsed.value = !sidebarCollapsed.value
+}
 </script>
 
 <template>
-  <div class="container-fluid">
-    <div class="row">
-      <!-- Sidebar -->
-      <div class="col-md-2 p-0 sidebar-col">
-        <Sidebar />
-      </div>
+  <div class="app-shell" :class="{ collapsed: sidebarCollapsed }">
+    <Sidebar :collapsed="sidebarCollapsed" @toggle="toggleSidebar" />
 
-      <!-- Main content -->
-      <main class="col-md-10 p-4 main-content">
+    <main class="main-content">
         <RouterView />
       </main>
     </div>
-  </div>
 </template>
 
 <style scoped>
-
-.sidebar-col {
-  position: relative;
-  z-index: 9999;
-}
-
-.main-content {
-  position: relative;
-  background-color: #f4f6f9;
-  z-index: 1;
+.app-shell {
   min-height: 100vh;
+  display: flex;
 }
 
-@media print {
-  /* Hide navigation */
-  .sidebar,
-  .sidebar-scroll {
-    display: none !important;
-  }
+/* main content */
+.main-content {
+  flex: 1;
+  background-color: #f4f6f9;
+  min-height: 100vh;
+  padding: 1.5rem;
+}
 
-  /* Remove layout offsets caused by sidebar */
+/* Print rules (keep your behavior) */
+@media print {
   .main-content {
     margin-left: 0 !important;
-  }
-
-  /* Hide buttons / controls */
-  .no-print {
-    display: none !important;
   }
 }
 </style>
