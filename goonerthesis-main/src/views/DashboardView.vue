@@ -266,12 +266,12 @@ const calendarOptions = computed(() => ({
       <!-- Admin cards -->
       <template v-if="isAdmin">
         <div class="col-md-4 mb-3 mb-md-0">
-        <div class="card shadow-sm">
-          <div class="card-body">
-            <h6 class="text-muted">Total Inventory Quantity</h6>
-            <h3 class="mb-0">{{ totalItems }}</h3>
+          <div class="card shadow-sm">
+            <div class="card-body">
+              <h6 class="text-muted">Total Inventory Quantity</h6>
+              <h3 class="mb-0">{{ totalItems }}</h3>
+            </div>
           </div>
-        </div>
         </div>
 
         <div class="col-md-4 mb-3 mb-md-0">
@@ -281,11 +281,11 @@ const calendarOptions = computed(() => ({
               <h3 class="mb-0 text-danger">{{ lowStockCount }}</h3>
             </div>
           </div>
-      </div>
+        </div>
 
-      <div class="col-md-4">
-        <div class="card shadow-sm">
-          <div class="card-body">
+        <div class="col-md-4">
+          <div class="card shadow-sm">
+            <div class="card-body">
               <h6 class="text-muted">Pending Requests</h6>
               <h3 class="mb-0 text-warning">{{ pendingRequests }}</h3>
             </div>
@@ -300,8 +300,8 @@ const calendarOptions = computed(() => ({
             <div class="card-body">
               <h6 class="text-muted">My Pending Requests</h6>
               <h3 class="mb-0 text-warning">{{ myPendingCount }}</h3>
+            </div>
           </div>
-        </div>
         </div>
 
         <div class="col-md-4 mb-3 mb-md-0">
@@ -311,11 +311,11 @@ const calendarOptions = computed(() => ({
               <h3 class="mb-0 text-success">{{ myApprovedCount }}</h3>
             </div>
           </div>
-      </div>
+        </div>
 
-      <div class="col-md-4">
-        <div class="card shadow-sm">
-          <div class="card-body">
+        <div class="col-md-4">
+          <div class="card shadow-sm">
+            <div class="card-body">
               <h6 class="text-muted">My Rejected Requests</h6>
               <h3 class="mb-0 text-danger">{{ myRejectedCount }}</h3>
             </div>
@@ -339,7 +339,7 @@ const calendarOptions = computed(() => ({
             </div>
           </div>
         </div>
-        
+
         <div class="card shadow-sm">
           <div class="card-body">
             <h6 class="mb-3">Inventory by Category</h6>
@@ -351,7 +351,7 @@ const calendarOptions = computed(() => ({
             </div>
           </div>
         </div>
-        </div>
+      </div>
 
       <!-- RIGHT: CALENDAR (admin + user) -->
       <div :class="isAdmin ? 'col-md-6 mb-4' : 'col-12 mb-4'">
@@ -472,7 +472,7 @@ const calendarOptions = computed(() => ({
                       ? 'bg-success'
                       : (r.status || '').toLowerCase() === 'rejected'
                         ? 'bg-danger'
-                      : 'bg-secondary'"
+                        : 'bg-secondary'"
                 >
                   {{ r.status || "Unknown" }}
                 </span>

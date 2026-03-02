@@ -14,9 +14,9 @@ function toggleSidebar() {
     <Sidebar :collapsed="sidebarCollapsed" @toggle="toggleSidebar" />
 
     <main class="main-content">
-        <RouterView />
-      </main>
-    </div>
+      <RouterView />
+    </main>
+  </div>
 </template>
 
 <style scoped>

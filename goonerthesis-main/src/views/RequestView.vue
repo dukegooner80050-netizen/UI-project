@@ -104,16 +104,16 @@ function submitRequest() {
   return
 }
 itemName.value = selectedItem.value.name || ""
-    const req = createRequest({
+  const req = createRequest({
   itemId: selectedItem.value.id,
-      itemName: itemName.value.trim(),
-      category: category.value,
-      itemType: itemType.value,
-      qty: Number(qty.value),
-      purpose: purpose.value.trim(),
-      requester: user?.name || user?.username,
-      role: user?.role
-    })
+  itemName: itemName.value.trim(),
+  category: category.value,
+  itemType: itemType.value,
+  qty: Number(qty.value),
+  purpose: purpose.value.trim(),
+  requester: user?.name || user?.username,
+  role: user?.role
+})
 
     lastReceipt.value = req
     loadMyRequests()
@@ -128,7 +128,7 @@ itemName.value = selectedItem.value.name || ""
     purpose.value = ""
 
     if ((user?.role || "").toLowerCase() === "admin") {
-    router.push("/pending-requests")
+      router.push("/pending-requests")
     }
   } catch (e) {
     error.value = "Please complete all fields correctly."
@@ -161,36 +161,36 @@ itemName.value = selectedItem.value.name || ""
 
     <!-- CREATE REQUEST FORM -->
     <div v-if="activeTab === 'create'" class="card shadow-sm p-4">
-    <h4 class="mb-4">Request Item</h4>
+      <h4 class="mb-4">Request Item</h4>
 
-    <div class="mb-3">
-      <label class="form-label">Category</label>
-      <select v-model="category" class="form-select">
-        <option value="">Select category</option>
-        <option value="Office Supplies">Office Supplies</option>
-        <option value="School Equipment">School Equipment</option>
-      </select>
-    </div>
+      <div class="mb-3">
+        <label class="form-label">Category</label>
+        <select v-model="category" class="form-select">
+          <option value="">Select category</option>
+          <option value="Office Supplies">Office Supplies</option>
+          <option value="School Equipment">School Equipment</option>
+        </select>
+      </div>
 
-    <div class="mb-3">
-      <label class="form-label">
-        Item Type
-        <small class="text-muted">(auto-set for School Equipment)</small>
-      </label>
+      <div class="mb-3">
+        <label class="form-label">
+          Item Type
+          <small class="text-muted">(auto-set for School Equipment)</small>
+        </label>
 
-      <select
-        v-model="itemType"
-        class="form-select"
-        :disabled="isItemTypeLocked"
-      >
-        <option value="">Select item type</option>
-        <option value="Consumable">Consumable</option>
-        <option value="Non-Consumable">Non-Consumable</option>
-      </select>
-    </div>
+        <select
+          v-model="itemType"
+          class="form-select"
+          :disabled="isItemTypeLocked"
+        >
+          <option value="">Select item type</option>
+          <option value="Consumable">Consumable</option>
+          <option value="Non-Consumable">Non-Consumable</option>
+        </select>
+      </div>
 
-    <div class="mb-3">
-      <label class="form-label">Item Name</label>
+      <div class="mb-3">
+        <label class="form-label">Item Name</label>
         <select
   v-model="selectedItemId"
   class="form-select"
@@ -207,28 +207,28 @@ itemName.value = selectedItem.value.name || ""
   </option>
 </select>
 
-    </div>
+      </div>
 
-    <div class="mb-3">
-      <label class="form-label">Quantity</label>
+      <div class="mb-3">
+        <label class="form-label">Quantity</label>
         <input type="number" min="1" v-model="qty" class="form-control" />
-    </div>
+      </div>
 
-    <div class="mb-3">
-      <label class="form-label">Purpose</label>
+      <div class="mb-3">
+        <label class="form-label">Purpose</label>
         <textarea v-model="purpose" class="form-control" rows="3"></textarea>
-    </div>
+      </div>
 
-    <div v-if="error" class="alert alert-danger py-2">
-      {{ error }}
+      <div v-if="error" class="alert alert-danger py-2">
+        {{ error }}
+      </div>
+
+      <div class="text-end">
+        <button class="btn btn-primary" @click="submitRequest">
+          Submit Request
+        </button>
+      </div>
     </div>
-    
-    <div class="text-end">
-      <button class="btn btn-primary" @click="submitRequest">
-        Submit Request
-      </button>
-    </div>
-  </div>
 
     <!-- MY REQUESTS + RECEIPT -->
     <div v-else>
