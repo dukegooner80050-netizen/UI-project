@@ -50,8 +50,8 @@ function toggleAll(checked) {
 }
 
 const allChecked = computed(() =>
-  uniforms.value.length &&
-  selectedIds.value.size === uniforms.value.length
+    uniforms.value.length &&
+selectedIds.value.size === uniforms.value.length
 )
 
 // ADD UNIFORM modal state
@@ -87,7 +87,7 @@ function confirmAddUniform() {
     const newItem = autoStatus({
       name,
       category: "Uniforms",
-      subCategory: course.value, 
+      subCategory: course.value,
       qty,
       status: "Available"
     })
@@ -157,7 +157,7 @@ function confirmModal() {
       </div>
 
       <div class="d-flex gap-2">
-        <button
+<button
           v-if="isAllView"
           class="btn btn-primary"
           @click="openModal('release')"
@@ -178,8 +178,8 @@ function confirmModal() {
           class="btn btn-primary"
           @click="openAddUniform"
         >
-  + Add Uniform
-</button>
+          + Add Uniform
+        </button>
       </div>
     </div>
 
@@ -189,7 +189,7 @@ function confirmModal() {
         <table class="table table-hover align-middle mb-0">
           <thead class="table-light">
             <tr>
-              <th style="width:48px">
+<th style="width:48px">
                 <input
                   type="checkbox"
                   :checked="allChecked"
@@ -200,12 +200,12 @@ function confirmModal() {
               <th>Course</th>
               <th>Status</th>
               <th style="width:120px">Qty</th>
-            </tr>
+                          </tr>
           </thead>
 
           <tbody>
             <tr v-for="u in uniforms" :key="u.id">
-              <td>
+<td>
                 <input
                   type="checkbox"
                   :checked="selectedIds.has(u.id)"
@@ -216,7 +216,7 @@ function confirmModal() {
               <td>{{ u.subCategory }}</td>
               <td>{{ u.status }}</td>
               <td>{{ u.qty }}</td>
-            </tr>
+                          </tr>
 
             <tr v-if="!uniforms.length">
               <td colspan="5" class="text-center text-muted">
@@ -239,61 +239,61 @@ function confirmModal() {
         </div>
 
         <div class="modal-body">
-          <label class="form-label">Quantity</label>
+                    <label class="form-label">Quantity</label>
           <input
             type="number"
             min="1"
-            class="form-control"
+                        class="form-control"
             v-model="modalQty"
           />
         </div>
 
         <div class="modal-footer">
           <button class="btn btn-warning" @click="closeModal">
-            Cancel
-          </button>
+Cancel
+</button>
           <button class="btn btn-primary" @click="confirmModal">
-            Confirm
-          </button>
+Confirm
+</button>
         </div>
       </div>
     </div>
   </div>
 
   <!-- ADD UNIFORM MODAL -->
-<div v-if="addModalOpen" class="modal-backdrop-custom">
-  <div class="modal-custom">
-    <div class="modal-header">
-      <h5 class="mb-0">Add Uniform ({{ course }})</h5>
-      <button class="btn-close" @click="closeAddUniform"></button>
-    </div>
+  <div v-if="addModalOpen" class="modal-backdrop-custom">
+    <div class="modal-custom">
+      <div class="modal-header">
+        <h5 class="mb-0">Add Uniform ({{ course }})</h5>
+        <button class="btn-close" @click="closeAddUniform"></button>
+      </div>
 
-    <div class="modal-body">
-      <label class="form-label">Uniform Name</label>
-      <input
-        class="form-control mb-3"
-        v-model="addName"
-        placeholder="e.g. PE Uniform"
-      />
+      <div class="modal-body">
+        <label class="form-label">Uniform Name</label>
+        <input
+          class="form-control mb-3"
+          v-model="addName"
+          placeholder="e.g. PE Uniform"
+        />
 
-      <label class="form-label">Quantity</label>
-      <input
-        type="number"
-        min="1"
-        class="form-control"
-        v-model="addQty"
-      />
-    </div>
+        <label class="form-label">Quantity</label>
+        <input
+type="number"
+min="1"
+class="form-control"
+v-model="addQty"
+/>
+      </div>
 
-    <div class="modal-footer">
-      <button class="btn btn-warning" @click="closeAddUniform">
-        Cancel
-      </button>
-      <button class="btn btn-primary" @click="confirmAddUniform">
-        Add
-      </button>
-    </div>
-  </div>
+      <div class="modal-footer">
+        <button class="btn btn-warning" @click="closeAddUniform">
+Cancel
+</button>
+        <button class="btn btn-primary" @click="confirmAddUniform">
+Add
+</button>
+      </div>
+      </div>
 </div>
 
 </template>

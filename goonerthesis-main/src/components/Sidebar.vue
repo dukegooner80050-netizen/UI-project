@@ -29,7 +29,7 @@ function logout() {
 const active = (path) => route.path === path
 
 watch(() => route.fullPath, () => {
-  refreshPendingCount()
+    refreshPendingCount()
 })
 
 function onStorage(e) {
@@ -134,12 +134,12 @@ onBeforeUnmount(() => {
     </RouterLink>
 
     <router-link
-      to="/request"
-      class="sidebar-link"
-      active-class="active"
-    >
+to="/request"
+class="sidebar-link"
+active-class="active"
+>
       Request Item
-    </router-link> 
+    </router-link>
 
     <RouterLink
       v-if="isAdmin"

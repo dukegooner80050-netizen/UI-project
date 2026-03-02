@@ -59,19 +59,19 @@ const modalMax = computed(() => {
 
 
   if (modalMode.value === "borrow") {
-    return Math.min(
+return Math.min(
       ...selectedArray.value.map(id => {
         const it = equipments.value.find(i => i.id === id)
-        return Number(it?.qty) || 0
+    return Number(it?.qty) || 0
       })
     )
   }
 
   if (modalMode.value === "return") {
-    const borrowedList = selectedArray.value
+const borrowedList = selectedArray.value
       .map(id => {
         const it = equipments.value.find(i => i.id === id)
-        return Number(it?.borrowedQty) || 0
+    return Number(it?.borrowedQty) || 0
       })
       .filter(n => n > 0)
 
@@ -152,10 +152,10 @@ function confirmModal() {
 
   try {
     if (modalMode.value === "borrow") {
-      // borrow EACH selected item
+// borrow EACH selected item
       selectedArray.value.forEach(id => borrowEquipment(id, qty))
     } else if (modalMode.value === "return") {
-      selectedArray.value.forEach(id => returnEquipment(id, qty))
+selectedArray.value.forEach(id => returnEquipment(id, qty))
     }
 
     load()
@@ -167,144 +167,144 @@ function confirmModal() {
 </script>
 
 <template>
-    <h3 class="mb-4">School Equipment</h3>
+  <h3 class="mb-4">School Equipment</h3>
 
-    <!-- ACTION BAR -->
-    <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
-      <div class="text-muted">
-        Borrow and return equipment items
-      </div>
+  <!-- ACTION BAR -->
+  <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
+    <div class="text-muted">
+Borrow and return equipment items
+</div>
 
-      <div class="d-flex gap-2">
-        <button class="btn btn-primary" @click="openAdd">
-          + Add Equipment
+    <div class="d-flex gap-2">
+      <button class="btn btn-primary" @click="openAdd">
++ Add Equipment
         </button>
         <button class="btn btn-warning" @click="openModal('borrow')">
           Borrow Selected
         </button>
         <button class="btn btn-success" @click="openModal('return')">
           Return Selected
-        </button>
-      </div>
+</button>
     </div>
+  </div>
 
-    <!-- TABLE -->
-    <div class="card shadow-sm">
-      <div class="card-body table-scroll">
-        <table class="table table-hover align-middle mb-0">
-          <thead class="table-light">
-            <tr>
-              <th style="width:48px">
+  <!-- TABLE -->
+  <div class="card shadow-sm">
+    <div class="card-body table-scroll">
+      <table class="table table-hover align-middle mb-0">
+        <thead class="table-light">
+          <tr>
+<th style="width:48px">
                 <input
                   type="checkbox"
                   :checked="allChecked"
                   @change="toggleAll($event.target.checked)"
                 />
               </th>
-              <th>Name</th>
-              <th>Status</th>
-              <th style="width:120px">Available</th>
-              <th style="width:120px">Borrowed</th>
-            </tr>
-          </thead>
+            <th>Name</th>
+            <th>Status</th>
+            <th style="width:120px">Available</th>
+            <th style="width:120px">Borrowed</th>
+                      </tr>
+        </thead>
 
-          <tbody>
-            <tr v-for="e in equipments" :key="e.id">
-              <td>
+        <tbody>
+          <tr v-for="e in equipments" :key="e.id">
+<td>
                 <input
                   type="checkbox"
                   :checked="selectedIds.has(e.id)"
                   @change="toggle(e.id, $event.target.checked)"
                 />
               </td>
-              <td>{{ e.name }}</td>
-              <td>{{ e.status }}</td>
-              <td>{{ e.qty }}</td>
-              <td>{{ Number(e.borrowedQty) || 0 }}</td>
-            </tr>
+            <td>{{ e.name }}</td>
+            <td>{{ e.status }}</td>
+            <td>{{ e.qty }}</td>
+            <td>{{ Number(e.borrowedQty) || 0 }}</td>
+                      </tr>
 
-            <tr v-if="!equipments.length">
-              <td colspan="5" class="text-center text-muted">
-                No school equipment found.
-              </td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
-    </div>
-
-<!-- BORROW / RETURN MODAL -->
-<div v-if="modalOpen" class="modal-backdrop-custom">
-  <div class="modal-custom">
-    <div class="modal-header">
-      <h5 class="mb-0">
-        {{ modalMode === "borrow" ? "Borrow Selected" : "Return Selected" }}
-      </h5>
-      <button class="btn-close" @click="closeModal"></button>
-    </div>
-
-    <div class="modal-body">
-      <label class="form-label">Quantity</label>
-      <input
-        type="number"
-        min="1"
-        :max="modalMax || undefined"
-        class="form-control"
-        v-model="modalQty"
-      />
-      <small class="text-muted d-block mt-1">
-        Max: {{ modalMax || 0 }}
-      </small>
-    </div>
-
-    <div class="modal-footer">
-      <button class="btn btn-secondary" @click="closeModal">
-        Cancel
-      </button>
-      <button
-        class="btn"
-        :class="modalMode === 'borrow' ? 'btn-warning' : 'btn-success'"
-        @click="confirmModal"
-      >
-        {{ modalMode === "borrow" ? "Borrow" : "Return" }}
-      </button>
+          <tr v-if="!equipments.length">
+            <td colspan="5" class="text-center text-muted">
+              No school equipment found.
+            </td>
+          </tr>
+        </tbody>
+      </table>
     </div>
   </div>
-</div>
 
-<!-- ADD EQUIPMENT MODAL -->
-<div v-if="addOpen" class="modal-backdrop-custom">
-  <div class="modal-custom">
-    <div class="modal-header">
-      <h5 class="mb-0">Add School Equipment</h5>
-      <button class="btn-close" @click="closeAdd"></button>
+  <!-- BORROW / RETURN MODAL -->
+  <div v-if="modalOpen" class="modal-backdrop-custom">
+    <div class="modal-custom">
+      <div class="modal-header">
+        <h5 class="mb-0">
+          {{ modalMode === "borrow" ? "Borrow Selected" : "Return Selected" }}
+        </h5>
+        <button class="btn-close" @click="closeModal"></button>
+      </div>
+
+      <div class="modal-body">
+        <label class="form-label">Quantity</label>
+        <input
+          type="number"
+          min="1"
+          :max="modalMax || undefined"
+          class="form-control"
+          v-model="modalQty"
+        />
+        <small class="text-muted d-block mt-1">
+          Max: {{ modalMax || 0 }}
+        </small>
+      </div>
+
+      <div class="modal-footer">
+        <button class="btn btn-secondary" @click="closeModal">
+Cancel
+</button>
+        <button
+          class="btn"
+          :class="modalMode === 'borrow' ? 'btn-warning' : 'btn-success'"
+          @click="confirmModal"
+        >
+          {{ modalMode === "borrow" ? "Borrow" : "Return" }}
+        </button>
+      </div>
     </div>
+  </div>
 
-    <div class="modal-body">
-      <label class="form-label">Name</label>
-      <input
-        class="form-control mb-3"
-        v-model="addName"
-        placeholder="e.g. Projector"
-      />
+  <!-- ADD EQUIPMENT MODAL -->
+  <div v-if="addOpen" class="modal-backdrop-custom">
+    <div class="modal-custom">
+      <div class="modal-header">
+        <h5 class="mb-0">Add School Equipment</h5>
+        <button class="btn-close" @click="closeAdd"></button>
+      </div>
 
-      <label class="form-label">Quantity</label>
-      <input
-        type="number"
-        min="1"
-        class="form-control"
-        v-model="addQty"
-      />
-    </div>
+      <div class="modal-body">
+        <label class="form-label">Name</label>
+        <input
+          class="form-control mb-3"
+          v-model="addName"
+          placeholder="e.g. Projector"
+        />
 
-    <div class="modal-footer">
-      <button class="btn btn-warning" @click="closeAdd">
-        Cancel
-      </button>
-      <button class="btn btn-primary" @click="confirmAdd">
-        Add
-      </button>
-    </div>
+        <label class="form-label">Quantity</label>
+        <input
+type="number"
+min="1"
+class="form-control"
+v-model="addQty"
+/>
+      </div>
+
+      <div class="modal-footer">
+        <button class="btn btn-warning" @click="closeAdd">
+Cancel
+</button>
+        <button class="btn btn-primary" @click="confirmAdd">
+Add
+</button>
+          </div>
   </div>
 </div>
 

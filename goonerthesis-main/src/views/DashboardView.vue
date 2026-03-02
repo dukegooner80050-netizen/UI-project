@@ -30,7 +30,7 @@ const now = ref(new Date())
 let clockTimer = null
 
 function tick() {
-  now.value = new Date()
+now.value = new Date()
 }
 /* ===================== LOAD ===================== */
 function loadAll() {
@@ -58,11 +58,11 @@ const totalItems = computed(() =>
 )
 
 const lowStockCount = computed(() =>
-  items.value.filter(i => (Number(i.qty) || 0) <= 5).length
+items.value.filter(i => (Number(i.qty) || 0) <= 5).length
 )
 
 const pendingRequests = computed(() =>
-  requests.value.filter(r => (r.status || "").toLowerCase() === "pending").length
+    requests.value.filter(r => (r.status || "").toLowerCase() === "pending").length
 )
 
 /* ===================== USER TRACKING (MY REQUESTS) ===================== */
@@ -73,22 +73,22 @@ const myRequests = computed(() => {
 })
 
 const myPendingCount = computed(() =>
-  myRequests.value.filter(r => (r.status || "").toLowerCase() === "pending").length
+    myRequests.value.filter(r => (r.status || "").toLowerCase() === "pending").length
 )
 
 const myApprovedCount = computed(() =>
-  myRequests.value.filter(r => (r.status || "").toLowerCase() === "approved").length
+    myRequests.value.filter(r => (r.status || "").toLowerCase() === "approved").length
 )
 
 const myRejectedCount = computed(() =>
-  myRequests.value.filter(r => (r.status || "").toLowerCase() === "rejected").length
+    myRequests.value.filter(r => (r.status || "").toLowerCase() === "rejected").length
 )
 
 /* ===================== LISTS (CARDS) ===================== */
 const lowStockItems = computed(() =>
   items.value
-    .filter(i => (Number(i.qty) || 0) <= 5)
-    .slice(0, 20)
+.filter(i => (Number(i.qty) || 0) <= 5)
+.slice(0, 20)
 )
 
 const recentRequestsList = computed(() => {
@@ -149,7 +149,7 @@ function renderCharts() {
       },
       options: {
         responsive: true,
-        plugins: { legend: { position: "right", labels: { boxWidth: 14, padding: 16, usePointStyle: true } } }
+                plugins: { legend: { position: "right", labels: { boxWidth: 14, padding: 16, usePointStyle: true } } }
       }
     })
   }
@@ -167,7 +167,7 @@ function renderCharts() {
       },
       options: {
         responsive: true,
-        plugins: { legend: { position: "right", labels: { boxWidth: 14, padding: 16, usePointStyle: true } } }
+                plugins: { legend: { position: "right", labels: { boxWidth: 14, padding: 16, usePointStyle: true } } }
       }
     })
   }
@@ -216,9 +216,9 @@ const calendarEvents = computed(() => {
         },
         color:
           status === "pending" ? "#f59e0b" :
-          status === "approved" ? "#16a34a" :
-          status === "rejected" ? "#dc2626" :
-          "#6b7280"
+status === "approved" ? "#16a34a" :
+status === "rejected" ? "#dc2626" :
+"#6b7280"
       }
     })
     .filter(Boolean)
@@ -229,7 +229,7 @@ const calendarOptions = computed(() => ({
   plugins: [dayGridPlugin, interactionPlugin],
   initialView: "dayGridMonth",
   height: 360,
-  headerToolbar: {
+    headerToolbar: {
     left: "prev,next today",
     center: "title",
     right: "dayGridMonth"
@@ -239,11 +239,11 @@ const calendarOptions = computed(() => ({
     const p = info.event.extendedProps || {}
     alert(
       `Request Details\n\n` +
-      `Item: ${info.event.title}\n` +
-      `Status: ${p.status}\n` +
-      `Category: ${p.category}\n` +
-      `Requester: ${p.requester}\n` +
-      `Purpose: ${p.purpose}`
+        `Item: ${info.event.title}\n` +
+        `Status: ${p.status}\n` +
+        `Category: ${p.category}\n` +
+        `Requester: ${p.requester}\n` +
+        `Purpose: ${p.purpose}`
     )
   }
 }))
@@ -333,8 +333,8 @@ const calendarOptions = computed(() => ({
             <h6 class="mb-3">Inventory Status Distribution</h6>
             <div class="d-flex align-items-center" style="height: 320px;">
               <div style="width: 320px; height: 320px;">
-                <canvas ref="statusCanvas"></canvas>
-              </div>
+              <canvas ref="statusCanvas"></canvas>
+</div>
               <div class="flex-grow-1"></div>
             </div>
           </div>
@@ -345,8 +345,8 @@ const calendarOptions = computed(() => ({
             <h6 class="mb-3">Inventory by Category</h6>
             <div class="d-flex align-items-center" style="height: 320px;">
               <div style="width: 370px; height: 370px;">
-                <canvas ref="categoryCanvas"></canvas>
-              </div>
+              <canvas ref="categoryCanvas"></canvas>
+</div>
               <div class="flex-grow-1"></div>
             </div>
           </div>
@@ -360,33 +360,33 @@ const calendarOptions = computed(() => ({
             <div class="d-flex justify-content-between align-items-center mb-3">
               <h6 class="mb-0">Requests Calendar</h6>
               <div class="small d-flex flex-wrap gap-3 align-items-center">
-  <span class="d-flex align-items-center gap-1">
-    <span
-      class="rounded-circle"
-      style="width:10px;height:10px;background:#f59e0b;display:inline-block"
-    ></span>
-    <span class="text-muted">Pending — awaiting approval</span>
-  </span>
+                <span class="d-flex align-items-center gap-1">
+                  <span
+                    class="rounded-circle"
+                    style="width:10px;height:10px;background:#f59e0b;display:inline-block"
+                  ></span>
+                  <span class="text-muted">Pending — awaiting approval</span>
+                </span>
 
-  <span class="d-flex align-items-center gap-1">
-    <span
-      class="rounded-circle"
-      style="width:10px;height:10px;background:#16a34a;display:inline-block"
-    ></span>
-    <span class="text-muted">Approved — inventory updated</span>
-  </span>
+                <span class="d-flex align-items-center gap-1">
+                  <span
+                    class="rounded-circle"
+                    style="width:10px;height:10px;background:#16a34a;display:inline-block"
+                  ></span>
+                  <span class="text-muted">Approved — inventory updated</span>
+                </span>
 
-  <span class="d-flex align-items-center gap-1">
-    <span
-      class="rounded-circle"
-      style="width:10px;height:10px;background:#dc2626;display:inline-block"
-    ></span>
-    <span class="text-muted">Rejected — request denied</span>
-  </span>
-</div>
-          </div>
+                <span class="d-flex align-items-center gap-1">
+                  <span
+                    class="rounded-circle"
+                    style="width:10px;height:10px;background:#dc2626;display:inline-block"
+                  ></span>
+                  <span class="text-muted">Rejected — request denied</span>
+                </span>
+              </div>
+            </div>
             <FullCalendar :options="calendarOptions" />
-            <!-- CLOCK (under calendar) -->
+<!-- CLOCK (under calendar) -->
               <div class="mt-3 p-3 rounded bg-light border">
                 <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
                   <div>
@@ -467,12 +467,12 @@ const calendarOptions = computed(() => ({
                 <span
                   class="badge"
                   :class="(r.status || '').toLowerCase() === 'pending'
-                    ? 'bg-warning text-dark'
-                    : (r.status || '').toLowerCase() === 'approved'
-                      ? 'bg-success'
-                      : (r.status || '').toLowerCase() === 'rejected'
-                        ? 'bg-danger'
-                        : 'bg-secondary'"
+                      ? 'bg-warning text-dark'
+                      : (r.status || '').toLowerCase() === 'approved'
+                        ? 'bg-success'
+                        : (r.status || '').toLowerCase() === 'rejected'
+                          ? 'bg-danger'
+                          : 'bg-secondary'"
                 >
                   {{ r.status || "Unknown" }}
                 </span>

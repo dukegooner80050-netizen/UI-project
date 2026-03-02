@@ -35,8 +35,8 @@ function toggleSidebar() {
 
 /* Print rules (keep your behavior) */
 @media print {
-  .main-content {
+      .main-content {
     margin-left: 0 !important;
-  }
+}
 }
 </style>

@@ -203,15 +203,15 @@ function confirmModal() {
     return
   }
 
-const max = Number(modalMax.value) || 0
+  const max = Number(modalMax.value) || 0
 if (max > 0 && qty > max) {
-  alert(`Max allowed is ${max}.`)
-  modalQty.value = max
-  return
-}
+    alert(`Max allowed is ${max}.`)
+    modalQty.value = max
+    return
+  }
 
   try {
-    if (modalMode.value === "restock") {
+        if (modalMode.value === "restock") {
       restockOfficeSupplies(consumableIdsArray.value, qty)
       selectedConsumableIds.value = new Set()
     } else if (modalMode.value === "release") {
@@ -237,9 +237,9 @@ if (max > 0 && qty > max) {
 <template>
   <div>
     <h3 class="mb-4">Office Supplies</h3>
-<button class="btn btn-primary" @click="openAdd('Consumables')">
-  + Add Office Supply
-</button>
+    <button class="btn btn-primary" @click="openAdd('Consumables')">
+      + Add Office Supply
+    </button>
     <!-- CONSUMABLES -->
     <div class="card shadow-sm mb-4">
       <div class="card-body">
@@ -260,7 +260,7 @@ if (max > 0 && qty > max) {
           <table class="table table-striped table-hover align-middle mb-0">
             <thead class="table-light">
               <tr>
-                <th style="width:48px">
+<th style="width:48px">
                   <input
                     type="checkbox"
                     :checked="allConsumablesChecked"
@@ -270,12 +270,12 @@ if (max > 0 && qty > max) {
                 <th>Name</th>
                 <th>Status</th>
                 <th style="width:120px">Qty</th>
-              </tr>
+                              </tr>
             </thead>
 
             <tbody>
               <tr v-for="i in consumables" :key="i.id">
-                <td>
+<td>
                   <input
                     type="checkbox"
                     :checked="selectedConsumableIds.has(i.id)"
@@ -285,7 +285,7 @@ if (max > 0 && qty > max) {
                 <td>{{ i.name }}</td>
                 <td>{{ i.status }}</td>
                 <td>{{ i.qty }}</td>
-              </tr>
+                              </tr>
 
               <tr v-if="consumables.length === 0">
                 <td colspan="4" class="text-center text-muted">No consumables found.</td>
@@ -316,7 +316,7 @@ if (max > 0 && qty > max) {
           <table class="table table-striped table-hover align-middle mb-0">
             <thead class="table-light">
               <tr>
-                <th style="width:48px">
+<th style="width:48px">
                   <input
                     type="checkbox"
                     :checked="allNonConsumablesChecked"
@@ -327,12 +327,12 @@ if (max > 0 && qty > max) {
                 <th>Status</th>
                 <th style="width:120px">Qty</th>
                 <th style="width:120px">Borrowed</th>
-              </tr>
+                              </tr>
             </thead>
 
             <tbody>
               <tr v-for="i in nonConsumables" :key="i.id">
-                <td>
+<td>
                   <input
                     type="checkbox"
                     :checked="selectedNonConsumableIds.has(i.id)"
@@ -343,7 +343,7 @@ if (max > 0 && qty > max) {
                 <td>{{ i.status }}</td>
                 <td>{{ i.qty }}</td>
                 <td>{{ Number(i.borrowedQty) || 0 }}</td>
-              </tr>
+                              </tr>
 
               <tr v-if="nonConsumables.length === 0">
                 <td colspan="5" class="text-center text-muted">No non-consumables found.</td>
@@ -385,39 +385,39 @@ if (max > 0 && qty > max) {
     </div>
   </div>
 
- <!-- ADD ITEM MODAL -->
-<div v-if="addOpen" class="modal-backdrop-custom">
-  <div class="modal-custom">
-    <div class="modal-header">
-      <h5 class="mb-0">Add Office Supply</h5>
-      <button class="btn-close" @click="closeAdd"></button>
-    </div>
+  <!-- ADD ITEM MODAL -->
+  <div v-if="addOpen" class="modal-backdrop-custom">
+    <div class="modal-custom">
+      <div class="modal-header">
+        <h5 class="mb-0">Add Office Supply</h5>
+        <button class="btn-close" @click="closeAdd"></button>
+      </div>
 
-    <div class="modal-body">
-      <label class="form-label">Type</label>
-      <select class="form-select mb-3" v-model="addSubCategory">
-        <option value="Consumables">Consumables</option>
-        <option value="Non-Consumables">Non-Consumables</option>
-      </select>
+      <div class="modal-body">
+        <label class="form-label">Type</label>
+        <select class="form-select mb-3" v-model="addSubCategory">
+          <option value="Consumables">Consumables</option>
+          <option value="Non-Consumables">Non-Consumables</option>
+        </select>
 
-      <label class="form-label">Name</label>
-      <input class="form-control mb-3" v-model="addName" placeholder="e.g. Bond Paper" />
+        <label class="form-label">Name</label>
+        <input class="form-control mb-3" v-model="addName" placeholder="e.g. Bond Paper" />
 
-      <label class="form-label">Quantity</label>
-      <input type="number" min="1" class="form-control" v-model="addQty" />
+        <label class="form-label">Quantity</label>
+        <input type="number" min="1" class="form-control" v-model="addQty" />
 
-      <div class="small text-muted mt-2">
-        Consumables will auto-update status (Low Stock / Out of Stock) depending on qty.
+        <div class="small text-muted mt-2">
+          Consumables will auto-update status (Low Stock / Out of Stock) depending on qty.
+        </div>
+      </div>
+
+      <div class="modal-footer">
+        <button class="btn btn-secondary" @click="closeAdd">Cancel</button>
+        <button class="btn btn-primary" @click="confirmAdd">Add</button>
       </div>
     </div>
-
-    <div class="modal-footer">
-      <button class="btn btn-secondary" @click="closeAdd">Cancel</button>
-      <button class="btn btn-primary" @click="confirmAdd">Add</button>
-    </div>
   </div>
-</div>
- 
+
 </template>
 
 <style scoped>
