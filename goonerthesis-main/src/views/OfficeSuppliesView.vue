@@ -1,10 +1,9 @@
 <script setup>
-const modalOpen = ref(false)
-const modalMode = ref("")
-const modalQty = ref(1)
-const modalTitle = ref("")
+const modalOpen = ref(false);
+const modalMode = ref("");
+const modalQty = ref(1);
 
-import { ref, computed, onMounted } from "vue"
+import { ref, computed, onMounted } from "vue";
 import {
   listInventory,
   addItem,
@@ -12,36 +11,34 @@ import {
   restockOfficeSupplies,
   releaseOfficeConsumables,
   borrowNonConsumables,
-  returnNonConsumables
-} from "../services/inventory"
+  returnNonConsumables,
+} from "../services/inventory";
 
-const items = ref([])
+const items = ref([]);
+const currentItem = ref(null);
 
-const selectedConsumableIds = ref(new Set())
-const selectedNonConsumableIds = ref(new Set())
-
-const addOpen = ref(false)
-const addSubCategory = ref("Consumables")
-const addName = ref("")
-const addQty = ref(1)
+const addOpen = ref(false);
+const addSubCategory = ref("Consumables");
+const addName = ref("");
+const addQty = ref(1);
 
 function openAdd() {
-  addSubCategory.value = "Consumables"
-  addName.value = ""
-  addQty.value = 1
-  addOpen.value = true
+  addSubCategory.value = "Consumables";
+  addName.value = "";
+  addQty.value = 1;
+  addOpen.value = true;
 }
 
 function closeAdd() {
-  addOpen.value = false
+  addOpen.value = false;
 }
 
 function confirmAdd() {
-  const name = addName.value.trim()
-  const qty = Number(addQty.value) || 0
+  const name = addName.value.trim();
+  const qty = Number(addQty.value) || 0;
 
-  if (!name) return alert("Please enter item name.")
-  if (qty <= 0) return alert("Quantity must be at least 1.")
+  if (!name) return alert("Please enter item name.");
+  if (qty <= 0) return alert("Quantity must be at least 1.");
 
   try {
     const item = autoStatus({
@@ -49,187 +46,96 @@ function confirmAdd() {
       category: "Office Supplies",
       subCategory: addSubCategory.value,
       qty,
-      borrowedQty: 0
-    })
+      borrowedQty: 0,
+    });
 
-    addItem(item)
-    refresh()
-    closeAdd()
+    addItem(item);
+    refresh();
+    closeAdd();
   } catch (e) {
-    alert(String(e.message || e))
+    alert(String(e.message || e));
   }
 }
-
 
 onMounted(() => {
-  refresh()
-})
+  refresh();
+});
 
 const modalMax = computed(() => {
-  const mode = modalMode.value
+  if (!currentItem.value) return 0;
 
-  const ids =
-    mode === "restock" || mode === "release"
-      ? consumableIdsArray.value
-      : nonConsumableIdsArray.value
-
-  if (!ids.length) return 0
-
-  if (mode === "release") {
-    return Math.min(
-      ...ids.map(id => {
-        const it = consumables.value.find(i => i.id === id)
-        return Number(it?.qty) || 0
-      })
-    )
+  if (modalMode.value === "release") {
+    return Number(currentItem.value.qty) || 0;
   }
 
-  if (mode === "borrow") {
-    return Math.min(
-      ...ids.map(id => {
-        const it = nonConsumables.value.find(i => i.id === id)
-        return Number(it?.qty) || 0
-      })
-    )
+  if (modalMode.value === "borrow") {
+    return Number(currentItem.value.qty) || 0;
   }
 
-  if (mode === "return") {
-    const borrowed = ids
-      .map(id => {
-        const it = nonConsumables.value.find(i => i.id === id)
-        return Number(it?.borrowedQty) || 0
-      })
-      .filter(n => n > 0)
-
-    return borrowed.length ? Math.min(...borrowed) : 0
+  if (modalMode.value === "return") {
+    return Number(currentItem.value.borrowedQty) || 0;
   }
 
-  return 0
-})
-
-
+  return 0; // restock has no limit
+});
 
 function refresh() {
-  items.value = listInventory()
+  items.value = listInventory();
 }
-
 
 const officeItems = computed(() =>
-  items.value.filter(i => i.category === "Office Supplies")
-)
+  items.value.filter((i) => i.category === "Office Supplies"),
+);
 
 const consumables = computed(() =>
-  officeItems.value.filter(i => i.subCategory === "Consumables")
-)
+  officeItems.value.filter((i) => i.subCategory === "Consumables"),
+);
 
 const nonConsumables = computed(() =>
-  officeItems.value.filter(i => i.subCategory !== "Consumables")
-)
+  officeItems.value.filter((i) => i.subCategory !== "Consumables"),
+);
 
-function toggleConsumable(id, checked) {
-  const s = new Set(selectedConsumableIds.value)
-  checked ? s.add(id) : s.delete(id)
-  selectedConsumableIds.value = s
-}
-
-function toggleNonConsumable(id, checked) {
-  const s = new Set(selectedNonConsumableIds.value)
-  checked ? s.add(id) : s.delete(id)
-  selectedNonConsumableIds.value = s
-}
-
-function setAllConsumables(checked) {
-  const s = new Set()
-  if (checked) consumables.value.forEach(i => s.add(i.id))
-  selectedConsumableIds.value = s
-}
-
-function setAllNonConsumables(checked) {
-  const s = new Set()
-  if (checked) nonConsumables.value.forEach(i => s.add(i.id))
-  selectedNonConsumableIds.value = s
-}
-
-const consumableIdsArray = computed(() => Array.from(selectedConsumableIds.value))
-const nonConsumableIdsArray = computed(() => Array.from(selectedNonConsumableIds.value))
-
-const allConsumablesChecked = computed(() => {
-  return consumables.value.length > 0 && selectedConsumableIds.value.size === consumables.value.length
-})
-const allNonConsumablesChecked = computed(() => {
-  return nonConsumables.value.length > 0 && selectedNonConsumableIds.value.size === nonConsumables.value.length
-})
-
-function openQtyModal(mode) {
-
-  const ids = mode === "restock" || mode === "release" ? consumableIdsArray.value : nonConsumableIdsArray.value
-  if (!ids.length) {
-    alert("Select at least one item first.")
-    return
-  }
-
-
-  if (mode === "return") {
-    const hasSomethingToReturn = ids.some(id => {
-      const item = nonConsumables.value.find(i => i.id === id)
-      return item && (Number(item.borrowedQty) || 0) > 0
-    })
-    if (!hasSomethingToReturn) {
-      alert("Selected item(s) have nothing to return.")
-      return
-    }
-  }
-
-  modalMode.value = mode
-  modalQty.value = 1
-  modalTitle.value =
-    mode === "restock" ? "Restock Selected" :
-    mode === "release" ? "Release Selected" :
-    mode === "borrow"  ? "Borrow Selected" :
-    "Return Selected"
-
-  modalOpen.value = true
+function openQtyModal(mode, item) {
+  modalMode.value = mode;
+  currentItem.value = item;
+  modalQty.value = 1;
+  modalOpen.value = true;
 }
 
 function closeModal() {
-  modalOpen.value = false
+  modalOpen.value = false;
 }
 
-
 function confirmModal() {
-  const qty = Number(modalQty.value) || 0
+  const qty = Number(modalQty.value) || 0;
   if (qty <= 0) {
-    alert("Quantity must be at least 1.")
-    return
+    alert("Quantity must be at least 1.");
+    return;
   }
 
-  const max = Number(modalMax.value) || 0
-if (max > 0 && qty > max) {
-    alert(`Max allowed is ${max}.`)
-    modalQty.value = max
-    return
+  if (modalMode.value !== "restock" && qty > modalMax.value) {
+    alert(`Max allowed is ${modalMax.value}.`);
+    modalQty.value = modalMax.value;
+    return;
   }
 
   try {
-        if (modalMode.value === "restock") {
-      restockOfficeSupplies(consumableIdsArray.value, qty)
-      selectedConsumableIds.value = new Set()
+    const id = currentItem.value.id;
+
+    if (modalMode.value === "restock") {
+      restockOfficeSupplies([id], qty);
     } else if (modalMode.value === "release") {
-      releaseOfficeConsumables(consumableIdsArray.value, qty)
-      selectedConsumableIds.value = new Set()
+      releaseOfficeConsumables([id], qty);
     } else if (modalMode.value === "borrow") {
-      borrowNonConsumables(nonConsumableIdsArray.value, qty)
-      selectedNonConsumableIds.value = new Set()
+      borrowNonConsumables([id], qty);
     } else if (modalMode.value === "return") {
-      returnNonConsumables(nonConsumableIdsArray.value, qty)
-      selectedNonConsumableIds.value = new Set()
+      returnNonConsumables([id], qty);
     }
 
-    refresh()
-    closeModal()
+    refresh();
+    modalOpen.value = false;
   } catch (e) {
-
-    alert(String(e.message || e))
+    alert(String(e.message || e));
   }
 }
 </script>
@@ -243,52 +149,49 @@ if (max > 0 && qty > max) {
     <!-- CONSUMABLES -->
     <div class="card shadow-sm mb-4">
       <div class="card-body">
-        <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
+        <div
+          class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3"
+        >
           <h5 class="mb-0">Consumables</h5>
-
-          <div class="d-flex gap-2">
-            <button class="btn btn-primary" @click="openQtyModal('release')">
-              Release Selected
-            </button>
-            <button class="btn btn-success" @click="openQtyModal('restock')">
-              Restock Selected
-            </button>
-          </div>
         </div>
 
-        <div class="table-scroll">
+        <div class="table-responsive table-scroll">
           <table class="table table-striped table-hover align-middle mb-0">
             <thead class="table-light">
               <tr>
-<th style="width:48px">
-                  <input
-                    type="checkbox"
-                    :checked="allConsumablesChecked"
-                    @change="setAllConsumables($event.target.checked)"
-                  />
-                </th>
                 <th>Name</th>
                 <th>Status</th>
-                <th style="width:120px">Qty</th>
-                              </tr>
+                <th style="width: 120px">Qty</th>
+                <th style="width: 180px; text-align: center">Acton</th>
+              </tr>
             </thead>
 
             <tbody>
               <tr v-for="i in consumables" :key="i.id">
-<td>
-                  <input
-                    type="checkbox"
-                    :checked="selectedConsumableIds.has(i.id)"
-                    @change="toggleConsumable(i.id, $event.target.checked)"
-                  />
-                </td>
                 <td>{{ i.name }}</td>
                 <td>{{ i.status }}</td>
                 <td>{{ i.qty }}</td>
-                              </tr>
+                <td class="d-flex gap-2">
+                  <button
+                    class="btn btn-primary"
+                    @click="openQtyModal('release', i)"
+                  >
+                    Release
+                  </button>
+
+                  <button
+                    class="btn btn-success"
+                    @click="openQtyModal('restock', i)"
+                  >
+                    Restock
+                  </button>
+                </td>
+              </tr>
 
               <tr v-if="consumables.length === 0">
-                <td colspan="4" class="text-center text-muted">No consumables found.</td>
+                <td colspan="4" class="text-center text-muted">
+                  No consumables found.
+                </td>
               </tr>
             </tbody>
           </table>
@@ -299,54 +202,51 @@ if (max > 0 && qty > max) {
     <!-- NON-CONSUMABLES -->
     <div class="card shadow-sm">
       <div class="card-body">
-        <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
+        <div
+          class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3"
+        >
           <h5 class="mb-0">Non-Consumables</h5>
-
-          <div class="d-flex gap-2">
-            <button class="btn btn-primary" @click="openQtyModal('borrow')">
-              Borrow Selected
-            </button>
-            <button class="btn btn-secondary" @click="openQtyModal('return')">
-              Return Selected
-            </button>
-          </div>
         </div>
 
-        <div class="table-scroll">
+        <div class="table-responsive table-scroll">
           <table class="table table-striped table-hover align-middle mb-0">
             <thead class="table-light">
               <tr>
-<th style="width:48px">
-                  <input
-                    type="checkbox"
-                    :checked="allNonConsumablesChecked"
-                    @change="setAllNonConsumables($event.target.checked)"
-                  />
-                </th>
                 <th>Name</th>
                 <th>Status</th>
-                <th style="width:120px">Qty</th>
-                <th style="width:120px">Borrowed</th>
-                              </tr>
+                <th style="width: 120px">Qty</th>
+                <th style="width: 120px">Borrowed</th>
+                <th style="width: 180px; text-align: center">Acton</th>
+              </tr>
             </thead>
 
             <tbody>
               <tr v-for="i in nonConsumables" :key="i.id">
-<td>
-                  <input
-                    type="checkbox"
-                    :checked="selectedNonConsumableIds.has(i.id)"
-                    @change="toggleNonConsumable(i.id, $event.target.checked)"
-                  />
-                </td>
                 <td>{{ i.name }}</td>
                 <td>{{ i.status }}</td>
                 <td>{{ i.qty }}</td>
                 <td>{{ Number(i.borrowedQty) || 0 }}</td>
-                              </tr>
+                <td class="d-flex gap-2">
+                  <button
+                    class="btn btn-primary"
+                    @click="openQtyModal('borrow', i)"
+                  >
+                    Borrow
+                  </button>
+
+                  <button
+                    class="btn btn-secondary"
+                    @click="openQtyModal('return', i)"
+                  >
+                    Return
+                  </button>
+                </td>
+              </tr>
 
               <tr v-if="nonConsumables.length === 0">
-                <td colspan="5" class="text-center text-muted">No non-consumables found.</td>
+                <td colspan="5" class="text-center text-muted">
+                  No non-consumables found.
+                </td>
               </tr>
             </tbody>
           </table>
@@ -356,7 +256,17 @@ if (max > 0 && qty > max) {
     <div v-if="modalOpen" class="modal-backdrop-custom">
       <div class="modal-custom">
         <div class="modal-header">
-          <h5 class="mb-0">{{ modalTitle }}</h5>
+          <h5 class="mb-0">
+            {{
+              modalMode === "restock"
+                ? `Restock: ${currentItem?.name}`
+                : modalMode === "release"
+                  ? `Release: ${currentItem?.name}`
+                  : modalMode === "borrow"
+                    ? `Borrow: ${currentItem?.name}`
+                    : `Return: ${currentItem?.name}`
+            }}
+          </h5>
           <button class="btn-close" @click="closeModal"></button>
         </div>
 
@@ -373,7 +283,8 @@ if (max > 0 && qty > max) {
             Max: {{ modalMax }}
           </small>
           <div class="small text-muted mt-2">
-            This quantity will apply to each selected item (same as your previous modal behavior).
+            This quantity will apply to each selected item (same as your
+            previous modal behavior).
           </div>
         </div>
 
@@ -401,13 +312,18 @@ if (max > 0 && qty > max) {
         </select>
 
         <label class="form-label">Name</label>
-        <input class="form-control mb-3" v-model="addName" placeholder="e.g. Bond Paper" />
+        <input
+          class="form-control mb-3"
+          v-model="addName"
+          placeholder="e.g. Bond Paper"
+        />
 
         <label class="form-label">Quantity</label>
         <input type="number" min="1" class="form-control" v-model="addQty" />
 
         <div class="small text-muted mt-2">
-          Consumables will auto-update status (Low Stock / Out of Stock) depending on qty.
+          Consumables will auto-update status (Low Stock / Out of Stock)
+          depending on qty.
         </div>
       </div>
 
@@ -417,11 +333,9 @@ if (max > 0 && qty > max) {
       </div>
     </div>
   </div>
-
 </template>
 
 <style scoped>
-
 .table-scroll {
   max-height: 420px;
   overflow-y: auto;
@@ -434,11 +348,10 @@ if (max > 0 && qty > max) {
   box-shadow: 0 1px 0 #dee2e6;
 }
 
-
 .modal-backdrop-custom {
   position: fixed;
   inset: 0;
-  background: rgba(0,0,0,.35);
+  background: rgba(0, 0, 0, 0.35);
   display: grid;
   place-items: center;
   z-index: 2000;
@@ -449,10 +362,11 @@ if (max > 0 && qty > max) {
   max-width: 520px;
   background: #fff;
   border-radius: 12px;
-  box-shadow: 0 18px 50px rgba(0,0,0,.25);
+  box-shadow: 0 18px 50px rgba(0, 0, 0, 0.25);
   overflow: hidden;
 }
-.modal-header, .modal-footer {
+.modal-header,
+.modal-footer {
   padding: 12px 16px;
   display: flex;
   align-items: center;
