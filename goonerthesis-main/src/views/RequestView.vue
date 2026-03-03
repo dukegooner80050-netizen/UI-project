@@ -1,145 +1,147 @@
 <script setup>
-import { ref, watch, computed, onMounted } from "vue"
-import { useRouter } from "vue-router"
-import { createRequest, listRequests } from "../services/requests"
-import { getCurrentUser } from "../services/storage"
-import { listInventory } from "../services/inventory"
+import { ref, watch, computed, onMounted } from "vue";
+import { useRouter } from "vue-router";
+import { createRequest, listRequests } from "../services/requests";
+import { getCurrentUser } from "../services/storage";
+import { listInventory } from "../services/inventory";
 
 onMounted(() => {
-  loadInventory()
-})
+  loadInventory();
+});
 
-const router = useRouter()
-const user = getCurrentUser()
+const router = useRouter();
+const user = getCurrentUser();
 
-const activeTab = ref("create") // "create" | "mine"
-const lastReceipt = ref(null)
-const myRequests = ref([])
-const selected = ref(null)
-const category = ref("")
-const itemType = ref("")
-const itemName = ref("")
-const qty = ref(1)
-const purpose = ref("")
-const error = ref("")
-const invItems = ref([])
-const selectedItemId = ref("")
+const activeTab = ref("create"); // "create" | "mine"
+const lastReceipt = ref(null);
+const myRequests = ref([]);
+const selected = ref(null);
+const category = ref("");
+const itemType = ref("");
+const itemName = ref("");
+const qty = ref(1);
+const purpose = ref("");
+const error = ref("");
+const invItems = ref([]);
+const selectedItemId = ref("");
 
 function loadInventory() {
-  invItems.value = listInventory() || []
+  invItems.value = listInventory() || [];
 }
 
 // Items that can appear in Item Name dropdown (based on category + itemType)
 const itemOptions = computed(() => {
-  const cat = category.value
-  const type = itemType.value
+  const cat = category.value;
+  const type = itemType.value;
 
-  if (!cat || !type) return []
+  if (!cat || !type) return [];
 
   return invItems.value
-    .filter(i => (i.category || "") === cat)
-    .filter(i => {
+    .filter((i) => (i.category || "") === cat)
+    .filter((i) => {
       if (cat === "Office Supplies") {
         // Consumable vs Non-Consumable based on subCategory from OfficeSuppliesView.vue
-        if (type === "Consumable") return (i.subCategory || "") === "Consumables"
-        if (type === "Non-Consumable") return (i.subCategory || "") === "Non-Consumables"
-        return false
+        if (type === "Consumable")
+          return (i.subCategory || "") === "Consumables";
+        if (type === "Non-Consumable")
+          return (i.subCategory || "") === "Non-Consumables";
+        return false;
       }
 
       // School Equipment is always Non-Consumable
       if (cat === "School Equipment") {
-        return type === "Non-Consumable"
+        return type === "Non-Consumable";
       }
 
-      return false
+      return false;
     })
-    .filter(i => (Number(i.qty) || 0) > 0) // optional: only show in-stock items
-})
+    .filter((i) => (Number(i.qty) || 0) > 0); // optional: only show in-stock items
+});
 
 // Resolve selected item from dropdown
-const selectedItem = computed(() =>
-  itemOptions.value.find(i => String(i.id) === String(selectedItemId.value)) || null
-)
-
+const selectedItem = computed(
+  () =>
+    itemOptions.value.find(
+      (i) => String(i.id) === String(selectedItemId.value),
+    ) || null,
+);
 
 watch(category, (val) => {
   // reload inventory so dropdown options are up to date
-  loadInventory()
+  loadInventory();
 
-  // resets selection whenever category changes
-  selectedItemId.value = ""
-  itemName.value = ""
+  // reset selection whenever category changes
+  selectedItemId.value = "";
+  itemName.value = "";
 
   if (val === "School Equipment") {
-    itemType.value = "Non-Consumable"
+    itemType.value = "Non-Consumable";
   } else if (val === "Office Supplies") {
-    itemType.value = ""
+    itemType.value = "";
   } else {
-    itemType.value = ""
+    itemType.value = "";
   }
-})
+});
 watch(itemType, () => {
-  loadInventory()
-  selectedItemId.value = ""
-  itemName.value = ""
-})
+  loadInventory();
+  selectedItemId.value = "";
+  itemName.value = "";
+});
 
-const isItemTypeLocked = computed(() => category.value === "School Equipment")
+const isItemTypeLocked = computed(() => category.value === "School Equipment");
 
 function loadMyRequests() {
-  const all = listRequests()
-  const key = (user?.username || user?.name || "").toLowerCase()
+  const all = listRequests();
+  const key = (user?.username || user?.name || "").toLowerCase();
   myRequests.value = all
-    .filter(r => (r.requester || "").toLowerCase() === key)
+    .filter((r) => (r.requester || "").toLowerCase() === key)
     .slice()
-    .reverse()
+    .reverse();
 }
 
 function submitRequest() {
-  error.value = ""
+  error.value = "";
 
   try {
     if (!selectedItem.value) {
-  error.value = "Please select an item from the list."
-  return
-}
-itemName.value = selectedItem.value.name || ""
-  const req = createRequest({
-  itemId: selectedItem.value.id,
-  itemName: itemName.value.trim(),
-  category: category.value,
-  itemType: itemType.value,
-  qty: Number(qty.value),
-  purpose: purpose.value.trim(),
-  requester: user?.name || user?.username,
-  role: user?.role
-})
+      error.value = "Please select an item from the list.";
+      return;
+    }
+    itemName.value = selectedItem.value.name || "";
+    const req = createRequest({
+      itemId: selectedItem.value.id,
+      itemName: itemName.value.trim(),
+      category: category.value,
+      itemType: itemType.value,
+      qty: Number(qty.value),
+      purpose: purpose.value.trim(),
+      requester: user?.name || user?.username,
+      role: user?.role,
+    });
 
-    lastReceipt.value = req
-    loadMyRequests()
+    lastReceipt.value = req;
+    loadMyRequests();
 
-    activeTab.value = "mine"
+    activeTab.value = "mine";
 
-    category.value = ""
-    itemType.value = ""
-    itemName.value = ""
-    selectedItemId.value = ""
-    qty.value = 1
-    purpose.value = ""
+    category.value = "";
+    itemType.value = "";
+    itemName.value = "";
+    selectedItemId.value = "";
+    qty.value = 1;
+    purpose.value = "";
 
     if ((user?.role || "").toLowerCase() === "admin") {
-      router.push("/pending-requests")
+      router.push("/pending-requests");
     }
   } catch (e) {
-    error.value = "Please complete all fields correctly."
+    error.value = "Please complete all fields correctly.";
   }
 }
-
 </script>
 
 <template>
   <div style="max-width: 900px">
-
     <!-- Tabs -->
     <div class="d-flex gap-2 mb-3">
       <button
@@ -153,7 +155,10 @@ itemName.value = selectedItem.value.name || ""
       <button
         class="btn"
         :class="activeTab === 'mine' ? 'btn-primary' : 'btn-outline-primary'"
-        @click="loadMyRequests(); activeTab = 'mine'"
+        @click="
+          loadMyRequests();
+          activeTab = 'mine';
+        "
       >
         My Requests
       </button>
@@ -192,21 +197,16 @@ itemName.value = selectedItem.value.name || ""
       <div class="mb-3">
         <label class="form-label">Item Name</label>
         <select
-  v-model="selectedItemId"
-  class="form-select"
-  :disabled="!category || !itemType"
->
-  <option value="">Select item</option>
+          v-model="selectedItemId"
+          class="form-select"
+          :disabled="!category || !itemType"
+        >
+          <option value="">Select item</option>
 
-  <option
-    v-for="i in itemOptions"
-    :key="i.id"
-    :value="String(i.id)"
-  >
-    {{ i.name }} (Qty: {{ Number(i.qty) || 0 }})
-  </option>
-</select>
-
+          <option v-for="i in itemOptions" :key="i.id" :value="String(i.id)">
+            {{ i.name }} (Qty: {{ Number(i.qty) || 0 }})
+          </option>
+        </select>
       </div>
 
       <div class="mb-3">
@@ -267,18 +267,23 @@ itemName.value = selectedItem.value.name || ""
                   <td>
                     <span
                       class="badge"
-                      :class="(r.status||'').toLowerCase()==='approved'
-                        ? 'bg-success'
-                        : (r.status||'').toLowerCase()==='rejected'
-                        ? 'bg-danger'
-                        : 'bg-warning text-dark'"
+                      :class="
+                        (r.status || '').toLowerCase() === 'approved'
+                          ? 'bg-success'
+                          : (r.status || '').toLowerCase() === 'rejected'
+                            ? 'bg-danger'
+                            : 'bg-warning text-dark'
+                      "
                     >
                       {{ r.status }}
                     </span>
                   </td>
                   <td>{{ r.date }}</td>
                   <td>
-                    <button class="btn btn-sm btn-outline-secondary" @click="selected = r">
+                    <button
+                      class="btn btn-sm btn-outline-secondary"
+                      @click="selected = r"
+                    >
                       View
                     </button>
                   </td>
@@ -305,23 +310,26 @@ itemName.value = selectedItem.value.name || ""
             <div><strong>Status:</strong> {{ selected.status }}</div>
 
             <div
-              v-if="(selected.status||'').toLowerCase()==='rejected' && selected.rejectReason"
+              v-if="
+                (selected.status || '').toLowerCase() === 'rejected' &&
+                selected.rejectReason
+              "
               class="text-danger mt-2"
             >
               <strong>Rejection Reason:</strong> {{ selected.rejectReason }}
             </div>
 
             <div class="mt-2">
-              <button class="btn btn-sm btn-outline-dark" @click="selected = null">
+              <button
+                class="btn btn-sm btn-outline-dark"
+                @click="selected = null"
+              >
                 Close
               </button>
             </div>
           </div>
-
         </div>
       </div>
     </div>
-
   </div>
 </template>
-

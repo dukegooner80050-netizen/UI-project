@@ -1,167 +1,117 @@
 <script setup>
-import { ref, computed, onMounted } from "vue"
+import { ref, computed, onMounted } from "vue";
 import {
   listInventory,
   addItem,
   autoStatus,
   borrowEquipment,
-  returnEquipment
-} from "../services/inventory"
+  returnEquipment,
+} from "../services/inventory";
 
-const items = ref([])
-const selectedIds = ref(new Set())
+const items = ref([]);
+const currentItem = ref(null);
 
 // MODAL STATE
-const modalOpen = ref(false)
-const modalMode = ref("") //for "borrow" and "return"
-const modalQty = ref(1)
-const addOpen = ref(false)
-const addName = ref("")
-const addQty = ref(1)
+const modalOpen = ref(false);
+const modalMode = ref(""); //for "borrow" and "return"
+const modalQty = ref(1);
+const addOpen = ref(false);
+const addName = ref("");
+const addQty = ref(1);
 
 function openAdd() {
-  addName.value = ""
-  addQty.value = 1
-  addOpen.value = true
+  addName.value = "";
+  addQty.value = 1;
+  addOpen.value = true;
 }
 
 function closeAdd() {
-  addOpen.value = false
+  addOpen.value = false;
 }
 
 function confirmAdd() {
-  const name = addName.value.trim()
-  const qty = Number(addQty.value) || 0
+  const name = addName.value.trim();
+  const qty = Number(addQty.value) || 0;
 
-  if (!name) return alert("Please enter equipment name.")
-  if (qty <= 0) return alert("Quantity must be at least 1.")
+  if (!name) return alert("Please enter equipment name.");
+  if (qty <= 0) return alert("Quantity must be at least 1.");
 
   try {
     const newItem = autoStatus({
       name,
       category: "School Equipment",
       qty,
-      borrowedQty: 0
-    })
+      borrowedQty: 0,
+    });
 
-    addItem(newItem)
-    load()
-    closeAdd()
+    addItem(newItem);
+    load();
+    closeAdd();
   } catch (e) {
-    alert(String(e.message || e))
+    alert(String(e.message || e));
   }
 }
 
-onMounted(load)
+onMounted(load);
 
 const modalMax = computed(() => {
-  if (!selectedArray.value.length) return 0
-
+  if (!currentItem.value) return 0;
 
   if (modalMode.value === "borrow") {
-return Math.min(
-      ...selectedArray.value.map(id => {
-        const it = equipments.value.find(i => i.id === id)
-    return Number(it?.qty) || 0
-      })
-    )
+    return Number(currentItem.value.qty) || 0;
   }
 
   if (modalMode.value === "return") {
-const borrowedList = selectedArray.value
-      .map(id => {
-        const it = equipments.value.find(i => i.id === id)
-    return Number(it?.borrowedQty) || 0
-      })
-      .filter(n => n > 0)
-
-    return borrowedList.length ? Math.min(...borrowedList) : 0
+    return Number(currentItem.value.borrowedQty) || 0;
   }
 
-  return 0
-})
+  return 0;
+});
 
 function load() {
-  items.value = listInventory().filter(i => {
-    const c = (i.category || "").toLowerCase()
-    return c === "school equipment" || c === "school equipments"
-  })
-  selectedIds.value = new Set()
+  items.value = listInventory().filter((i) => {
+    const c = (i.category || "").toLowerCase();
+    return c === "school equipment" || c === "school equipments";
+  });
 }
 
-function toggle(id, checked) {
-  const s = new Set(selectedIds.value)
-  checked ? s.add(id) : s.delete(id)
-  selectedIds.value = s
-}
+const equipments = computed(() => items.value);
 
-function toggleAll(checked) {
-  const s = new Set()
-  if (checked) equipments.value.forEach(i => s.add(i.id))
-  selectedIds.value = s
-}
-
-const equipments = computed(() => items.value)
-const selectedArray = computed(() => Array.from(selectedIds.value))
-
-const allChecked = computed(() =>
-  equipments.value.length &&
-  selectedIds.value.size === equipments.value.length
-)
-
-function openModal(mode) {
-  if (!selectedArray.value.length) {
-    alert("Select at least one equipment item.")
-    return
-  }
-
-  if (mode === "return") {
-    const hasBorrowed = selectedArray.value.some(id => {
-      const item = equipments.value.find(i => i.id === id)
-      return item && (Number(item.borrowedQty) || 0) > 0
-    })
-
-    if (!hasBorrowed) {
-      alert("Selected items have nothing to return.")
-      return
-    }
-  }
-
-  modalMode.value = mode
-  modalQty.value = 1
-  modalOpen.value = true
+function openModal(mode, item) {
+  modalMode.value = mode;
+  currentItem.value = item;
+  modalQty.value = 1;
+  modalOpen.value = true;
 }
 
 function closeModal() {
-  modalOpen.value = false
+  modalOpen.value = false;
 }
 
 function confirmModal() {
-  const qty = Number(modalQty.value) || 0
+  const qty = Number(modalQty.value) || 0;
   if (qty <= 0) {
-    alert("Quantity must be at least 1.")
-    return
+    alert("Quantity must be at least 1.");
+    return;
   }
 
-  const max = Number(modalMax.value) || 0
-  if (max > 0 && qty > max) {
-    alert(`Max allowed is ${max}.`)
-    modalQty.value = max
-    return
+  if (qty > modalMax.value) {
+    alert(`Max allowed is ${modalMax.value}.`);
+    modalQty.value = modalMax.value;
+    return;
   }
 
   try {
     if (modalMode.value === "borrow") {
-// borrow EACH selected item
-      selectedArray.value.forEach(id => borrowEquipment(id, qty))
+      borrowEquipment(currentItem.value.id, qty);
     } else if (modalMode.value === "return") {
-selectedArray.value.forEach(id => returnEquipment(id, qty))
+      returnEquipment(currentItem.value.id, qty);
     }
 
-    load()
-    closeModal()
+    load();
+    modalOpen.value = false;
   } catch (e) {
-    alert(String(e.message || e))
+    alert(String(e.message || e));
   }
 }
 </script>
@@ -170,58 +120,48 @@ selectedArray.value.forEach(id => returnEquipment(id, qty))
   <h3 class="mb-4">School Equipment</h3>
 
   <!-- ACTION BAR -->
-  <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
-    <div class="text-muted">
-Borrow and return equipment items
-</div>
+  <div
+    class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2"
+  >
+    <div class="text-muted">Borrow and return equipment items</div>
 
     <div class="d-flex gap-2">
-      <button class="btn btn-primary" @click="openAdd">
-+ Add Equipment
-        </button>
-        <button class="btn btn-warning" @click="openModal('borrow')">
-          Borrow Selected
-        </button>
-        <button class="btn btn-success" @click="openModal('return')">
-          Return Selected
-</button>
+      <button class="btn btn-primary" @click="openAdd">+ Add Equipment</button>
     </div>
   </div>
 
   <!-- TABLE -->
   <div class="card shadow-sm">
-    <div class="card-body table-scroll">
+    <div class="table-responsive table-scroll">
       <table class="table table-hover align-middle mb-0">
         <thead class="table-light">
           <tr>
-<th style="width:48px">
-                <input
-                  type="checkbox"
-                  :checked="allChecked"
-                  @change="toggleAll($event.target.checked)"
-                />
-              </th>
             <th>Name</th>
             <th>Status</th>
-            <th style="width:120px">Available</th>
-            <th style="width:120px">Borrowed</th>
-                      </tr>
+            <th style="width: 120px">Available</th>
+            <th style="width: 120px">Borrowed</th>
+            <th style="width: 180px; text-align: center">Action</th>
+          </tr>
         </thead>
 
         <tbody>
           <tr v-for="e in equipments" :key="e.id">
-<td>
-                <input
-                  type="checkbox"
-                  :checked="selectedIds.has(e.id)"
-                  @change="toggle(e.id, $event.target.checked)"
-                />
-              </td>
             <td>{{ e.name }}</td>
             <td>{{ e.status }}</td>
             <td>{{ e.qty }}</td>
             <td>{{ Number(e.borrowedQty) || 0 }}</td>
-                      </tr>
+            <td>
+              <button
+                class="btn btn-warning me-1"
+                @click="openModal('borrow', e)"
+              >
+                Borrow
+              </button>
+              <button class="btn btn-success" @click="openModal('return', e)">
+                Return
+              </button>
+            </td>
+          </tr>
 
           <tr v-if="!equipments.length">
             <td colspan="5" class="text-center text-muted">
@@ -238,7 +178,11 @@ Borrow and return equipment items
     <div class="modal-custom">
       <div class="modal-header">
         <h5 class="mb-0">
-          {{ modalMode === "borrow" ? "Borrow Selected" : "Return Selected" }}
+          {{
+            modalMode === "borrow"
+              ? `Borrow: ${currentItem?.name}`
+              : `Return: ${currentItem?.name}`
+          }}
         </h5>
         <button class="btn-close" @click="closeModal"></button>
       </div>
@@ -258,9 +202,7 @@ Borrow and return equipment items
       </div>
 
       <div class="modal-footer">
-        <button class="btn btn-secondary" @click="closeModal">
-Cancel
-</button>
+        <button class="btn btn-secondary" @click="closeModal">Cancel</button>
         <button
           class="btn"
           :class="modalMode === 'borrow' ? 'btn-warning' : 'btn-success'"
@@ -289,27 +231,15 @@ Cancel
         />
 
         <label class="form-label">Quantity</label>
-        <input
-type="number"
-min="1"
-class="form-control"
-v-model="addQty"
-/>
+        <input type="number" min="1" class="form-control" v-model="addQty" />
       </div>
 
       <div class="modal-footer">
-        <button class="btn btn-warning" @click="closeAdd">
-Cancel
-</button>
-        <button class="btn btn-primary" @click="confirmAdd">
-Add
-</button>
-          </div>
+        <button class="btn btn-warning" @click="closeAdd">Cancel</button>
+        <button class="btn btn-primary" @click="confirmAdd">Add</button>
+      </div>
+    </div>
   </div>
-</div>
-
-
-
 </template>
 
 <style scoped>
@@ -327,7 +257,7 @@ Add
 .modal-backdrop-custom {
   position: fixed;
   inset: 0;
-  background: rgba(0,0,0,.35);
+  background: rgba(0, 0, 0, 0.35);
   display: grid;
   place-items: center;
   z-index: 2000;
