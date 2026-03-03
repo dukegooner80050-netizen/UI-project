@@ -1,145 +1,141 @@
 <script setup>
-import { ref, computed, onMounted, watch } from "vue"
-import { useRoute } from "vue-router"
+import { ref, computed, onMounted, watch } from "vue";
+import { useRoute } from "vue-router";
 import {
   listInventory,
   addItem,
   autoStatus,
   releaseOfficeConsumables,
-  restockOfficeSupplies
-} from "../services/inventory"
+  restockOfficeSupplies,
+} from "../services/inventory";
 
-const route = useRoute()
-
-const items = ref([])
-const selectedIds = ref(new Set())
+const route = useRoute();
+const currentItemId = ref(null);
+const currentItemName = ref("");
+const items = ref([]);
+const selectedIds = ref(new Set());
 
 // modal state
-const modalOpen = ref(false)
-const modalMode = ref("") // "release" | "restock"
-const modalQty = ref(1)
+const modalOpen = ref(false);
+const modalMode = ref(""); // "release" | "restock"
+const modalQty = ref(1);
 
-onMounted(load)
+onMounted(load);
 
-watch(() => route.query.course, load)
+watch(() => route.query.course, load);
 
 function load() {
-  items.value = listInventory().filter(i => i.category === "Uniforms")
-  selectedIds.value = new Set()
+  items.value = listInventory().filter((i) => i.category === "Uniforms");
+  selectedIds.value = new Set();
 }
 
-const course = computed(() => route.query.course || "ALL")
-const isAllView = computed(() => course.value === "ALL")
+const course = computed(() => route.query.course || "ALL");
+const isAllView = computed(() => course.value === "ALL");
 
 const uniforms = computed(() => {
-  if (isAllView.value) return items.value
-  return items.value.filter(i => i.subCategory === course.value)
-})
+  if (isAllView.value) return items.value;
+  return items.value.filter((i) => i.subCategory === course.value);
+});
+
+const maxqty = ref(0);
 
 // selection
 function toggle(id, checked) {
-  const s = new Set(selectedIds.value)
-  checked ? s.add(id) : s.delete(id)
-  selectedIds.value = s
+  const s = new Set(selectedIds.value);
+  checked ? s.add(id) : s.delete(id);
+  selectedIds.value = s;
 }
 
 function toggleAll(checked) {
-  const s = new Set()
-  if (checked) uniforms.value.forEach(i => s.add(i.id))
-  selectedIds.value = s
+  const s = new Set();
+  if (checked) uniforms.value.forEach((i) => s.add(i.id));
+  selectedIds.value = s;
 }
 
-const allChecked = computed(() =>
-    uniforms.value.length &&
-selectedIds.value.size === uniforms.value.length
-)
+const allChecked = computed(
+  () =>
+    uniforms.value.length && selectedIds.value.size === uniforms.value.length,
+);
 
 // ADD UNIFORM modal state
-const addModalOpen = ref(false)
-const addName = ref("")
-const addQty = ref(1)
+const addModalOpen = ref(false);
+const addName = ref("");
+const addQty = ref(1);
 
 function openAddUniform() {
-  addName.value = ""
-  addQty.value = 1
-  addModalOpen.value = true
+  addName.value = "";
+  addQty.value = 1;
+  addModalOpen.value = true;
 }
 
 function closeAddUniform() {
-  addModalOpen.value = false
+  addModalOpen.value = false;
 }
 
 function confirmAddUniform() {
-  const name = addName.value.trim()
-  const qty = Number(addQty.value) || 0
+  const name = addName.value.trim();
+  const qty = Number(addQty.value) || 0;
 
   if (!name) {
-    alert("Please enter a uniform name.")
-    return
+    alert("Please enter a uniform name.");
   }
   if (qty <= 0) {
-    alert("Quantity must be at least 1.")
-    return
+    alert("Quantity must be at least 1.");
+    modalQty.value = 1;
   }
 
   try {
-
     const newItem = autoStatus({
       name,
       category: "Uniforms",
       subCategory: course.value,
       qty,
-      status: "Available"
-    })
+      status: "Available",
+    });
 
-    addItem(newItem)
+    addItem(newItem);
 
-    load()
-    closeAddUniform()
+    load();
+    closeAddUniform();
   } catch (e) {
-    alert(String(e.message || e))
+    alert(String(e.message || e));
   }
 }
 
+const selectedArray = computed(() => Array.from(selectedIds.value));
 
-const selectedArray = computed(() => Array.from(selectedIds.value))
-
-
-function openModal(mode) {
-  if (!selectedArray.value.length) {
-    alert("Select at least one uniform first.")
-    return
-  }
-
-  modalMode.value = mode
-  modalQty.value = 1
-  modalOpen.value = true
+function openModal(mode, item) {
+  modalMode.value = mode;
+  modalQty.value = item.qty;
+  currentItemId.value = item.id;
+  currentItemName.value = item.name;
+  modalOpen.value = true;
 }
 
 function closeModal() {
-  modalOpen.value = false
+  modalOpen.value = false;
 }
 
-
 function confirmModal() {
-  const qty = Number(modalQty.value) || 0
+  const qty = Number(modalQty.value) || 0;
+
   if (qty <= 0) {
-    alert("Quantity must be at least 1.")
-    return
+    alert("Quantity must be at least 1.");
+    modalQty.value = 1;
+    return;
   }
 
   try {
     if (modalMode.value === "release") {
-
-      releaseOfficeConsumables(selectedArray.value, qty)
+      releaseOfficeConsumables([currentItemId.value], qty);
     } else if (modalMode.value === "restock") {
-      restockOfficeSupplies(selectedArray.value, qty)
+      restockOfficeSupplies([currentItemId.value], qty);
     }
 
-    load()
-    closeModal()
+    load();
+    closeModal();
   } catch (e) {
-    alert(String(e.message || e))
+    alert(String(e.message || e));
   }
 }
 </script>
@@ -151,28 +147,18 @@ function confirmModal() {
     </h3>
 
     <!-- ACTION BAR -->
-    <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
+    <div
+      class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2"
+    >
       <div class="text-muted">
-        {{ isAllView ? "Release allowed only on main page" : "Restock per subcategory" }}
+        {{
+          isAllView
+            ? "Release allowed only on main page"
+            : "Restock per subcategory"
+        }}
       </div>
 
       <div class="d-flex gap-2">
-<button
-          v-if="isAllView"
-          class="btn btn-primary"
-          @click="openModal('release')"
-        >
-          Release Selected
-        </button>
-
-        <button
-          v-if="!isAllView"
-          class="btn btn-success"
-          @click="openModal('restock')"
-        >
-          Restock Selected
-        </button>
-
         <button
           v-if="!isAllView"
           class="btn btn-primary"
@@ -189,34 +175,40 @@ function confirmModal() {
         <table class="table table-hover align-middle mb-0">
           <thead class="table-light">
             <tr>
-<th style="width:48px">
-                <input
-                  type="checkbox"
-                  :checked="allChecked"
-                  @change="toggleAll($event.target.checked)"
-                />
-              </th>
               <th>Name</th>
               <th>Course</th>
               <th>Status</th>
-              <th style="width:120px">Qty</th>
-                          </tr>
+              <th style="width: 120px">Qty</th>
+              <th style="width: 150px" class="text-center">Action</th>
+            </tr>
           </thead>
 
           <tbody>
             <tr v-for="u in uniforms" :key="u.id">
-<td>
-                <input
-                  type="checkbox"
-                  :checked="selectedIds.has(u.id)"
-                  @change="toggle(u.id, $event.target.checked)"
-                />
-              </td>
               <td>{{ u.name }}</td>
               <td>{{ u.subCategory }}</td>
               <td>{{ u.status }}</td>
               <td>{{ u.qty }}</td>
-                          </tr>
+              <td class="text-center">
+                <!-- ALL VIEW → Release -->
+                <button
+                  v-if="isAllView"
+                  class="btn btn-primary btn-sm"
+                  @click="openModal('release', u)"
+                >
+                  Release
+                </button>
+
+                <!-- COURSE VIEW → Restock -->
+                <button
+                  v-else
+                  class="btn btn-success"
+                  @click="openModal('restock', u)"
+                >
+                  Restock
+                </button>
+              </td>
+            </tr>
 
             <tr v-if="!uniforms.length">
               <td colspan="5" class="text-center text-muted">
@@ -233,28 +225,36 @@ function confirmModal() {
       <div class="modal-custom">
         <div class="modal-header">
           <h5 class="mb-0">
-            {{ modalMode === "release" ? "Release Selected" : "Restock Selected" }}
+            {{
+              modalMode === "release"
+                ? `Release: ${currentItemName}`
+                : `Restock: ${currentItemName}`
+            }}
           </h5>
           <button class="btn-close" @click="closeModal"></button>
         </div>
 
         <div class="modal-body">
-                    <label class="form-label">Quantity</label>
+          <p class="mb-2">
+            {{
+              modalMode === "release"
+                ? `Are you sure you want to release this uniform?`
+                : `Are you sure you want to restock this uniform?`
+            }}
+          </p>
+          <label class="form-label">Quantity</label>
           <input
             type="number"
             min="1"
-                        class="form-control"
+            :max="modalQty"
+            class="form-control"
             v-model="modalQty"
           />
         </div>
 
         <div class="modal-footer">
-          <button class="btn btn-warning" @click="closeModal">
-Cancel
-</button>
-          <button class="btn btn-primary" @click="confirmModal">
-Confirm
-</button>
+          <button class="btn btn-warning" @click="closeModal">Cancel</button>
+          <button class="btn btn-primary" @click="confirmModal">Confirm</button>
         </div>
       </div>
     </div>
@@ -262,7 +262,7 @@ Confirm
 
   <!-- ADD UNIFORM MODAL -->
   <div v-if="addModalOpen" class="modal-backdrop-custom">
-    <div class="modal-custom">
+    <form class="modal-custom" @submit.prevent="confirmAddUniform">
       <div class="modal-header">
         <h5 class="mb-0">Add Uniform ({{ course }})</h5>
         <button class="btn-close" @click="closeAddUniform"></button>
@@ -277,25 +277,15 @@ Confirm
         />
 
         <label class="form-label">Quantity</label>
-        <input
-type="number"
-min="1"
-class="form-control"
-v-model="addQty"
-/>
+        <input type="number" min="1" class="form-control" v-model="addQty" />
       </div>
 
       <div class="modal-footer">
-        <button class="btn btn-warning" @click="closeAddUniform">
-Cancel
-</button>
-        <button class="btn btn-primary" @click="confirmAddUniform">
-Add
-</button>
+        <button class="btn btn-warning" @click="closeAddUniform">Cancel</button>
+        <button class="btn btn-primary" type="submit">Add</button>
       </div>
-      </div>
-</div>
-
+    </form>
+  </div>
 </template>
 
 <style scoped>
@@ -313,7 +303,7 @@ Add
 .modal-backdrop-custom {
   position: fixed;
   inset: 0;
-  background: rgba(0,0,0,.35);
+  background: rgba(0, 0, 0, 0.35);
   display: grid;
   place-items: center;
   z-index: 2000;
