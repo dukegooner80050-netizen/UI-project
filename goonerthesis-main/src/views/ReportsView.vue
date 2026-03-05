@@ -92,7 +92,7 @@ function printReport() {
   if (typeof window === "undefined") return
 
   const originalTitle = document.title
-  document.title = "GOONMAN" // <=== TITLE "CIMS Report"
+  document.title = "DEV. PHASE" // <=== TITLE "CIMS Report"
 
   const restore = () => {
     document.title = originalTitle

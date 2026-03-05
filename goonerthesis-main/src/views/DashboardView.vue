@@ -1,199 +1,190 @@
 <script setup>
-import { ref, computed, onMounted, watch, onBeforeUnmount } from "vue";
-import { useRouter } from "vue-router";
-import { listInventory } from "../services/inventory";
-import { listRequests } from "../services/requests";
-import { getLogs } from "../services/storage";
-import { getCurrentUser } from "../services/storage";
+import { ref, computed, onMounted, watch, onBeforeUnmount } from "vue"
+import { useRouter } from "vue-router"
+import { listInventory } from "../services/inventory"
+import { listRequests } from "../services/requests"
+import { getLogs } from "../services/storage"
+import { getCurrentUser } from "../services/storage"
 
 // Chart.js
-import Chart from "chart.js/auto";
+import Chart from "chart.js/auto"
 
-import FullCalendar from "@fullcalendar/vue3";
-import dayGridPlugin from "@fullcalendar/daygrid";
-import interactionPlugin from "@fullcalendar/interaction";
+import FullCalendar from "@fullcalendar/vue3"
+import dayGridPlugin from "@fullcalendar/daygrid"
+import interactionPlugin from "@fullcalendar/interaction"
 
 /* ===================== ROUTER ===================== */
-const router = useRouter();
+const router = useRouter()
 
 /* ===================== DASHBOARD FEATURES FOR REG. USER ===================== */
-const user = computed(() => getCurrentUser());
-const isAdmin = computed(
-  () => (user.value?.role || "").toLowerCase() === "admin",
-);
+const user = computed(() => getCurrentUser())
+const isAdmin = computed(() => (user.value?.role || "").toLowerCase() === "admin")
 
 /* ===================== STATE ===================== */
-const items = ref([]);
-const requests = ref([]);
-const logs = ref([]);
-const lastUpdated = ref("");
+const items = ref([])
+const requests = ref([])
+const logs = ref([])
+const lastUpdated = ref("")
+const selectedDayRequests = ref([])
+const selectedDay = ref("")
+const showDayModal = ref(false)
 /* ===================== CLOCK ===================== */
-const now = ref(null); // Date object (PH time from API)
-const clockStatus = ref("syncing"); // "syncing" | "synced" | "offline"
-let clockTimer = null;
-let resyncTimer = null;
+const now = ref(null)                 // Date object (PH time from API)
+const clockStatus = ref("syncing")    // "syncing" | "synced" | "offline"
+let clockTimer = null
+let resyncTimer = null
 
 async function fetchPHTime() {
   const urls = [
     "https://worldtimeapi.org/api/timezone/Asia/Manila",
-    "https://timeapi.io/api/Time/current/zone?timeZone=Asia/Manila",
-  ];
+    "https://timeapi.io/api/Time/current/zone?timeZone=Asia/Manila"
+  ]
 
   for (const url of urls) {
     try {
-      const res = await fetch(url, { cache: "no-store" });
-      if (!res.ok) continue;
+      const res = await fetch(url, { cache: "no-store" })
+      if (!res.ok) continue
 
-      const data = await res.json();
-      const iso = data.datetime || data.dateTime;
-      if (!iso) continue;
+      const data = await res.json()
+      const iso = data.datetime || data.dateTime
+      if (!iso) continue
 
-      now.value = new Date(iso);
-      clockStatus.value = "synced";
-      return true;
+      now.value = new Date(iso)
+      clockStatus.value = "synced"
+      return true
     } catch (e) {
       // try next URL
     }
   }
 
   // If both APIs fail, mark offline and fall back (optional)
-  clockStatus.value = "offline";
-  if (!now.value) now.value = new Date();
-  return false;
+  clockStatus.value = "offline"
+  if (!now.value) now.value = new Date()
+  return false
 }
 
 function tickPH() {
-  if (!now.value) return;
-  now.value = new Date(now.value.getTime() + 1000);
+  if (!now.value) return
+  now.value = new Date(now.value.getTime() + 1000)
 }
 /* ===================== LOAD ===================== */
 function loadAll() {
-  items.value = listInventory();
-  requests.value = listRequests();
-  logs.value = getLogs();
-  lastUpdated.value = new Date().toLocaleString();
+  items.value = listInventory()
+  requests.value = listRequests()
+  logs.value = getLogs()
+  lastUpdated.value = new Date().toLocaleString()
 }
 
 function refresh() {
-  loadAll();
-  renderCharts();
+  loadAll()
+  renderCharts()
 }
 
 onMounted(async () => {
-  loadAll();
-  renderCharts();
+  loadAll()
+  renderCharts()
 
-  await fetchPHTime();
-  clockTimer = setInterval(tickPH, 1000);
+  await fetchPHTime()
+  clockTimer = setInterval(tickPH, 1000)
 
-  // resync every minute to keep it accurate
-  resyncTimer = setInterval(fetchPHTime, 60_000);
-});
+  // resync every minute to keep accurate
+  resyncTimer = setInterval(fetchPHTime, 60_000)
+})
 
 /* ===================== SUMMARY ===================== */
 const totalItems = computed(() =>
-  items.value.reduce((a, i) => a + (Number(i.qty) || 0), 0),
-);
+  items.value.reduce((a, i) => a + (Number(i.qty) || 0), 0)
+)
 
-const lowStockCount = computed(
-  () => items.value.filter((i) => (Number(i.qty) || 0) <= 5).length,
-);
+const lowStockCount = computed(() =>
+  items.value.filter(i => (Number(i.qty) || 0) <= 5).length
+)
 
-const pendingRequests = computed(
-  () =>
-    requests.value.filter((r) => (r.status || "").toLowerCase() === "pending")
-      .length,
-);
+const pendingRequests = computed(() =>
+  requests.value.filter(r => (r.status || "").toLowerCase() === "pending").length
+)
 
 /* ===================== USER TRACKING (MY REQUESTS) ===================== */
 const myRequests = computed(() => {
-  const key = (user.value?.username || user.value?.name || "").toLowerCase();
-  if (!key) return [];
-  return requests.value.filter(
-    (r) => (r.requester || "").toLowerCase() === key,
-  );
-});
+  const key = (user.value?.username || user.value?.name || "").toLowerCase()
+  if (!key) return []
+  return requests.value.filter(r => (r.requester || "").toLowerCase() === key)
+})
 
-const myPendingCount = computed(
-  () =>
-    myRequests.value.filter((r) => (r.status || "").toLowerCase() === "pending")
-      .length,
-);
+const myPendingCount = computed(() =>
+  myRequests.value.filter(r => (r.status || "").toLowerCase() === "pending").length
+)
 
-const myApprovedCount = computed(
-  () =>
-    myRequests.value.filter(
-      (r) => (r.status || "").toLowerCase() === "approved",
-    ).length,
-);
+const myApprovedCount = computed(() =>
+  myRequests.value.filter(r => (r.status || "").toLowerCase() === "approved").length
+)
 
-const myRejectedCount = computed(
-  () =>
-    myRequests.value.filter(
-      (r) => (r.status || "").toLowerCase() === "rejected",
-    ).length,
-);
+const myRejectedCount = computed(() =>
+  myRequests.value.filter(r => (r.status || "").toLowerCase() === "rejected").length
+)
 
 /* ===================== LISTS (CARDS) ===================== */
 const lowStockItems = computed(() =>
-  items.value.filter((i) => (Number(i.qty) || 0) <= 5).slice(0, 20),
-);
+  items.value
+    .filter(i => (Number(i.qty) || 0) <= 5)
+    .slice(0, 20)
+)
 
 const recentRequestsList = computed(() => {
-  const base = isAdmin.value ? requests.value : myRequests.value;
-  return [...base].slice(-5).reverse();
-});
+  const base = isAdmin.value ? requests.value : myRequests.value
+  return [...base].slice(-5).reverse()
+})
 
-const recentLogsList = computed(() => [...logs.value].slice(0, 5)); // logs.js unshift() so newest first
+const recentLogsList = computed(() => [...logs.value].slice(0, 5))
 
 /* ===================== CHART DATA ===================== */
 const statusCounts = computed(() => {
-  const map = {};
+  const map = {}
   for (const i of items.value) {
-    const s = i.status || "Unknown";
-    map[s] = (map[s] || 0) + 1;
+    const s = i.status || "Unknown"
+    map[s] = (map[s] || 0) + 1
   }
-  return map;
-});
+  return map
+})
 
 const categoryCounts = computed(() => {
-  const map = {};
+  const map = {}
   for (const i of items.value) {
-    const cat = i.category || "Uncategorized";
-    map[cat] = (map[cat] || 0) + (Number(i.qty) || 0);
+    const cat = i.category || "Uncategorized"
+    map[cat] = (map[cat] || 0) + (Number(i.qty) || 0)
   }
-  return map;
-});
+  return map
+})
 
 /* ===================== CHARTS ===================== */
-const statusCanvas = ref(null);
-const categoryCanvas = ref(null);
+const statusCanvas = ref(null)
+const categoryCanvas = ref(null)
 
-let statusChart = null;
-let categoryChart = null;
+let statusChart = null
+let categoryChart = null
 
 function destroyCharts() {
   if (statusChart) {
-    statusChart.destroy();
-    statusChart = null;
+    statusChart.destroy()
+    statusChart = null
   }
   if (categoryChart) {
-    categoryChart.destroy();
-    categoryChart = null;
+    categoryChart.destroy()
+    categoryChart = null
   }
 }
 
 function renderCharts() {
   // STATUS PIE
   if (statusCanvas.value) {
-    const data = statusCounts.value;
-    if (statusChart) statusChart.destroy();
+    const data = statusCounts.value
+    if (statusChart) statusChart.destroy()
 
     statusChart = new Chart(statusCanvas.value, {
       type: "pie",
       data: {
         labels: Object.keys(data),
-        datasets: [{ data: Object.values(data) }],
+        datasets: [{ data: Object.values(data) }]
       },
       options: {
         responsive: true,
@@ -201,124 +192,157 @@ function renderCharts() {
         plugins: {
           legend: {
             position: window.innerWidth < 768 ? "bottom" : "right",
-            labels: { boxWidth: 14, padding: 14, usePointStyle: true },
-          },
-        },
-      },
-    });
+            labels: { boxWidth: 14, padding: 14, usePointStyle: true }
+          }
+        }
+      }
+    })
   }
 
   // CATEGORY DOUGHNUT
   if (categoryCanvas.value) {
-    const data = categoryCounts.value;
-    if (categoryChart) categoryChart.destroy();
+    const data = categoryCounts.value
+    if (categoryChart) categoryChart.destroy()
 
     categoryChart = new Chart(categoryCanvas.value, {
       type: "doughnut",
       data: {
         labels: Object.keys(data),
-        datasets: [{ data: Object.values(data) }],
+        datasets: [{ data: Object.values(data) }]
       },
       options: {
         responsive: true,
         maintainAspectRatio: false,
         plugins: {
-          legend: {
-            position: window.innerWidth < 768 ? "bottom" : "right",
-            labels: { boxWidth: 14, padding: 14, usePointStyle: true },
-          },
-        },
-      },
-    });
+        legend: {
+          position: window.innerWidth < 768 ? "bottom" : "right",
+          labels: { boxWidth: 14, padding: 14, usePointStyle: true }
+        }
+       }
+      }
+    })
   }
 }
 
 watch([items, requests], () => {
-  renderCharts();
-});
+  renderCharts()
+})
 
 onBeforeUnmount(() => {
-  destroyCharts();
-  if (clockTimer) clearInterval(clockTimer);
-  if (resyncTimer) clearInterval(resyncTimer);
-});
+  destroyCharts()
+  if (clockTimer) clearInterval(clockTimer)
+  if (resyncTimer) clearInterval(resyncTimer)
+})
 
 /* ===================== CALENDAR ===================== */
 function toISODate(dateLike) {
-  if (!dateLike) return null;
-  if (/^\d{4}-\d{2}-\d{2}/.test(dateLike)) return dateLike.slice(0, 10);
+  if (!dateLike) return null
 
-  const d = new Date(dateLike);
-  if (Number.isNaN(d.getTime())) return null;
-  return d.toISOString().slice(0, 10);
+  if (/^\d{4}-\d{2}-\d{2}/.test(dateLike)) {
+    return dateLike.slice(0, 10)
+  }
+
+  const d = new Date(dateLike)
+  if (Number.isNaN(d.getTime())) return null
+
+  const year = d.getFullYear()
+  const month = String(d.getMonth() + 1).padStart(2, "0")
+  const day = String(d.getDate()).padStart(2, "0")
+
+  return `${year}-${month}-${day}`
 }
 
 const calendarEvents = computed(() => {
-  const source = isAdmin.value ? requests.value : myRequests.value;
+  const source = isAdmin.value ? requests.value : myRequests.value
 
-  return source
-    .map((r) => {
-      const iso = toISODate(r.date);
-      if (!iso) return null;
+  const map = {}
 
-      const status = (r.status || "").toLowerCase();
-      const title = `${r.itemName || "Request"} x${r.qty || 0}`;
+  for (const r of source) {
+    const iso = toISODate(r.date)
+    if (!iso) continue
 
-      return {
-        id: String(r.id),
-        title,
-        start: iso,
-        allDay: true,
-        extendedProps: {
-          status: r.status || "Unknown",
-          category: r.category || "",
-          purpose: r.purpose || "",
-          requester: r.requester || "",
-        },
-        color:
-          status === "pending"
-            ? "#f59e0b"
-            : status === "approved"
-              ? "#16a34a"
-              : status === "rejected"
-                ? "#dc2626"
-                : "#6b7280",
-      };
-    })
-    .filter(Boolean);
-});
+    if (!map[iso]) {
+      map[iso] = {
+        pending: [],
+        approved: [],
+        rejected: []
+      }
+    }
+
+    const status = (r.status || "").toLowerCase()
+
+    if (status === "pending") map[iso].pending.push(r)
+    else if (status === "approved") map[iso].approved.push(r)
+    else if (status === "rejected") map[iso].rejected.push(r)
+  }
+
+  return Object.entries(map).map(([date, data]) => ({
+    start: date,
+    allDay: true,
+    display: "block",
+    title: "",
+
+    extendedProps: {
+      pending: data.pending,
+      approved: data.approved,
+      rejected: data.rejected
+    }
+  }))
+})
+
 
 const calendarOptions = computed(() => ({
   plugins: [dayGridPlugin, interactionPlugin],
   initialView: "dayGridMonth",
-  height: window.innerWidth < 768 ? "auto" : 360,
+  height: "auto",
   contentHeight: "auto",
   headerToolbar: {
     left: "prev,next today",
     center: "title",
-    right: "dayGridMonth",
+    right: "dayGridMonth"
   },
+
   events: calendarEvents.value,
+
   eventClick(info) {
-    const p = info.event.extendedProps || {};
-    alert(
-      `Request Details\n\n` +
-        `Item: ${info.event.title}\n` +
-        `Status: ${p.status}\n` +
-        `Category: ${p.category}\n` +
-        `Requester: ${p.requester}\n` +
-        `Purpose: ${p.purpose}`,
-    );
+    const p = info.event.extendedProps
+
+    selectedDayRequests.value = [
+      ...(p.pending || []),
+      ...(p.approved || []),
+      ...(p.rejected || [])
+    ]
+
+    selectedDay.value = info.event.startStr
+    showDayModal.value = true
   },
-}));
+
+  eventContent(arg) {
+    const p = arg.event.extendedProps
+
+    const pending = p.pending?.length || 0
+    const approved = p.approved?.length || 0
+    const rejected = p.rejected?.length || 0
+
+    const container = document.createElement("div")
+
+    container.innerHTML = `
+      <div style="display:flex;gap:4px;flex-wrap:wrap;font-size:12px">
+        ${pending ? `<span class="badge bg-warning text-dark">${pending}</span>` : ""}
+        ${approved ? `<span class="badge bg-success">${approved}</span>` : ""}
+        ${rejected ? `<span class="badge bg-danger">${rejected}</span>` : ""}
+      </div>
+    `
+
+    return { domNodes: [container] }
+  }
+}))
+
 </script>
 
 <template>
   <div>
-    <!-- Header + last updated + refresh -->
-    <div
-      class="d-flex justify-content-between align-items-start flex-wrap gap-2 mb-4"
-    >
+    <div class="d-flex justify-content-between align-items-start flex-wrap gap-2 mb-4">
       <div>
         <h3 class="mb-1">Dashboard</h3>
         <div class="text-muted small">
@@ -327,43 +351,34 @@ const calendarOptions = computed(() => ({
       </div>
     </div>
 
-    <!-- CLOCK CARD  -->
-    <div class="row mb-4">
-      <div class="col-12">
-        <div class="card shadow-sm">
-          <div class="card-body">
-            <div
-              class="d-flex justify-content-between align-items-center flex-wrap gap-2"
-            >
-              <div>
-                <div class="text-muted small">Current time</div>
-                <div class="fw-bold" style="font-size: 2.25rem; line-height: 1">
-                  {{ now ? now.toLocaleTimeString("en-PH") : "—" }}
-                </div>
-                <div class="text-muted">
-                  {{ now ? now.toLocaleDateString("en-PH") : "—" }}
-                </div>
-              </div>
+<!-- CLOCK CARD  -->
+<div class="row mb-4">
+  <div class="col-12">
+    <div class="card shadow-sm">
+      <div class="card-body">
+        <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
+          <div>
+            <div class="text-muted small">Current time</div>
+            <div class="fw-bold" style="font-size: 2.25rem; line-height: 1;">
+              {{ now ? now.toLocaleTimeString("en-PH") : "—" }}
+            </div>
+            <div class="text-muted">
+              {{ now ? now.toLocaleDateString("en-PH") : "—" }}
+            </div>
+          </div>
 
-              <div class="text-muted small text-end">
-                <div>
-                  <!-- if you kept clockStatus from earlier -->
-                  <span v-if="typeof clockStatus !== 'undefined'">
-                    ({{
-                      clockStatus === "synced"
-                        ? "Online"
-                        : clockStatus === "syncing"
-                          ? "Syncing"
-                          : "Offline"
-                    }})
-                  </span>
-                </div>
-              </div>
+          <div class="text-muted small text-end">
+            <div>
+              <span v-if="typeof clockStatus !== 'undefined'">
+                ({{ clockStatus === "synced" ? "Online" : clockStatus === "syncing" ? "Syncing" : "Offline" }})
+              </span>
             </div>
           </div>
         </div>
       </div>
     </div>
+  </div>
+</div>
 
     <!-- SUMMARY CARDS -->
     <div class="row mb-4">
@@ -444,9 +459,9 @@ const calendarOptions = computed(() => ({
         <div class="card shadow-sm flex-fill">
           <div class="card-body">
             <h6 class="mb-3">Inventory by Category</h6>
-            <div class="chart-wrap">
-              <canvas ref="categoryCanvas"></canvas>
-            </div>
+              <div class="chart-wrap">
+                <canvas ref="categoryCanvas"></canvas>
+              </div>
           </div>
         </div>
       </div>
@@ -457,49 +472,32 @@ const calendarOptions = computed(() => ({
           <div class="card-body">
             <div class="d-flex justify-content-between align-items-center mb-3">
               <h6 class="mb-0">Requests Calendar</h6>
-              <div
-                class="small d-flex flex-wrap align-items-center calendar-legend"
-              >
-                <span class="d-flex align-items-center gap-1">
-                  <span
-                    class="rounded-circle"
-                    style="
-                      width: 10px;
-                      height: 10px;
-                      background: #f59e0b;
-                      display: inline-block;
-                    "
-                  ></span>
-                  <span class="text-muted">Pending — awaiting approval</span>
-                </span>
+              <div class="small d-flex flex-wrap align-items-center calendar-legend">
+  <span class="d-flex align-items-center gap-1">
+    <span
+      class="rounded-circle"
+      style="width:10px;height:10px;background:#f59e0b;display:inline-block"
+    ></span>
+    <span class="text-muted">Pending — awaiting approval</span>
+  </span>
 
-                <span class="d-flex align-items-center gap-1">
-                  <span
-                    class="rounded-circle"
-                    style="
-                      width: 10px;
-                      height: 10px;
-                      background: #16a34a;
-                      display: inline-block;
-                    "
-                  ></span>
-                  <span class="text-muted">Approved — inventory updated</span>
-                </span>
+  <span class="d-flex align-items-center gap-1">
+    <span
+      class="rounded-circle"
+      style="width:10px;height:10px;background:#16a34a;display:inline-block"
+    ></span>
+    <span class="text-muted">Approved — inventory updated</span>
+  </span>
 
-                <span class="d-flex align-items-center gap-1">
-                  <span
-                    class="rounded-circle"
-                    style="
-                      width: 10px;
-                      height: 10px;
-                      background: #dc2626;
-                      display: inline-block;
-                    "
-                  ></span>
-                  <span class="text-muted">Rejected — request denied</span>
-                </span>
-              </div>
-            </div>
+  <span class="d-flex align-items-center gap-1">
+    <span
+      class="rounded-circle"
+      style="width:10px;height:10px;background:#dc2626;display:inline-block"
+    ></span>
+    <span class="text-muted">Rejected — request denied</span>
+  </span>
+</div>
+          </div>
             <FullCalendar :options="calendarOptions" />
           </div>
         </div>
@@ -514,10 +512,7 @@ const calendarOptions = computed(() => ({
           <h6 class="text-danger mb-3">⚠ Low Stock Alerts</h6>
 
           <ul class="list-group list-group-flush">
-            <li
-              v-if="lowStockItems.length === 0"
-              class="list-group-item text-muted"
-            >
+            <li v-if="lowStockItems.length === 0" class="list-group-item text-muted">
               No low stock items
             </li>
 
@@ -528,9 +523,7 @@ const calendarOptions = computed(() => ({
             >
               <div>
                 <div class="fw-semibold">{{ i.name }}</div>
-                <small class="text-muted">{{
-                  i.category || "Uncategorized"
-                }}</small>
+                <small class="text-muted">{{ i.category || "Uncategorized" }}</small>
               </div>
 
               <span class="badge bg-danger rounded-pill">
@@ -547,10 +540,7 @@ const calendarOptions = computed(() => ({
           <h6 class="mb-3">🕘 Recent Requests</h6>
 
           <ul class="list-group list-group-flush">
-            <li
-              v-if="recentRequestsList.length === 0"
-              class="list-group-item text-muted"
-            >
+            <li v-if="recentRequestsList.length === 0" class="list-group-item text-muted">
               No recent requests
             </li>
 
@@ -559,13 +549,10 @@ const calendarOptions = computed(() => ({
               :key="r.id"
               class="list-group-item"
             >
-              <div
-                class="d-flex justify-content-between align-items-start gap-2"
-              >
+              <div class="d-flex justify-content-between align-items-start gap-2">
                 <div>
                   <div class="fw-semibold">
-                    {{ r.itemName }}
-                    <span class="text-muted">× {{ r.qty }}</span>
+                    {{ r.itemName }} <span class="text-muted">× {{ r.qty }}</span>
                   </div>
                   <small class="text-muted">
                     {{ r.category }} • {{ r.date || "—" }}
@@ -574,15 +561,13 @@ const calendarOptions = computed(() => ({
 
                 <span
                   class="badge"
-                  :class="
-                    (r.status || '').toLowerCase() === 'pending'
-                      ? 'bg-warning text-dark'
-                      : (r.status || '').toLowerCase() === 'approved'
-                        ? 'bg-success'
-                        : (r.status || '').toLowerCase() === 'rejected'
-                          ? 'bg-danger'
-                          : 'bg-secondary'
-                  "
+                  :class="(r.status || '').toLowerCase() === 'pending'
+                    ? 'bg-warning text-dark'
+                    : (r.status || '').toLowerCase() === 'approved'
+                      ? 'bg-success'
+                      : (r.status || '').toLowerCase() === 'rejected'
+                        ? 'bg-danger'
+                        : 'bg-secondary'"
                 >
                   {{ r.status || "Unknown" }}
                 </span>
@@ -601,29 +586,19 @@ const calendarOptions = computed(() => ({
             <h6 class="mb-3">Recent Activity Logs</h6>
 
             <ul class="list-group list-group-flush">
-              <li
-                v-if="recentLogsList.length === 0"
-                class="list-group-item text-muted"
-              >
+              <li v-if="recentLogsList.length === 0" class="list-group-item text-muted">
                 No activity logs yet
               </li>
 
-              <li
-                v-for="l in recentLogsList"
-                :key="l.id"
-                class="list-group-item"
-              >
-                <div
-                  class="d-flex justify-content-between align-items-start gap-2"
-                >
+              <li v-for="l in recentLogsList" :key="l.id" class="list-group-item">
+                <div class="d-flex justify-content-between align-items-start gap-2">
                   <div>
                     <div class="fw-semibold">
                       {{ l.action }} — {{ l.item }}
                       <span class="text-muted">× {{ l.quantity }}</span>
                     </div>
                     <div class="text-muted small">
-                      {{ l.performedBy }} ({{ l.role }}) • {{ l.date }}
-                      {{ l.time }}
+                      {{ l.performedBy }} ({{ l.role }}) • {{ l.date }} {{ l.time }}
                     </div>
                   </div>
                 </div>
@@ -631,10 +606,7 @@ const calendarOptions = computed(() => ({
             </ul>
 
             <div class="mt-3">
-              <button
-                class="btn btn-sm btn-outline-secondary"
-                @click="router.push('/logs')"
-              >
+              <button class="btn btn-sm btn-outline-secondary" @click="router.push('/logs')">
                 View All Logs
               </button>
             </div>
@@ -642,35 +614,97 @@ const calendarOptions = computed(() => ({
         </div>
       </div>
     </div>
+
   </div>
+  <!-- DAY REQUEST MODAL -->
+<div
+  v-if="showDayModal"
+  class="modal fade show"
+  style="display:block;background:rgba(0,0,0,0.4)"
+>
+  <div class="modal-dialog modal-lg">
+    <div class="modal-content">
+
+      <div class="modal-header">
+        <h5 class="modal-title">
+          Requests on {{ selectedDay }}
+        </h5>
+
+        <button class="btn-close" @click="showDayModal=false"></button>
+      </div>
+
+      <div class="modal-body modal-scroll">
+
+        <ul class="list-group">
+
+          <li
+            v-for="r in selectedDayRequests"
+            :key="r.id"
+            class="list-group-item d-flex justify-content-between"
+          >
+            <div>
+              <strong>{{ r.itemName }}</strong> × {{ r.qty }}
+              <br>
+              <small class="text-muted">
+                {{ r.requester }} • {{ r.category }}
+              </small>
+            </div>
+
+            <span
+              class="badge"
+              :class="(r.status || '').toLowerCase() === 'pending'
+                ? 'bg-warning text-dark'
+                : (r.status || '').toLowerCase() === 'approved'
+                ? 'bg-success'
+                : 'bg-danger'"
+            >
+              {{ r.status }}
+            </span>
+
+          </li>
+
+        </ul>
+
+      </div>
+
+    </div>
+  </div>
+</div>
 </template>
 
 <style scoped>
 /* keeps cards from causing sideways scroll */
-* {
-  max-width: 100%;
-}
+* { max-width: 100%; }
 
-.chart-wrap {
+.chart-wrap{
   position: relative;
   width: 100%;
-  max-width: 520px; /* looks good on desktop */
+  max-width: 520px;
   margin: 0 auto;
-  height: 320px; /* chart height */
+  height: 320px;
 }
 
-@media (max-width: 767.98px) {
-  .chart-wrap {
-    height: 260px; /* smaller for phones */
+@media (max-width: 767.98px){
+  .chart-wrap{
+    height: 260px;
     max-width: 100%;
   }
 }
 
 /* Calendar legend: allow wrapping on small screens */
-.calendar-legend {
+.calendar-legend{
   gap: 12px;
 }
-.calendar-legend span {
+.calendar-legend span{
   white-space: normal;
+}
+.calendar-container{
+  max-height: 420px;
+  overflow-y: auto;
+}
+
+.modal-scroll{
+  max-height: 400px;
+  overflow-y: auto;
 }
 </style>

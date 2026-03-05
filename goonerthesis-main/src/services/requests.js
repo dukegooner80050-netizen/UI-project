@@ -85,25 +85,25 @@ export function approveRequest(id, adminName = "") {
   }
 
   if (!item.transactions) {
-    item.transactions = [];
-  }
+  item.transactions = [];
+}
 
-  item.transactions.push({
-    borrower: req.requester,
-    qty,
-    location: "Office", // or get from request if stored
-    borrowedAt: new Date().toISOString(),
-    returnedAt: null,
-  });
-  item.borrower = req.requester;
-  // ✅ UPDATE INVENTORY HERE
+item.transactions.push({
+  borrower: req.requester,
+  qty,
+  location: "Office", // or get from request if stored
+  borrowedAt: new Date().toISOString(),
+  returnedAt: null,
+});
+item.borrower = req.requester;
+  //  UPDATE INVENTORY HERE
   item.qty -= qty;
   item.borrowedQty = (Number(item.borrowedQty) || 0) + qty;
 
-  // ✅ AUTO STATUS
-  autoStatus(item);
+  //  AUTO STATUS
+autoStatus(item);
 
-  // ✅ UPDATE REQUEST
+  //  UPDATE REQUEST
   req.status = "Approved";
   req.processedAt = new Date().toISOString();
   req.processedBy = adminName;
@@ -116,7 +116,7 @@ export function approveRequest(id, adminName = "") {
   return req;
 }
 
-// ✅ CLEAN BORROW FUNCTION (Placed OUTSIDE approveRequest)
+//  CLEAN BORROW FUNCTION (Placed OUTSIDE approveRequest)
 function applyBorrow(item, qty) {
   item.qty = (Number(item.qty) || 0) - qty;
   item.borrowedQty = (Number(item.borrowedQty) || 0) + qty;
@@ -124,16 +124,17 @@ function applyBorrow(item, qty) {
   autoStatus(item);
 }
 
-// ✅ Auto status helper (needed for applyBorrow)
+//  Auto status helper (needed for applyBorrow)
 function autoStatus(item) {
   const qty = Number(item.qty) || 0;
   const borrowed = Number(item.borrowedQty) || 0;
 
   const isConsumable =
-    item.category === "Office Supplies" && item.subCategory === "Consumables";
+    item.category === "Office Supplies" &&
+    item.subCategory === "Consumables";
 
   if (isConsumable) {
-    // ✅ Consumables NEVER use Borrowed status
+    //  Consumables NEVER use Borrowed status
     item.borrowedQty = 0;
     item.borrower = "";
     item.location = "";
@@ -149,7 +150,7 @@ function autoStatus(item) {
     return;
   }
 
-  // ✅ Non-Consumables
+  //  Non-Consumables
   if (borrowed > 0) {
     item.status = "Borrowed";
   } else if (qty === 0) {
@@ -160,6 +161,7 @@ function autoStatus(item) {
     item.status = "Available";
   }
 }
+
 
 export function rejectRequest(id, reason = "", adminName = "") {
   const requests = getRequests();

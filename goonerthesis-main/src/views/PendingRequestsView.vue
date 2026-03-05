@@ -37,7 +37,7 @@ function approve(id) {
 
 function reject(id) {
   const reason = prompt("Reason for rejection (required):")
-  if (reason === null) return // user cancelled
+  if (reason === null) return 
 
   try {
     rejectRequest(id, reason, admin?.name || admin?.username || "Admin")

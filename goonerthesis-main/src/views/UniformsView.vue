@@ -17,7 +17,7 @@ const selectedIds = ref(new Set());
 
 // modal state
 const modalOpen = ref(false);
-const modalMode = ref(""); // "release" | "restock"
+const modalMode = ref("");
 const modalQty = ref(1);
 
 onMounted(load);

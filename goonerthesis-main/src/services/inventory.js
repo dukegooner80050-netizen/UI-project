@@ -1,14 +1,11 @@
 import { getInventory, saveInventory, clearInventory } from "./storage";
 import { logAction } from "./logs";
-import { getCurrentUser } from "./storage";
+import { getCurrentUser } from "./storage"
 
 export function autoStatus(item) {
   const qty = Number(item.qty) || 0;
 
-  if (
-    item.category === "Office Supplies" &&
-    item.subCategory === "Consumables"
-  ) {
+  if (item.category === "Office Supplies" && item.subCategory === "Consumables") {
     if (qty <= 0) item.status = "Out of Stock";
     else if (qty <= 5) item.status = "Low Stock";
     else item.status = "Available";
@@ -30,11 +27,10 @@ export function addItem(item) {
   const nameKey = (item.name || "").trim().toLowerCase();
   const catKey = (item.category || "").trim().toLowerCase();
   const subKey = (item.subCategory || "").trim().toLowerCase();
-  const existing = all.find(
-    (i) =>
-      (i.name || "").trim().toLowerCase() === nameKey &&
-      (i.category || "").trim().toLowerCase() === catKey &&
-      (i.subCategory || "").trim().toLowerCase() === subKey,
+    const existing = all.find(i =>
+    (i.name || "").trim().toLowerCase() === nameKey &&
+    (i.category || "").trim().toLowerCase() === catKey &&
+    (i.subCategory || "").trim().toLowerCase() === subKey
   );
   const incomingQty = Number(item.qty) || 0;
 
@@ -58,7 +54,7 @@ export function addItem(item) {
 
 export function updateItem(id, patch) {
   const all = getInventory();
-  const idx = all.findIndex((i) => i.id === id);
+  const idx = all.findIndex(i => i.id === id);
   if (idx === -1) return null;
   all[idx] = { ...all[idx], ...patch };
   saveInventory(all);
@@ -66,7 +62,7 @@ export function updateItem(id, patch) {
 }
 
 export function removeItem(id) {
-  const all = getInventory().filter((i) => i.id !== id);
+  const all = getInventory().filter(i => i.id !== id);
   saveInventory(all);
   return all;
 }
@@ -77,23 +73,23 @@ export function clearAllInventory() {
 
 export function borrowEquipment(id, qty) {
   const all = getInventory();
-  const item = all.find((i) => i.id === id);
+  const item = all.find(i => i.id === id);
   const q = Number(qty) || 0;
 
-  const user = getCurrentUser(); // 👈 get who is borrowing
+  const user = getCurrentUser(); // get who is borrowing
 
   if (!item) throw new Error("ITEM_NOT_FOUND");
   if (q <= 0) throw new Error("INVALID_QTY");
   if (q > (Number(item.qty) || 0)) throw new Error("NOT_ENOUGH_STOCK");
 
-  // ✅ reduce stock
+  // reduce stock
   item.qty = (Number(item.qty) || 0) - q;
   item.borrowedQty = (Number(item.borrowedQty) || 0) + q;
 
-  // ✅ ADD THIS — track borrower
+  // track borrower
   item.borrower = user?.name || user?.username || "Unknown";
 
-  // ✅ Optional — mark where it moved
+  // mark where it moved
   item.location = `Borrowed by ${item.borrower}`;
 
   item.status = item.qty === 0 ? "Borrowed" : "Available";
@@ -107,7 +103,7 @@ export function borrowEquipment(id, qty) {
 
 export function returnEquipment(itemId, qtyToReturn) {
   const inventory = getInventory();
-  const item = inventory.find((i) => i.id === itemId);
+  const item = inventory.find(i => i.id === itemId);
 
   if (!item) throw new Error("ITEM_NOT_FOUND");
 
@@ -163,8 +159,8 @@ export function restockOfficeSupplies(ids, qty) {
   const q = Number(qty) || 0;
   if (q <= 0) throw new Error("INVALID_QTY");
 
-  ids.forEach((id) => {
-    const item = all.find((i) => i.id === id);
+  ids.forEach(id => {
+    const item = all.find(i => i.id === id);
     if (!item) return;
     item.qty = (Number(item.qty) || 0) + q;
     autoStatus(item);
@@ -180,8 +176,8 @@ export function releaseOfficeConsumables(ids, qty) {
   const q = Number(qty) || 0;
   if (q <= 0) throw new Error("INVALID_QTY");
 
-  ids.forEach((id) => {
-    const item = all.find((i) => i.id === id);
+  ids.forEach(id => {
+    const item = all.find(i => i.id === id);
     if (!item) return;
     item.qty = Math.max(0, (Number(item.qty) || 0) - q);
     autoStatus(item);
@@ -198,15 +194,14 @@ export function borrowNonConsumables(ids, qty) {
   if (q <= 0) throw new Error("INVALID_QTY");
 
   for (const id of ids) {
-    const item = all.find((i) => i.id === id);
+    const item = all.find(i => i.id === id);
     if (!item) continue;
     const available = Number(item.qty) || 0;
-    if (q > available)
-      throw new Error(`NOT_ENOUGH_STOCK:${item.name}:${available}`);
+    if (q > available) throw new Error(`NOT_ENOUGH_STOCK:${item.name}:${available}`);
   }
 
-  ids.forEach((id) => {
-    const item = all.find((i) => i.id === id);
+  ids.forEach(id => {
+    const item = all.find(i => i.id === id);
     if (!item) return;
     item.qty = (Number(item.qty) || 0) - q;
     item.borrowedQty = (Number(item.borrowedQty) || 0) + q;
@@ -223,19 +218,18 @@ export function returnNonConsumables(ids, qty) {
   const q = Number(qty) || 0;
   if (q <= 0) throw new Error("INVALID_QTY");
 
-  const hasReturnable = ids.some((id) => {
-    const item = all.find((i) => i.id === id);
+  const hasReturnable = ids.some(id => {
+    const item = all.find(i => i.id === id);
     return item && (Number(item.borrowedQty) || 0) > 0;
   });
   if (!hasReturnable) throw new Error("NOTHING_TO_RETURN");
 
-  ids.forEach((id) => {
-    const item = all.find((i) => i.id === id);
+  ids.forEach(id => {
+    const item = all.find(i => i.id === id);
     if (!item) return;
 
     const borrowed = Number(item.borrowedQty) || 0;
-    if (q > borrowed)
-      throw new Error(`RETURN_TOO_MUCH:${item.name}:${borrowed}`);
+    if (q > borrowed) throw new Error(`RETURN_TOO_MUCH:${item.name}:${borrowed}`);
 
     item.qty = (Number(item.qty) || 0) + q;
     item.borrowedQty = borrowed - q;

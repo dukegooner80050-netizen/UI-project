@@ -156,12 +156,10 @@ function clearAll() {
               </tr>
             </template>
 
-            <tr
-              v-if="
-                isBorrowedView ? !borrowedRows.length : !filteredItems.length
-              "
-            >
-              <td colspan="7" class="text-center text-muted">No items found</td>
+            <tr v-if="isBorrowedView ? !borrowedRows.length : !filteredItems.length">
+              <td colspan="7" class="text-center text-muted">
+                No items found
+              </td>
             </tr>
           </tbody>
         </table>

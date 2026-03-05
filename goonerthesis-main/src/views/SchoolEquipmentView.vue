@@ -13,7 +13,7 @@ const currentItem = ref(null);
 
 // MODAL STATE
 const modalOpen = ref(false);
-const modalMode = ref(""); //for "borrow" and "return"
+const modalMode = ref("");
 const modalQty = ref(1);
 const addOpen = ref(false);
 const addName = ref("");

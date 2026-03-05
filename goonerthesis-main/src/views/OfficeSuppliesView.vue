@@ -172,19 +172,19 @@ function confirmModal() {
                 <td>{{ i.status }}</td>
                 <td>{{ i.qty }}</td>
                 <td class="d-flex gap-2">
-                  <button
-                    class="btn btn-primary"
-                    @click="openQtyModal('release', i)"
-                  >
-                    Release
-                  </button>
+<button
+  class="btn btn-primary"
+  @click="openQtyModal('release', i)"
+>
+  Release
+</button>
 
-                  <button
-                    class="btn btn-success"
-                    @click="openQtyModal('restock', i)"
-                  >
-                    Restock
-                  </button>
+<button
+  class="btn btn-success"
+  @click="openQtyModal('restock', i)"
+>
+  Restock
+</button>
                 </td>
               </tr>
 
@@ -227,19 +227,19 @@ function confirmModal() {
                 <td>{{ i.qty }}</td>
                 <td>{{ Number(i.borrowedQty) || 0 }}</td>
                 <td class="d-flex gap-2">
-                  <button
-                    class="btn btn-primary"
-                    @click="openQtyModal('borrow', i)"
-                  >
-                    Borrow
-                  </button>
+<button
+  class="btn btn-primary"
+  @click="openQtyModal('borrow', i)"
+>
+  Borrow
+</button>
 
-                  <button
-                    class="btn btn-secondary"
-                    @click="openQtyModal('return', i)"
-                  >
-                    Return
-                  </button>
+<button
+  class="btn btn-secondary"
+  @click="openQtyModal('return', i)"
+>
+  Return
+</button>
                 </td>
               </tr>
 
@@ -257,16 +257,16 @@ function confirmModal() {
       <div class="modal-custom">
         <div class="modal-header">
           <h5 class="mb-0">
-            {{
-              modalMode === "restock"
-                ? `Restock: ${currentItem?.name}`
-                : modalMode === "release"
-                  ? `Release: ${currentItem?.name}`
-                  : modalMode === "borrow"
-                    ? `Borrow: ${currentItem?.name}`
-                    : `Return: ${currentItem?.name}`
-            }}
-          </h5>
+  {{
+    modalMode === "restock"
+      ? `Restock: ${currentItem?.name}`
+      : modalMode === "release"
+      ? `Release: ${currentItem?.name}`
+      : modalMode === "borrow"
+      ? `Borrow: ${currentItem?.name}`
+      : `Return: ${currentItem?.name}`
+  }}
+</h5>
           <button class="btn-close" @click="closeModal"></button>
         </div>
 
