@@ -214,7 +214,7 @@ onBeforeUnmount(() => {
     z-index: 1600;
     transform: translateX(-105%);
     transition: transform 0.2s ease;
-    width: 260px; /* keep normal width */
+    width: 260px;
   }
   .sidebar.mobileOpen {
     transform: translateX(0);

@@ -28,6 +28,8 @@ const lastUpdated = ref("")
 const selectedDayRequests = ref([])
 const selectedDay = ref("")
 const showDayModal = ref(false)
+const lowStockModal = ref(false)
+const showPendingRequestsModal = ref(false)
 /* ===================== CLOCK ===================== */
 const now = ref(null)                 // Date object (PH time from API)
 const clockStatus = ref("syncing")    // "syncing" | "synced" | "offline"
@@ -91,6 +93,11 @@ onMounted(async () => {
   resyncTimer = setInterval(fetchPHTime, 60_000)
 })
 
+/* ===================== CARD MODALS ===================== */
+function openLowStockModal() {
+  lowStockModal.value = true
+}
+
 /* ===================== SUMMARY ===================== */
 const totalItems = computed(() =>
   items.value.reduce((a, i) => a + (Number(i.qty) || 0), 0)
@@ -132,10 +139,15 @@ const lowStockItems = computed(() =>
 
 const recentRequestsList = computed(() => {
   const base = isAdmin.value ? requests.value : myRequests.value
-  return [...base].slice(-5).reverse()
+  return base
+    .filter(r => (r.status || "").toLowerCase() === "pending")
+    .slice(-5)
+    .reverse()
 })
 
-const recentLogsList = computed(() => [...logs.value].slice(0, 5))
+const recentLogsList = computed(() =>
+  [...(logs.value || [])].slice(-5).reverse()
+)
 
 /* ===================== CHART DATA ===================== */
 const statusCounts = computed(() => {
@@ -393,23 +405,32 @@ const calendarOptions = computed(() => ({
           </div>
         </div>
 
-        <div class="col-md-4 mb-3 mb-md-0">
-          <div class="card shadow-sm">
-            <div class="card-body">
-              <h6 class="text-muted">Low Stock Items</h6>
-              <h3 class="mb-0 text-danger">{{ lowStockCount }}</h3>
-            </div>
-          </div>
-        </div>
+<div class="col-md-4 mb-3 mb-md-0">
+  <div class="card shadow-sm cursor-pointer" @click="openLowStockModal">
+    <div class="card-body d-flex justify-content-between align-items-center">
+      <div>
+        <h6 class="text-muted mb-1">Low Stock Items</h6>
+        <h3 class="mb-0 text-danger">{{ lowStockItems.length }}</h3>
+      </div>
+      <i class="bi bi-exclamation-triangle fs-2 text-danger"></i>
+    </div>
+  </div>
+</div>
 
-        <div class="col-md-4">
-          <div class="card shadow-sm">
-            <div class="card-body">
-              <h6 class="text-muted">Pending Requests</h6>
-              <h3 class="mb-0 text-warning">{{ pendingRequests }}</h3>
-            </div>
-          </div>
-        </div>
+<div class="col-md-4">
+  <div 
+    class="card shadow-sm cursor-pointer"
+    @click="showPendingRequestsModal = true"
+  >
+    <div class="card-body d-flex justify-content-between align-items-center">
+      <div>
+        <h6 class="text-muted mb-1">Pending Requests</h6>
+        <h3 class="mb-0 text-warning">{{ pendingRequests }}</h3>
+      </div>
+      <i class="bi bi-list-check fs-2 text-warning"></i>
+    </div>
+  </div>
+</div>
       </template>
 
       <!-- User cards -->
@@ -443,178 +464,120 @@ const calendarOptions = computed(() => ({
       </template>
     </div>
 
-    <!-- CHARTS + CALENDAR -->
-    <div class="row">
-      <!-- LEFT: 2 CHARTS (admin only) -->
-      <div class="col-md-6 mb-4 d-flex flex-column" v-if="isAdmin">
-        <div class="card shadow-sm mb-4 flex-fill">
-          <div class="card-body">
-            <h6 class="mb-3">Inventory Status Distribution</h6>
-            <div class="chart-wrap">
-              <canvas ref="statusCanvas"></canvas>
-            </div>
-          </div>
-        </div>
-
-        <div class="card shadow-sm flex-fill">
-          <div class="card-body">
-            <h6 class="mb-3">Inventory by Category</h6>
-              <div class="chart-wrap">
-                <canvas ref="categoryCanvas"></canvas>
-              </div>
-          </div>
-        </div>
-      </div>
-
-      <!-- RIGHT: CALENDAR + Clock (admin only) -->
-      <div v-if="isAdmin" class="col-md-6 mb-4">
-        <div class="card shadow-sm h-100">
-          <div class="card-body">
-            <div class="d-flex justify-content-between align-items-center mb-3">
-              <h6 class="mb-0">Requests Calendar</h6>
-              <div class="small d-flex flex-wrap align-items-center calendar-legend">
-  <span class="d-flex align-items-center gap-1">
-    <span
-      class="rounded-circle"
-      style="width:10px;height:10px;background:#f59e0b;display:inline-block"
-    ></span>
-    <span class="text-muted">Pending — awaiting approval</span>
-  </span>
-
-  <span class="d-flex align-items-center gap-1">
-    <span
-      class="rounded-circle"
-      style="width:10px;height:10px;background:#16a34a;display:inline-block"
-    ></span>
-    <span class="text-muted">Approved — inventory updated</span>
-  </span>
-
-  <span class="d-flex align-items-center gap-1">
-    <span
-      class="rounded-circle"
-      style="width:10px;height:10px;background:#dc2626;display:inline-block"
-    ></span>
-    <span class="text-muted">Rejected — request denied</span>
-  </span>
-</div>
-          </div>
-            <FullCalendar :options="calendarOptions" />
-          </div>
+<!-- CHARTS (SIDE BY SIDE) -->
+<div v-if="isAdmin" class="row">
+  <!-- Chart 1 -->
+  <div class="col-md-6 mb-3">
+    <div class="card shadow-sm h-100">
+      <div class="card-body">
+        <h6 class="mb-3">Inventory Status Distribution</h6>
+        <div class="chart-wrap">
+          <canvas ref="statusCanvas"></canvas>
         </div>
       </div>
     </div>
+  </div>
+
+  <!-- Chart 2 -->
+  <div class="col-md-6 mb-3">
+    <div class="card shadow-sm h-100">
+      <div class="card-body">
+        <h6 class="mb-3">Inventory by Category</h6>
+        <div class="chart-wrap">
+          <canvas ref="categoryCanvas"></canvas>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- CALENDAR + RECENT ACTIVITY -->
+<div v-if="isAdmin" class="row">
+  <!-- Calendar (Left or Right) -->
+  <div class="col-lg-8 col-md-12 mb-3 mb-lg-0">
+    <div class="card shadow-sm h-100">
+      <div class="card-body">
+        <h6 class="mb-3">Requests Calendar</h6>
+        <FullCalendar :options="calendarOptions" />
+      </div>
+    </div>
+  </div>
+
+  <!-- Recent Activity Logs -->
+  <div class="col-lg-4 col-md-12">
+    <div class="card shadow-sm h-100">
+      <div class="card-body">
+        <h6 class="mb-3">Recent Activity Logs</h6>
+        <ul class="list-group list-group-flush">
+          <li v-if="recentLogsList.length === 0" class="list-group-item text-muted">
+            No activity logs yet
+          </li>
+          <li v-for="l in recentLogsList" :key="l.id" class="list-group-item">
+            <div class="d-flex justify-content-between align-items-start gap-2">
+              <div>
+                <div class="fw-semibold">
+                  {{ l.action }} — {{ l.item }}
+                  <span class="text-muted">× {{ l.quantity }}</span>
+                </div>
+                <div class="text-muted small">
+                  {{ l.performedBy }} ({{ l.role }}) • {{ l.date }} {{ l.time }}
+                </div>
+              </div>
+            </div>
+          </li>
+        </ul>
+        <div class="mt-3">
+          <button class="btn btn-sm btn-outline-secondary" @click="router.push('/logs')">
+            View All Logs
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
 
     <!-- LOW STOCK + RECENT REQUESTS -->
     <div class="row mt-2">
-      <!-- Low stock (admin only) -->
-      <div class="col-md-6 mb-4" v-if="isAdmin">
-        <div class="card p-3 shadow-sm h-100">
-          <h6 class="text-danger mb-3">⚠ Low Stock Alerts</h6>
 
-          <ul class="list-group list-group-flush">
-            <li v-if="lowStockItems.length === 0" class="list-group-item text-muted">
-              No low stock items
-            </li>
+<!-- PENDING REQUESTS CARD -->
+<template v-if="!isAdmin">
+  <div class="col-12 mb-3">
+    <div class="card p-3 shadow-sm h-100">
+      <h6 class="mb-3">Pending Requests</h6>
 
-            <li
-              v-for="i in lowStockItems"
-              :key="i.id"
-              class="list-group-item d-flex justify-content-between align-items-center"
-            >
-              <div>
-                <div class="fw-semibold">{{ i.name }}</div>
-                <small class="text-muted">{{ i.category || "Uncategorized" }}</small>
-              </div>
+      <ul class="list-group list-group-flush">
+        <li v-if="recentRequestsList.length === 0" class="list-group-item text-center text-muted">
+          No pending requests
+        </li>
 
-              <span class="badge bg-danger rounded-pill">
-                {{ Number(i.qty) || 0 }}
-              </span>
-            </li>
-          </ul>
-        </div>
-      </div>
-
-      <!-- Recent requests (everyone) -->
-      <div :class="isAdmin ? 'col-md-6 mb-4' : 'col-12 mb-4'">
-        <div class="card p-3 shadow-sm h-100">
-          <h6 class="mb-3">🕘 Recent Requests</h6>
-
-          <ul class="list-group list-group-flush">
-            <li v-if="recentRequestsList.length === 0" class="list-group-item text-muted">
-              No recent requests
-            </li>
-
-            <li
-              v-for="r in recentRequestsList"
-              :key="r.id"
-              class="list-group-item"
-            >
-              <div class="d-flex justify-content-between align-items-start gap-2">
-                <div>
-                  <div class="fw-semibold">
-                    {{ r.itemName }} <span class="text-muted">× {{ r.qty }}</span>
-                  </div>
-                  <small class="text-muted">
-                    {{ r.category }} • {{ r.date || "—" }}
-                  </small>
-                </div>
-
-                <span
-                  class="badge"
-                  :class="(r.status || '').toLowerCase() === 'pending'
-                    ? 'bg-warning text-dark'
-                    : (r.status || '').toLowerCase() === 'approved'
-                      ? 'bg-success'
-                      : (r.status || '').toLowerCase() === 'rejected'
-                        ? 'bg-danger'
-                        : 'bg-secondary'"
-                >
-                  {{ r.status || "Unknown" }}
-                </span>
-              </div>
-            </li>
-          </ul>
-        </div>
-      </div>
-    </div>
-
-    <!-- Recent logs (admin only) -->
-    <div v-if="isAdmin" class="row">
-      <div class="col-12 mb-4">
-        <div class="card shadow-sm">
-          <div class="card-body">
-            <h6 class="mb-3">Recent Activity Logs</h6>
-
-            <ul class="list-group list-group-flush">
-              <li v-if="recentLogsList.length === 0" class="list-group-item text-muted">
-                No activity logs yet
-              </li>
-
-              <li v-for="l in recentLogsList" :key="l.id" class="list-group-item">
-                <div class="d-flex justify-content-between align-items-start gap-2">
-                  <div>
-                    <div class="fw-semibold">
-                      {{ l.action }} — {{ l.item }}
-                      <span class="text-muted">× {{ l.quantity }}</span>
-                    </div>
-                    <div class="text-muted small">
-                      {{ l.performedBy }} ({{ l.role }}) • {{ l.date }} {{ l.time }}
-                    </div>
-                  </div>
-                </div>
-              </li>
-            </ul>
-
-            <div class="mt-3">
-              <button class="btn btn-sm btn-outline-secondary" @click="router.push('/logs')">
-                View All Logs
-              </button>
-            </div>
+        <li 
+          v-for="r in recentRequestsList" 
+          :key="r.id" 
+          class="list-group-item d-flex justify-content-between align-items-start"
+        >
+          <div>
+            <strong>{{ r.itemName }}</strong>
+            <br>
+            <small class="text-muted">{{ r.category }} • {{ r.date || "—" }}</small>
           </div>
-        </div>
-      </div>
-    </div>
 
+          <span
+            class="badge"
+            :class="(r.status || '').toLowerCase() === 'pending'
+              ? 'bg-warning text-dark'
+              : (r.status || '').toLowerCase() === 'approved'
+              ? 'bg-success'
+              : 'bg-danger'"
+          >
+            {{ r.status }}
+          </span>
+        </li>
+      </ul>
+    </div>
+  </div>
+</template>
+    </div>
   </div>
   <!-- DAY REQUEST MODAL -->
 <div
@@ -670,6 +633,76 @@ const calendarOptions = computed(() => ({
     </div>
   </div>
 </div>
+
+<!-- LOW STOCK MODAL -->
+<div v-if="lowStockModal" class="modal-backdrop-custom">
+  <div class="modal-custom">
+
+    <!-- Header -->
+    <div class="modal-header">
+      <h5 class="mb-0">Low Stock Items</h5>
+      <button class="btn-close" @click="lowStockModal = false"></button>
+    </div>
+
+    <!-- Body -->
+    <div class="modal-body modal-scroll">
+      <ul class="list-group">
+        <!-- Item rows -->
+        <li 
+          v-for="item in lowStockItems" 
+          :key="item.id" 
+          class="list-group-item d-flex justify-content-between align-items-start"
+        >
+          <div>
+            <strong>{{ item.name }}</strong><br>
+            <small class="text-muted">{{ item.category }}</small>
+          </div>
+          <span class="badge bg-danger rounded-pill">{{ item.qty }}</span>
+        </li>
+
+        <!-- Empty state -->
+        <li v-if="!lowStockItems.length" class="list-group-item text-center text-muted">
+          No low stock items 🎉
+        </li>
+      </ul>
+    </div>
+
+  </div>
+</div>
+
+<!-- PENDING REQUESTS MODAL FOR ADMIN -->
+<div v-if="showPendingRequestsModal" class="modal-backdrop-custom">
+  <div class="modal-custom">
+    <div class="modal-header">
+      <h5 class="mb-0">Pending Requests</h5>
+      <button class="btn-close" @click="showPendingRequestsModal=false"></button>
+    </div>
+
+    <div class="modal-body modal-scroll">
+      <ul class="list-group">
+        <li v-if="recentRequestsList.length === 0" class="list-group-item text-center text-muted">
+          No pending requests
+        </li>
+
+        <li v-for="r in recentRequestsList" :key="r.id" class="list-group-item d-flex justify-content-between align-items-start">
+          <div>
+            <strong>{{ r.itemName }}</strong><br>
+            <small class="text-muted">{{ r.category }} • {{ r.date || "—" }}</small>
+          </div>
+          <span class="badge" 
+            :class="(r.status || '').toLowerCase() === 'pending'
+              ? 'bg-warning text-dark'
+              : (r.status || '').toLowerCase() === 'approved'
+              ? 'bg-success'
+              : 'bg-danger'"
+          >
+            {{ r.status }}
+          </span>
+        </li>
+      </ul>
+    </div>
+  </div>
+</div>
 </template>
 
 <style scoped>
@@ -707,4 +740,59 @@ const calendarOptions = computed(() => ({
   max-height: 400px;
   overflow-y: auto;
 }
+.modal-backdrop-custom {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.35);
+  display: grid;
+  place-items: center;
+  z-index: 2000;
+  padding: 16px;
+}
+
+.modal-custom {
+  background: #fff;
+  border-radius: 12px;
+  max-width: 700px;
+  width: 100%;
+  max-height: 80%;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  box-shadow: 0 18px 50px rgba(0,0,0,0.25);
+}
+
+.modal-header,
+.modal-footer {
+  padding: 12px 16px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  border-bottom: 1px solid #dee2e6;
+}
+
+.modal-body {
+  padding: 16px;
+  overflow-y: auto;
+}
+
+.table-scroll {
+  max-height: 400px;
+  overflow-y: auto;
+}
+
+.table-scroll thead th {
+  position: sticky;
+  top: 0;
+  background: #f8f9fa;
+  z-index: 2;
+  box-shadow: 0 1px 0 #dee2e6;
+}
+
+.card-body ul {
+  max-height: 400px;
+  overflow-y: auto;
+}
+
 </style>

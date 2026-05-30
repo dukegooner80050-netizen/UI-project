@@ -7,7 +7,17 @@ import {
 import { logAction } from "./logs";
 
 export function listRequests() {
-  return getRequests();
+  const reqs = getRequests();
+
+  return reqs.filter(r => {
+    return (
+      r &&
+      typeof r === "object" &&
+      Array.isArray(r.items) &&
+      r.items.length > 0 &&
+      r.requester
+    );
+  });
 }
 
 export function createRequest({
@@ -16,13 +26,14 @@ export function createRequest({
   category,
   itemType,
   qty,
+  location,
   purpose,
   requester,
   role,
 }) {
   const q = Number(qty) || 0;
 
-  if (!itemName || !category || !itemType || !purpose || q <= 0) {
+  if (!itemName || !category || !itemType || !purpose || !location || q <= 0) {
     throw new Error("INVALID_REQUEST");
   }
 
@@ -35,6 +46,7 @@ export function createRequest({
     category,
     itemType,
     qty: q,
+    location,
     purpose,
     requester: requester || "User",
     role: role || "",
@@ -72,8 +84,53 @@ export function approveRequest(id, adminName = "") {
     throw new Error("REQUEST_ALREADY_PROCESSED");
   }
 
-  const inv = getInventory();
+const inv = getInventory();
 
+// ✅ SUPPORT BOTH: batch AND old single requests
+if (req.items) {
+  // 🔥 NEW BATCH SYSTEM
+  for (const reqItem of req.items) {
+    const item = inv.find((i) => i.id === reqItem.itemId);
+
+    if (!item) throw new Error("ITEM_NOT_FOUND");
+
+    const qty = Number(reqItem.qty) || 0;
+
+    if (qty > (Number(item.qty) || 0)) {
+      throw new Error("NOT_ENOUGH_STOCK");
+    }
+
+    const isConsumable =
+      item.category === "Office Supplies" &&
+      item.subCategory === "Consumables";
+
+    if (!isConsumable) {
+      if (!item.transactions) item.transactions = [];
+
+      item.transactions.push({
+        borrower: req.requester,
+        qty,
+        location: req.location,
+        borrowedAt: new Date().toISOString(),
+        returnedAt: null,
+      });
+    }
+
+    item.borrower = req.requester;
+
+    // 🔥 UPDATE STOCK
+    item.qty -= qty;
+
+    if (!isConsumable) {
+      item.borrowedQty = (Number(item.borrowedQty) || 0) + qty;
+    }
+
+    autoStatus(item);
+    logAction("APPROVE_REQUEST", item, qty);
+  }
+
+} else {
+  // 🟡 OLD SINGLE REQUEST (fallback)
   const item = inv.find((i) => i.id === req.itemId);
 
   if (!item) throw new Error("ITEM_NOT_FOUND");
@@ -84,36 +141,20 @@ export function approveRequest(id, adminName = "") {
     throw new Error("NOT_ENOUGH_STOCK");
   }
 
-  if (!item.transactions) {
-  item.transactions = [];
-}
-
-item.transactions.push({
-  borrower: req.requester,
-  qty,
-  location: "Office", // or get from request if stored
-  borrowedAt: new Date().toISOString(),
-  returnedAt: null,
-});
-item.borrower = req.requester;
-  //  UPDATE INVENTORY HERE
   item.qty -= qty;
-  item.borrowedQty = (Number(item.borrowedQty) || 0) + qty;
-
-  //  AUTO STATUS
-autoStatus(item);
-
-  //  UPDATE REQUEST
-  req.status = "Approved";
-  req.processedAt = new Date().toISOString();
-  req.processedBy = adminName;
-
-  saveInventory(inv);
-  saveRequests(requests);
+  autoStatus(item);
 
   logAction("APPROVE_REQUEST", item, qty);
+}
 
-  return req;
+req.status = "Approved";
+req.processedAt = new Date().toISOString();
+req.processedBy = adminName;
+
+saveInventory(inv);
+saveRequests(requests);
+
+return req;
 }
 
 //  CLEAN BORROW FUNCTION (Placed OUTSIDE approveRequest)
@@ -180,4 +221,18 @@ export function rejectRequest(id, reason = "", adminName = "") {
 
   saveRequests(requests);
   return req;
+}
+
+export function createRequestBatch(batch) {
+  if (!batch || !Array.isArray(batch.items) || batch.items.length === 0) {
+    throw new Error("INVALID_BATCH");
+  }
+
+  const requests = getRequests();
+
+  requests.push(batch);
+
+  saveRequests(requests);
+
+  return batch;
 }

@@ -19,9 +19,11 @@ const borrowedRows = computed(() => {
   const rows = [];
 
   items.value.forEach((item) => {
-    if (!item.transactions) return;
+    if (viewMode.value === "LOCATIONS" && item.category !== "School Equipment") {
+      return;
+    }
 
-    item.transactions
+    (item.transactions || [])
       .filter((t) => !t.returnedAt)
       .forEach((t) => {
         rows.push({
@@ -110,51 +112,63 @@ function clearAll() {
       <div class="card-body table-scroll">
         <table class="table table-hover align-middle">
           <thead class="table-light">
-            <tr>
-              <th>Item Name</th>
-              <th>Category</th>
-              <th>Status</th>
+<tr>
+  <th>Item Name</th>
 
-              <th v-if="!isBorrowedView && !isLocationView">Qty</th>
+  <th v-if="!isBorrowedView && !isLocationView">Category</th>
+  <th v-if="!isBorrowedView && !isLocationView">Status</th>
+  <th v-if="!isBorrowedView && !isLocationView">Qty</th>
 
-              <th v-if="isBorrowedView">Borrowed Qty</th>
+  <!-- Borrowed View -->
+  <template v-if="isBorrowedView">
+    <th>Category</th>
+    <th>Borrowed Qty</th>
+    <th>Borrower</th>
+    <th>Location</th>
+    <th>Date</th>
+  </template>
 
-              <th v-if="isBorrowedView || isLocationView">Borrower</th>
-              <th v-if="isBorrowedView || isLocationView">Location</th>
-              <th v-if="isBorrowedView || isLocationView">Transaction Date</th>
-            </tr>
+  <!-- Location View -->
+  <template v-if="isLocationView">
+    <th>Borrower</th>
+    <th>Location</th>
+    <th>Qty</th>
+    <th>Date</th>
+  </template>
+</tr>
           </thead>
 
           <tbody>
             <!-- NORMAL VIEW -->
-            <template v-if="!isBorrowedView">
-              <tr v-for="i in filteredItems" :key="i.id">
-                <td>{{ i.name }}</td>
-                <td>{{ i.category }}</td>
-                <td>{{ i.status }}</td>
-
-                <td v-if="!isLocationView">
-                  {{ i.qty }}
-                </td>
-
-                <td v-if="isLocationView">
-                  {{ i.location || "—" }}
-                </td>
-              </tr>
-            </template>
-
+<template v-if="!isBorrowedView && !isLocationView">
+  <tr v-for="i in filteredItems" :key="i.id">
+    <td>{{ i.name }}</td>
+    <td>{{ i.category }}</td>
+    <td>{{ i.status }}</td>
+    <td>{{ i.qty }}</td>
+  </tr>
+</template>
             <!-- BORROWED VIEW -->
-            <template v-else>
-              <tr v-for="row in borrowedRows" :key="row.id">
-                <td>{{ row.name }}</td>
-                <td>{{ row.category }}</td>
-                <td>{{ row.status }}</td>
-                <td>{{ row.qty }}</td>
-                <td>{{ row.borrower }}</td>
-                <td>{{ row.location }}</td>
-                <td>{{ new Date(row.date).toLocaleString() }}</td>
-              </tr>
-            </template>
+<template v-else-if="isBorrowedView">
+  <tr v-for="row in borrowedRows" :key="row.id">
+    <td>{{ row.name }}</td>
+    <td>{{ row.category }}</td>
+    <td>{{ row.qty }}</td>
+    <td>{{ row.borrower }}</td>
+    <td>{{ row.location }}</td>
+    <td>{{ new Date(row.date).toLocaleString() }}</td>
+  </tr>
+</template>
+            <!-- LOCATION VIEW -->
+<template v-else-if="isLocationView">
+  <tr v-for="row in borrowedRows" :key="row.id">
+    <td>{{ row.name }}</td>
+    <td>{{ row.borrower }}</td>
+    <td>{{ row.location }}</td>
+    <td>{{ row.qty }}</td>
+    <td>{{ new Date(row.date).toLocaleString() }}</td>
+  </tr>
+</template>
 
             <tr v-if="isBorrowedView ? !borrowedRows.length : !filteredItems.length">
               <td colspan="7" class="text-center text-muted">

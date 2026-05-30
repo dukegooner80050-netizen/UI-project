@@ -20,7 +20,7 @@ function submit() {
   }
 
   try {
-    signupUser({
+    signup({
       name: fullName.value,
       username: username.value,
       password: password.value

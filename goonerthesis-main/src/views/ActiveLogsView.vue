@@ -75,19 +75,11 @@ function clearLogs() {
 
       <div class="d-flex gap-2">
         <button class="btn btn-secondary" @click="refresh">Refresh</button>
-        <button class="btn btn-danger" @click="clearLogs">Clear Logs</button>
       </div>
     </div>
 
     <div class="card shadow-sm">
       <div class="card-body">
-
-        <div class="d-flex gap-2 flex-wrap mb-3">
-          <button class="btn btn-primary" @click="recordAction('Added a new user')">Add User</button>
-          <button class="btn btn-warning" @click="recordAction('Updated user info')">Update User</button>
-          <button class="btn btn-danger" @click="recordAction('Deleted a record')">Delete Record</button>
-        </div>
-
 
         <div class="row mb-3">
           <div class="col-md-6">

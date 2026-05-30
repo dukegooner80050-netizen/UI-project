@@ -76,13 +76,15 @@ function confirmAddUniform() {
   const name = addName.value.trim();
   const qty = Number(addQty.value) || 0;
 
-  if (!name) {
-    alert("Please enter a uniform name.");
-  }
-  if (qty <= 0) {
-    alert("Quantity must be at least 1.");
-    modalQty.value = 1;
-  }
+if (!name) {
+  alert("Please enter a uniform name.");
+  return;
+}
+
+if (qty <= 0) {
+  alert("Quantity must be at least 1.");
+  return;
+}
 
   try {
     const newItem = autoStatus({

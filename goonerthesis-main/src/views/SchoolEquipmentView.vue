@@ -7,9 +7,11 @@ import {
   borrowEquipment,
   returnEquipment,
 } from "../services/inventory";
-
+// STATES
 const items = ref([]);
 const currentItem = ref(null);
+const modalError = ref("");
+const addError = ref("");
 
 // MODAL STATE
 const modalOpen = ref(false);
@@ -33,8 +35,15 @@ function confirmAdd() {
   const name = addName.value.trim();
   const qty = Number(addQty.value) || 0;
 
-  if (!name) return alert("Please enter equipment name.");
-  if (qty <= 0) return alert("Quantity must be at least 1.");
+  addError.value = "";
+  if (!name) {
+    addError.value = "Please enter equipment name.";
+    return;
+  }
+  if (qty <= 0) {
+    addError.value = "Quantity must be at least 1.";
+    return;
+  }
 
   try {
     const newItem = autoStatus({
@@ -90,21 +99,20 @@ function closeModal() {
 
 function confirmModal() {
   const qty = Number(modalQty.value) || 0;
+  modalError.value = "";
   if (qty <= 0) {
-    alert("Quantity must be at least 1.");
+    modalError.value = "Quantity must be at least 1.";
     return;
   }
 
   if (qty > modalMax.value) {
-    alert(`Max allowed is ${modalMax.value}.`);
+    modalError.value = `Max allowed is ${modalMax.value}.`;
     modalQty.value = modalMax.value;
     return;
   }
 
   try {
-    if (modalMode.value === "borrow") {
-      borrowEquipment(currentItem.value.id, qty);
-    } else if (modalMode.value === "return") {
+    if (modalMode.value === "return") {
       returnEquipment(currentItem.value.id, qty);
     }
 
@@ -151,12 +159,6 @@ function confirmModal() {
             <td>{{ e.qty }}</td>
             <td>{{ Number(e.borrowedQty) || 0 }}</td>
             <td>
-              <button
-                class="btn btn-warning me-1"
-                @click="openModal('borrow', e)"
-              >
-                Borrow
-              </button>
               <button class="btn btn-success" @click="openModal('return', e)">
                 Return
               </button>
@@ -173,7 +175,7 @@ function confirmModal() {
     </div>
   </div>
 
-  <!-- BORROW / RETURN MODAL -->
+  <!-- RETURN MODAL -->
   <div v-if="modalOpen" class="modal-backdrop-custom">
     <div class="modal-custom">
       <div class="modal-header">
@@ -199,6 +201,9 @@ function confirmModal() {
         <small class="text-muted d-block mt-1">
           Max: {{ modalMax || 0 }}
         </small>
+<div v-if="modalError" class="alert alert-danger py-3 mb-3">
+  <strong>Error:</strong> {{ modalError }}
+</div>
       </div>
 
       <div class="modal-footer">
@@ -233,7 +238,9 @@ function confirmModal() {
         <label class="form-label">Quantity</label>
         <input type="number" min="1" class="form-control" v-model="addQty" />
       </div>
-
+<div v-if="addError" class="alert alert-danger py-3 mb-3">
+  <strong>Error:</strong> {{ addError }}
+</div>
       <div class="modal-footer">
         <button class="btn btn-warning" @click="closeAdd">Cancel</button>
         <button class="btn btn-primary" @click="confirmAdd">Add</button>

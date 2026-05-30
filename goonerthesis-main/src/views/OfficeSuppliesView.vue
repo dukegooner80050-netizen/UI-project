@@ -14,9 +14,11 @@ import {
   returnNonConsumables,
 } from "../services/inventory";
 
+const modalError = ref("");   
+const addError = ref("");  
+
 const items = ref([]);
 const currentItem = ref(null);
-
 const addOpen = ref(false);
 const addSubCategory = ref("Consumables");
 const addName = ref("");
@@ -26,6 +28,7 @@ function openAdd() {
   addSubCategory.value = "Consumables";
   addName.value = "";
   addQty.value = 1;
+  addError.value = "";
   addOpen.value = true;
 }
 
@@ -37,8 +40,15 @@ function confirmAdd() {
   const name = addName.value.trim();
   const qty = Number(addQty.value) || 0;
 
-  if (!name) return alert("Please enter item name.");
-  if (qty <= 0) return alert("Quantity must be at least 1.");
+addError.value = "";
+if (!name) {
+  addError.value = "Please enter item name.";
+  return;
+}
+if (qty <= 0) {
+  addError.value = "Quantity must be at least 1.";
+  return;
+}
 
   try {
     const item = autoStatus({
@@ -63,14 +73,6 @@ onMounted(() => {
 
 const modalMax = computed(() => {
   if (!currentItem.value) return 0;
-
-  if (modalMode.value === "release") {
-    return Number(currentItem.value.qty) || 0;
-  }
-
-  if (modalMode.value === "borrow") {
-    return Number(currentItem.value.qty) || 0;
-  }
 
   if (modalMode.value === "return") {
     return Number(currentItem.value.borrowedQty) || 0;
@@ -99,6 +101,7 @@ function openQtyModal(mode, item) {
   modalMode.value = mode;
   currentItem.value = item;
   modalQty.value = 1;
+  modalError.value = "";  // clear previous errors
   modalOpen.value = true;
 }
 
@@ -108,26 +111,21 @@ function closeModal() {
 
 function confirmModal() {
   const qty = Number(modalQty.value) || 0;
-  if (qty <= 0) {
-    alert("Quantity must be at least 1.");
-    return;
-  }
+if (qty <= 0) {
+  modalError.value = "Quantity must be at least 1.";
+  return;
+}
 
-  if (modalMode.value !== "restock" && qty > modalMax.value) {
-    alert(`Max allowed is ${modalMax.value}.`);
-    modalQty.value = modalMax.value;
-    return;
-  }
+if (modalMode.value === "return" && qty > currentItem.value.borrowedQty) {
+  modalError.value = `Max allowed is ${currentItem.value.borrowedQty}.`;
+  return;
+}
 
   try {
     const id = currentItem.value.id;
 
     if (modalMode.value === "restock") {
       restockOfficeSupplies([id], qty);
-    } else if (modalMode.value === "release") {
-      releaseOfficeConsumables([id], qty);
-    } else if (modalMode.value === "borrow") {
-      borrowNonConsumables([id], qty);
     } else if (modalMode.value === "return") {
       returnNonConsumables([id], qty);
     }
@@ -172,12 +170,6 @@ function confirmModal() {
                 <td>{{ i.status }}</td>
                 <td>{{ i.qty }}</td>
                 <td class="d-flex gap-2">
-<button
-  class="btn btn-primary"
-  @click="openQtyModal('release', i)"
->
-  Release
-</button>
 
 <button
   class="btn btn-success"
@@ -229,13 +221,6 @@ function confirmModal() {
                 <td class="d-flex gap-2">
 <button
   class="btn btn-primary"
-  @click="openQtyModal('borrow', i)"
->
-  Borrow
-</button>
-
-<button
-  class="btn btn-secondary"
   @click="openQtyModal('return', i)"
 >
   Return
@@ -283,9 +268,11 @@ function confirmModal() {
             Max: {{ modalMax }}
           </small>
           <div class="small text-muted mt-2">
-            This quantity will apply to each selected item (same as your
-            previous modal behavior).
+            This quantity will apply to each selected item.
           </div>
+          <div v-if="modalError" class="alert alert-danger py-3 mb-3">
+  <strong>Error:</strong> {{ modalError }}
+</div>
         </div>
 
         <div class="modal-footer">
@@ -320,11 +307,13 @@ function confirmModal() {
 
         <label class="form-label">Quantity</label>
         <input type="number" min="1" class="form-control" v-model="addQty" />
-
         <div class="small text-muted mt-2">
-          Consumables will auto-update status (Low Stock / Out of Stock)
+          Consumables will auto-update status 
           depending on qty.
         </div>
+        <div v-if="addError" class="alert alert-danger py-3 mb-3">
+  <strong>Error:</strong> {{ addError }}
+</div>
       </div>
 
       <div class="modal-footer">
