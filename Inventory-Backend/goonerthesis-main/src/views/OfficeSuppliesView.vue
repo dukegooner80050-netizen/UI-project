@@ -1,0 +1,368 @@
+<script setup>
+const modalOpen = ref(false);
+const modalMode = ref("");
+const modalQty = ref(1);
+
+import { ref, computed, onMounted } from "vue";
+import {
+  listInventory,
+  addItem,
+  autoStatus,
+  restockOfficeSupplies,
+  releaseOfficeConsumables,
+  borrowNonConsumables,
+  returnNonConsumables,
+} from "../services/inventory";
+
+const modalError = ref("");   
+const addError = ref("");  
+
+const items = ref([]);
+const currentItem = ref(null);
+const addOpen = ref(false);
+const addSubCategory = ref("Consumables");
+const addName = ref("");
+const addQty = ref(1);
+
+function openAdd() {
+  addSubCategory.value = "Consumables";
+  addName.value = "";
+  addQty.value = 1;
+  addError.value = "";
+  addOpen.value = true;
+}
+
+function closeAdd() {
+  addOpen.value = false;
+}
+
+function confirmAdd() {
+  const name = addName.value.trim();
+  const qty = Number(addQty.value) || 0;
+
+addError.value = "";
+if (!name) {
+  addError.value = "Please enter item name.";
+  return;
+}
+if (qty <= 0) {
+  addError.value = "Quantity must be at least 1.";
+  return;
+}
+
+  try {
+    const item = autoStatus({
+      name,
+      category: "Office Supplies",
+      subCategory: addSubCategory.value,
+      qty,
+      borrowedQty: 0,
+    });
+
+    addItem(item);
+    refresh();
+    closeAdd();
+  } catch (e) {
+    alert(String(e.message || e));
+  }
+}
+
+onMounted(() => {
+  refresh();
+});
+
+const modalMax = computed(() => {
+  if (!currentItem.value) return 0;
+
+  if (modalMode.value === "return") {
+    return Number(currentItem.value.borrowedQty) || 0;
+  }
+
+  return 0; // restock has no limit
+});
+
+function refresh() {
+  items.value = listInventory();
+}
+
+const officeItems = computed(() =>
+  items.value.filter((i) => i.category === "Office Supplies"),
+);
+
+const consumables = computed(() =>
+  officeItems.value.filter((i) => i.subCategory === "Consumables"),
+);
+
+const nonConsumables = computed(() =>
+  officeItems.value.filter((i) => i.subCategory !== "Consumables"),
+);
+
+function openQtyModal(mode, item) {
+  modalMode.value = mode;
+  currentItem.value = item;
+  modalQty.value = 1;
+  modalError.value = "";  // clear previous errors
+  modalOpen.value = true;
+}
+
+function closeModal() {
+  modalOpen.value = false;
+}
+
+function confirmModal() {
+  const qty = Number(modalQty.value) || 0;
+if (qty <= 0) {
+  modalError.value = "Quantity must be at least 1.";
+  return;
+}
+
+if (modalMode.value === "return" && qty > currentItem.value.borrowedQty) {
+  modalError.value = `Max allowed is ${currentItem.value.borrowedQty}.`;
+  return;
+}
+
+  try {
+    const id = currentItem.value.id;
+
+    if (modalMode.value === "restock") {
+      restockOfficeSupplies([id], qty);
+    } else if (modalMode.value === "return") {
+      returnNonConsumables([id], qty);
+    }
+
+    refresh();
+    modalOpen.value = false;
+  } catch (e) {
+    alert(String(e.message || e));
+  }
+}
+</script>
+
+<template>
+  <div>
+    <h3 class="mb-4">Office Supplies</h3>
+    <button class="btn btn-primary" @click="openAdd('Consumables')">
+      + Add Office Supply
+    </button>
+    <!-- CONSUMABLES -->
+    <div class="card shadow-sm mb-4">
+      <div class="card-body">
+        <div
+          class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3"
+        >
+          <h5 class="mb-0">Consumables</h5>
+        </div>
+
+        <div class="table-responsive table-scroll">
+          <table class="table table-striped table-hover align-middle mb-0">
+            <thead class="table-light">
+              <tr>
+                <th>Name</th>
+                <th>Status</th>
+                <th style="width: 120px">Qty</th>
+                <th style="width: 180px; text-align: center">Acton</th>
+              </tr>
+            </thead>
+
+            <tbody>
+              <tr v-for="i in consumables" :key="i.id">
+                <td>{{ i.name }}</td>
+                <td>{{ i.status }}</td>
+                <td>{{ i.qty }}</td>
+                <td class="d-flex gap-2">
+
+<button
+  class="btn btn-success"
+  @click="openQtyModal('restock', i)"
+>
+  Restock
+</button>
+                </td>
+              </tr>
+
+              <tr v-if="consumables.length === 0">
+                <td colspan="4" class="text-center text-muted">
+                  No consumables found.
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- NON-CONSUMABLES -->
+    <div class="card shadow-sm">
+      <div class="card-body">
+        <div
+          class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3"
+        >
+          <h5 class="mb-0">Non-Consumables</h5>
+        </div>
+
+        <div class="table-responsive table-scroll">
+          <table class="table table-striped table-hover align-middle mb-0">
+            <thead class="table-light">
+              <tr>
+                <th>Name</th>
+                <th>Status</th>
+                <th style="width: 120px">Qty</th>
+                <th style="width: 120px">Borrowed</th>
+                <th style="width: 180px; text-align: center">Acton</th>
+              </tr>
+            </thead>
+
+            <tbody>
+              <tr v-for="i in nonConsumables" :key="i.id">
+                <td>{{ i.name }}</td>
+                <td>{{ i.status }}</td>
+                <td>{{ i.qty }}</td>
+                <td>{{ Number(i.borrowedQty) || 0 }}</td>
+                <td class="d-flex gap-2">
+<button
+  class="btn btn-primary"
+  @click="openQtyModal('return', i)"
+>
+  Return
+</button>
+                </td>
+              </tr>
+
+              <tr v-if="nonConsumables.length === 0">
+                <td colspan="5" class="text-center text-muted">
+                  No non-consumables found.
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+    <div v-if="modalOpen" class="modal-backdrop-custom">
+      <div class="modal-custom">
+        <div class="modal-header">
+          <h5 class="mb-0">
+  {{
+    modalMode === "restock"
+      ? `Restock: ${currentItem?.name}`
+      : modalMode === "release"
+      ? `Release: ${currentItem?.name}`
+      : modalMode === "borrow"
+      ? `Borrow: ${currentItem?.name}`
+      : `Return: ${currentItem?.name}`
+  }}
+</h5>
+          <button class="btn-close" @click="closeModal"></button>
+        </div>
+
+        <div class="modal-body">
+          <label class="form-label">Quantity</label>
+          <input
+            type="number"
+            min="1"
+            :max="modalMax || undefined"
+            class="form-control"
+            v-model="modalQty"
+          />
+          <small v-if="modalMax" class="text-muted d-block mt-1">
+            Max: {{ modalMax }}
+          </small>
+          <div class="small text-muted mt-2">
+            This quantity will apply to each selected item.
+          </div>
+          <div v-if="modalError" class="alert alert-danger py-3 mb-3">
+  <strong>Error:</strong> {{ modalError }}
+</div>
+        </div>
+
+        <div class="modal-footer">
+          <button class="btn btn-secondary" @click="closeModal">Cancel</button>
+          <button class="btn btn-primary" @click="confirmModal">Confirm</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ADD ITEM MODAL -->
+  <div v-if="addOpen" class="modal-backdrop-custom">
+    <div class="modal-custom">
+      <div class="modal-header">
+        <h5 class="mb-0">Add Office Supply</h5>
+        <button class="btn-close" @click="closeAdd"></button>
+      </div>
+
+      <div class="modal-body">
+        <label class="form-label">Type</label>
+        <select class="form-select mb-3" v-model="addSubCategory">
+          <option value="Consumables">Consumables</option>
+          <option value="Non-Consumables">Non-Consumables</option>
+        </select>
+
+        <label class="form-label">Name</label>
+        <input
+          class="form-control mb-3"
+          v-model="addName"
+          placeholder="e.g. Bond Paper"
+        />
+
+        <label class="form-label">Quantity</label>
+        <input type="number" min="1" class="form-control" v-model="addQty" />
+        <div class="small text-muted mt-2">
+          Consumables will auto-update status 
+          depending on qty.
+        </div>
+        <div v-if="addError" class="alert alert-danger py-3 mb-3">
+  <strong>Error:</strong> {{ addError }}
+</div>
+      </div>
+
+      <div class="modal-footer">
+        <button class="btn btn-secondary" @click="closeAdd">Cancel</button>
+        <button class="btn btn-primary" @click="confirmAdd">Add</button>
+      </div>
+    </div>
+  </div>
+</template>
+
+<style scoped>
+.table-scroll {
+  max-height: 420px;
+  overflow-y: auto;
+}
+.table-scroll thead th {
+  position: sticky;
+  top: 0;
+  background: #f8f9fa;
+  z-index: 2;
+  box-shadow: 0 1px 0 #dee2e6;
+}
+
+.modal-backdrop-custom {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.35);
+  display: grid;
+  place-items: center;
+  z-index: 2000;
+  padding: 16px;
+}
+.modal-custom {
+  width: 100%;
+  max-width: 520px;
+  background: #fff;
+  border-radius: 12px;
+  box-shadow: 0 18px 50px rgba(0, 0, 0, 0.25);
+  overflow: hidden;
+}
+.modal-header,
+.modal-footer {
+  padding: 12px 16px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.modal-body {
+  padding: 16px;
+}
+</style>
