@@ -54,6 +54,24 @@ const lowStockCount = computed(() =>
   items.value.filter(i => (Number(i.qty) || 0) <= 5).length
 )
 
+const inventoryList = computed(() =>
+  items.value
+    .slice()
+    .sort((a, b) => (Number(a.qty) || 0) - (Number(b.qty) || 0))
+)
+
+const approvedRequests = computed(() =>
+  recentRequests.value.filter(
+    r => (r.status || "").toLowerCase() === "approved"
+  ).length
+)
+
+const rejectedRequests = computed(() =>
+  recentRequests.value.filter(
+    r => (r.status || "").toLowerCase() === "rejected"
+  ).length
+)
+
 /* ===== REQUEST SUMMARY ===== */
 const recentRequests = computed(() =>
   requests.value.filter(r =>
@@ -138,61 +156,205 @@ function printReport() {
       </div>
     </div>
 
-    <!-- INVENTORY -->
-    <div class="card shadow-sm mb-3">
-      <div class="card-body">
-        <h5>Inventory Summary</h5>
-        <div><strong>Total Qty:</strong> {{ totalQty }}</div>
-        <div><strong>Low Stock Items:</strong> {{ lowStockCount }}</div>
-        <div class="small text-muted mt-2">
-          Categories tracked:
-          {{ new Set(items.map(i => i.category || 'Uncategorized')).size }}
+<!-- INVENTORY -->
+<div class="card shadow-sm mb-3">
+  <div class="card-body">
+
+    <div class="d-flex justify-content-between align-items-center mb-3">
+      <div>
+        <h5 class="mb-0">Inventory Summary</h5>
+        <div class="text-muted small">
+          Remaining inventory items
         </div>
       </div>
+
+      <span class="badge bg-primary">
+        {{ rangeDays }} Days
+      </span>
     </div>
 
-    <!-- REQUESTS -->
-    <div class="card shadow-sm mb-3">
-      <div class="card-body">
-        <h5>Request Summary</h5>
-        <div>
-          <strong>{{ rangeDays }}-day Requests:</strong>
-          {{ recentRequests.length }}
-        </div>
-        <div>
-          <strong>Pending (in range):</strong>
-          {{ pendingRequests }}
-        </div>
-      </div>
-    </div>
-
-    <!-- LOGS -->
-    <div class="card shadow-sm">
-      <div class="card-body">
-        <h5>Activity Logs</h5>
-        <div>
-          <strong>{{ rangeDays }}-day Log Entries:</strong>
-          {{ recentLogs.length }}
-        </div>
-
-        <div class="mt-2">
-          <div
-            v-for="(count, action) in logsByAction"
-            :key="action"
-            class="small text-muted"
-          >
-            • {{ action }}: {{ count }}
+    <div class="row g-3 mb-4">
+      <div class="col-md-4">
+        <div class="border rounded p-3">
+          <div class="text-muted small">Total Quantity</div>
+          <div class="fs-3 fw-bold">
+            {{ totalQty }}
           </div>
+        </div>
+      </div>
 
-          <div
-            v-if="Object.keys(logsByAction).length === 0"
-            class="small text-muted"
-          >
-            No logs in range
+      <div class="col-md-4">
+        <div class="border rounded p-3">
+          <div class="text-muted small">Low Stock Items</div>
+          <div class="fs-3 fw-bold text-warning">
+            {{ lowStockCount }}
+          </div>
+        </div>
+      </div>
+
+      <div class="col-md-4">
+        <div class="border rounded p-3">
+          <div class="text-muted small">Categories</div>
+          <div class="fs-3 fw-bold">
+            {{ new Set(items.map(i => i.category || 'Uncategorized')).size }}
           </div>
         </div>
       </div>
     </div>
+
+    <div class="table-responsive">
+      <table class="table table-hover align-middle">
+        <thead class="table-light">
+          <tr>
+            <th>Item</th>
+            <th>Category</th>
+            <th>Remaining Qty</th>
+            <th>Status</th>
+          </tr>
+        </thead>
+
+        <tbody>
+          <tr v-for="item in inventoryList" :key="item.id">
+            <td>{{ item.name }}</td>
+
+            <td>{{ item.category }}</td>
+
+            <td>
+              {{ item.qty }}
+            </td>
+
+            <td>
+              <span
+                class="badge"
+                :class="{
+                  'bg-success': item.status === 'Available',
+                  'bg-warning text-dark': item.status === 'Low Stock',
+                  'bg-danger': item.status === 'Out of Stock',
+                  'bg-primary': item.status === 'Borrowed'
+                }"
+              >
+                {{ item.status }}
+              </span>
+            </td>
+          </tr>
+
+          <tr v-if="inventoryList.length === 0">
+            <td colspan="4" class="text-center text-muted py-4">
+              No inventory data
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+  </div>
+</div>
+
+<!-- REQUESTS -->
+<div class="card shadow-sm mb-3">
+  <div class="card-body">
+
+    <div class="d-flex justify-content-between align-items-center mb-3">
+      <div>
+        <h5 class="mb-0">Request Summary</h5>
+        <div class="text-muted small">
+          Request activity overview
+        </div>
+      </div>
+
+      <span class="badge bg-success">
+        {{ rangeDays }} Days
+      </span>
+    </div>
+
+    <div class="row g-3">
+
+      <div class="col-md-4">
+        <div class="border rounded p-3">
+          <div class="text-muted small">Total Requests</div>
+          <div class="fs-3 fw-bold">
+            {{ recentRequests.length }}
+          </div>
+        </div>
+      </div>
+
+      <div class="col-md-4">
+        <div class="border rounded p-3">
+          <div class="text-muted small">Pending Requests</div>
+          <div class="fs-3 fw-bold text-warning">
+            {{ pendingRequests }}
+          </div>
+        </div>
+      </div>
+
+      <div class="col-md-4">
+        <div class="border rounded p-3">
+          <div class="text-muted small">Approved Requests</div>
+          <div class="fs-3 fw-bold text-success">
+            {{ approvedRequests }}
+          </div>
+        </div>
+      </div>
+
+      <div class="col-md-4">
+        <div class="border rounded p-3">
+          <div class="text-muted small">Rejected Requests</div>
+          <div class="fs-3 fw-bold text-danger">
+            {{ rejectedRequests }}
+          </div>
+        </div>
+      </div>
+
+    </div>
+
+  </div>
+</div>
+
+<!-- LOGS -->
+<div class="card shadow-sm">
+  <div class="card-body">
+
+    <div class="d-flex justify-content-between align-items-center mb-3">
+      <div>
+        <h5 class="mb-0">Activity Logs</h5>
+        <div class="text-muted small">
+          Recent admin and inventory activities
+        </div>
+      </div>
+
+      <span class="badge bg-dark">
+        {{ rangeDays }} Days
+      </span>
+    </div>
+
+    <div class="mb-3">
+      <strong>Total Logs:</strong>
+      {{ recentLogs.length }}
+    </div>
+
+    <div
+      v-for="(count, action) in logsByAction"
+      :key="action"
+      class="border rounded p-3 mb-2"
+    >
+      <div class="fw-semibold">
+        {{ action }}
+      </div>
+
+      <div class="text-muted small">
+        Total Actions: {{ count }}
+      </div>
+    </div>
+
+    <div
+      v-if="Object.keys(logsByAction).length === 0"
+      class="text-muted"
+    >
+      No logs found in selected range.
+    </div>
+
+  </div>
+</div>
   </div>
 </template>
 
@@ -202,5 +364,19 @@ function printReport() {
   .no-print {
     display: none !important;
   }
+
+  .card {
+    break-inside: avoid;
+    page-break-inside: avoid;
+    margin-bottom: 12px !important;
+  }
+
+  .card-body {
+    padding: 10px !important;
+  }
+}
+@page {
+  size: A4;
+  margin: 12mm;
 }
 </style>
