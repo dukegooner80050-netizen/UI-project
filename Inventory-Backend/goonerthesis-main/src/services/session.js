@@ -15,7 +15,3 @@ export function requireAdmin() {
   if (!isAdmin(user)) throw new Error("NOT_AUTHORIZED");
   return user;
 }
-
-export function logout() {
-  clearCurrentUser();
-}

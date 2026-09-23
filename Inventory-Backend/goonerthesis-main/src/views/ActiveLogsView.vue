@@ -1,19 +1,38 @@
 <script setup>
 import { ref, computed, onMounted } from "vue"
-import { getLogs, saveLogs } from "../services/storage"
-import { logAction } from "../services/logs"
+import { getLogs } from "../services/logs"
 import { requireUser } from "../services/session"
+import AlertMessage from "../components/AlertMessage.vue"
 
+
+//ALERT STATE
 const logs = ref([])
 const search = ref("")
 
-onMounted(() => {
+const showAlert = ref(false)
+const alertType = ref("success")
+const alertMessage = ref("")
+
+
+onMounted(async () => {
   requireUser()
-  refresh()
+  await refresh()
 })
 
-function refresh() {
-  logs.value = getLogs()
+function notify(message, type = "success") {
+  alertMessage.value = message
+  alertType.value = type
+  showAlert.value = true
+}
+
+async function refresh() {
+  try {
+    logs.value = await getLogs()
+
+    notify("Logs refreshed successfully.")
+  } catch (e) {
+    notify("Failed to refresh logs.", "danger")
+  }
 }
 
 const filteredLogs = computed(() => {
@@ -23,8 +42,6 @@ const filteredLogs = computed(() => {
   return logs.value.filter(l => {
     const blob = [
       l.action,
-      l.item,
-      l.category,
       l.performedBy,
       l.role,
       l.date,
@@ -47,26 +64,11 @@ function badgeClass(action) {
   if (a.includes("release")) return "bg-info text-dark"
   return "bg-dark"
 }
-
-
-function recordAction(text) {
-  try {
-    logAction(text, { name: "" }, 1)
-    refresh()
-  } catch (e) {
-    alert(String(e.message || e))
-  }
-}
-
-function clearLogs() {
-  if (!confirm("Clear ALL logs?")) return
-  saveLogs([])
-  refresh()
-}
 </script>
 
 <template>
   <div>
+    <AlertMessage v-model:show="showAlert" :message="alertMessage" :type="alertType" />
     <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
       <div>
         <h3 class="mb-0">Active Logs</h3>
@@ -83,11 +85,7 @@ function clearLogs() {
 
         <div class="row mb-3">
           <div class="col-md-6">
-            <input
-              v-model="search"
-              class="form-control"
-              placeholder="Search logs (action, item, user, date...)"
-            />
+            <input v-model="search" class="form-control" placeholder="Search logs (action, item, user, date...)" />
           </div>
           <div class="col-md-6 text-md-end text-muted small mt-2 mt-md-0">
             Total: <strong>{{ filteredLogs.length }}</strong>
@@ -99,10 +97,7 @@ function clearLogs() {
             <thead class="table-light">
               <tr>
                 <th style="min-width: 160px;">Action</th>
-                <th style="min-width: 140px;">Item</th>
-                <th style="min-width: 160px;">Category</th>
-                <th style="width: 90px;">Qty</th>
-                <th style="min-width: 160px;">By</th>
+                <th style="min-width: 160px;">Performed By</th>
                 <th style="width: 120px;">Role</th>
                 <th style="width: 130px;">Date</th>
                 <th style="width: 130px;">Time</th>
@@ -116,9 +111,6 @@ function clearLogs() {
                     {{ l.action }}
                   </span>
                 </td>
-                <td>{{ l.item }}</td>
-                <td>{{ l.category }}</td>
-                <td>{{ l.quantity }}</td>
                 <td>{{ l.performedBy }}</td>
                 <td>{{ l.role }}</td>
                 <td>{{ l.date }}</td>
@@ -126,7 +118,7 @@ function clearLogs() {
               </tr>
 
               <tr v-if="filteredLogs.length === 0">
-                <td colspan="8" class="text-center text-muted py-4">
+                <td colspan="5" class="text-center text-muted py-4">
                   No logs found.
                 </td>
               </tr>

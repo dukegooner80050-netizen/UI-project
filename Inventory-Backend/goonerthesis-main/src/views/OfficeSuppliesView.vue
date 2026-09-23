@@ -7,25 +7,32 @@ import { ref, computed, onMounted } from "vue";
 import {
   listInventory,
   addItem,
+  updateItem,
   autoStatus,
   restockOfficeSupplies,
   releaseOfficeConsumables,
   borrowNonConsumables,
-  returnNonConsumables,
 } from "../services/inventory";
+import { getRequests, returnEquipment } from "../services/requests";
 
-const modalError = ref("");   
-const addError = ref("");  
+const modalError = ref("");
+const addError = ref("");
+
+// STATES
+const activeTab = ref("inventory");
+const selectedSupply = ref(null);
 
 const items = ref([]);
 const currentItem = ref(null);
 const addOpen = ref(false);
-const addSubCategory = ref("Consumables");
+const addSubCategory = ref("Consumable");
 const addName = ref("");
 const addQty = ref(1);
+const editName = ref("");
+const confirmAction = ref(false);
 
 function openAdd() {
-  addSubCategory.value = "Consumables";
+  addSubCategory.value = "Consumable";
   addName.value = "";
   addQty.value = 1;
   addError.value = "";
@@ -36,39 +43,37 @@ function closeAdd() {
   addOpen.value = false;
 }
 
-function confirmAdd() {
+async function confirmAdd() {
   const name = addName.value.trim();
   const qty = Number(addQty.value) || 0;
 
-addError.value = "";
-if (!name) {
-  addError.value = "Please enter item name.";
-  return;
-}
-if (qty <= 0) {
-  addError.value = "Quantity must be at least 1.";
-  return;
-}
+  addError.value = "";
+  if (!name) {
+    addError.value = "Please enter item name.";
+    return;
+  }
+  if (qty <= 0) {
+    addError.value = "Quantity must be at least 1.";
+    return;
+  }
 
   try {
-    const item = autoStatus({
-      name,
+    await addItem({
+      item_name: name,
       category: "Office Supplies",
-      subCategory: addSubCategory.value,
-      qty,
-      borrowedQty: 0,
+      item_type: addSubCategory.value,
+      quantity: qty,
     });
 
-    addItem(item);
-    refresh();
+    await refresh();
     closeAdd();
   } catch (e) {
     alert(String(e.message || e));
   }
 }
 
-onMounted(() => {
-  refresh();
+onMounted(async () => {
+  await refresh();
 });
 
 const modalMax = computed(() => {
@@ -81,59 +86,127 @@ const modalMax = computed(() => {
   return 0; // restock has no limit
 });
 
-function refresh() {
-  items.value = listInventory();
+async function refresh() {
+  const [inventory, requests] = await Promise.all([
+    listInventory(),
+    getRequests(),
+  ]);
+  const officeInventory = inventory
+    .filter((i) => i.category === "Office Supplies")
+    .map((i) => ({
+      ...i,
+      borrowedQty: 0,
+      requestItems: [],
+    }));
+  requests.forEach((request) => {
+    if (request.status !== "Approved") return;
+    request.items.forEach((reqItem) => {
+      const item = officeInventory.find(
+        (i) => i.iditems === reqItem.itemId && i.item_type === "Non-Consumable",
+      );
+      if (!item) return;
+      item.borrowedQty += Number(reqItem.borrowedQty);
+      item.requestItems.push({
+        requestItemId: reqItem.requestItemId,
+        requester: request.requester,
+        requestId: request.id,
+        location: request.location,
+        room: request.room,
+        borrowedQty: reqItem.borrowedQty,
+        returnedQty: reqItem.returnedQty,
+        qty: reqItem.qty,
+        borrowedAt: request.borrowedAt,
+      });
+    });
+  });
+  items.value = officeInventory;
 }
+
+const borrowedSupplies = computed(() =>
+  nonConsumables.value
+    .filter((i) => Number(i.borrowedQty) > 0)
+    .sort((a, b) => a.item_name.localeCompare(b.item_name)),
+);
+
+const supplyBorrowers = computed(
+  () => selectedSupply.value?.requestItems || [],
+);
 
 const officeItems = computed(() =>
   items.value.filter((i) => i.category === "Office Supplies"),
 );
 
 const consumables = computed(() =>
-  officeItems.value.filter((i) => i.subCategory === "Consumables"),
+  officeItems.value.filter((i) => i.item_type === "Consumable"),
 );
 
 const nonConsumables = computed(() =>
-  officeItems.value.filter((i) => i.subCategory !== "Consumables"),
+  officeItems.value.filter((i) => i.item_type === "Non-Consumable"),
 );
 
 function openQtyModal(mode, item) {
   modalMode.value = mode;
   currentItem.value = item;
   modalQty.value = 1;
-  modalError.value = "";  // clear previous errors
+  editName.value = item.item_name;
+  modalError.value = "";
+  confirmAction.value = false;
   modalOpen.value = true;
 }
 
 function closeModal() {
   modalOpen.value = false;
+  confirmAction.value = false;
 }
 
-function confirmModal() {
+async function proceedAction() {
   const qty = Number(modalQty.value) || 0;
-if (qty <= 0) {
-  modalError.value = "Quantity must be at least 1.";
-  return;
-}
 
-if (modalMode.value === "return" && qty > currentItem.value.borrowedQty) {
-  modalError.value = `Max allowed is ${currentItem.value.borrowedQty}.`;
-  return;
-}
+  if (modalMode.value === "return" && qty <= 0) {
+    modalError.value = "Quantity must be at least 1.";
+    return;
+  }
+
+  if (modalMode.value === "return" && qty > currentItem.value.borrowedQty) {
+    modalError.value = `Max allowed is ${currentItem.value.borrowedQty}.`;
+    return;
+  }
 
   try {
-    const id = currentItem.value.id;
-
     if (modalMode.value === "restock") {
-      restockOfficeSupplies([id], qty);
+      await restockOfficeSupplies(currentItem.value.iditems, qty);
+    } else if (modalMode.value === "edit") {
+      if (!editName.value.trim()) {
+        modalError.value = "Item name is required.";
+        return;
+      }
+
+      await updateItem(currentItem.value.iditems, {
+        item_name: editName.value.trim(),
+        description: currentItem.value.description,
+        category: currentItem.value.category,
+        price: Number(currentItem.value.price),
+        item_type: currentItem.value.item_type,
+        quantity: Number(currentItem.value.quantity),
+        status: currentItem.value.status,
+      });
     } else if (modalMode.value === "return") {
-      returnNonConsumables([id], qty);
+      await returnEquipment(
+        currentItem.value.requestItems[0].requestItemId,
+        qty,
+      );
     }
 
-    refresh();
+    await refresh();
+    confirmAction.value = false;
     modalOpen.value = false;
   } catch (e) {
-    alert(String(e.message || e));
+    console.log(e.response?.data);
+    alert(
+      e.response?.data?.message ||
+        JSON.stringify(e.response?.data?.errors) ||
+        e.message,
+    );
   }
 }
 </script>
@@ -141,143 +214,285 @@ if (modalMode.value === "return" && qty > currentItem.value.borrowedQty) {
 <template>
   <div>
     <h3 class="mb-4">Office Supplies</h3>
-    <button class="btn btn-primary" @click="openAdd('Consumables')">
-      + Add Office Supply
-    </button>
-    <!-- CONSUMABLES -->
-    <div class="card shadow-sm mb-4">
-      <div class="card-body">
-        <div
-          class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3"
+    <div class="d-flex justify-content-between align-items-center mb-3">
+      <div class="d-flex gap-2">
+        <button
+          class="btn"
+          :class="
+            activeTab === 'inventory' ? 'btn-primary' : 'btn-outline-primary'
+          "
+          @click="activeTab = 'inventory'"
         >
-          <h5 class="mb-0">Consumables</h5>
-        </div>
+          Inventory
+        </button>
+        <button
+          class="btn"
+          :class="
+            activeTab === 'borrowed' ? 'btn-primary' : 'btn-outline-primary'
+          "
+          @click="activeTab = 'borrowed'"
+        >
+          Borrowed Items
+        </button>
+      </div>
+      <button
+        v-if="activeTab === 'inventory'"
+        class="btn btn-primary"
+        @click="openAdd"
+      >
+        + Add Office Supply
+      </button>
+    </div>
+    <div v-if="activeTab === 'inventory'">
+      <!-- CONSUMABLES -->
+      <div class="card shadow-sm mb-4">
+        <div class="card-body">
+          <div
+            class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3"
+          >
+            <h5 class="mb-0">Consumables</h5>
+          </div>
 
+          <div class="table-responsive table-scroll">
+            <table class="table table-striped table-hover align-middle mb-0">
+              <thead class="table-light">
+                <tr>
+                  <th>Name</th>
+                  <th>Status</th>
+                  <th style="width: 120px">Qty</th>
+                  <th style="width: 180px; text-align: center">Acton</th>
+                </tr>
+              </thead>
+
+              <tbody>
+                <tr v-for="i in consumables" :key="i.iditems">
+                  <td>{{ i.item_name }}</td>
+                  <td>{{ i.status }}</td>
+                  <td>{{ i.quantity }}</td>
+                  <td class="text-center">
+                    <div class="d-flex justify-content-center gap-2">
+                      <button
+                        class="btn btn-success btn-sm"
+                        @click="openQtyModal('restock', i)"
+                      >
+                        Restock
+                      </button>
+                      <button
+                        class="btn btn-warning btn-sm"
+                        @click="openQtyModal('edit', i)"
+                      >
+                        Edit
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+
+                <tr v-if="consumables.length === 0">
+                  <td colspan="4" class="text-center text-muted">
+                    No consumables found.
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- NON-CONSUMABLES -->
+      <div class="card shadow-sm">
+        <div class="card-body">
+          <div
+            class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3"
+          >
+            <h5 class="mb-0">Non-Consumables</h5>
+          </div>
+
+          <div class="table-responsive table-scroll">
+            <table class="table table-striped table-hover align-middle mb-0">
+              <thead class="table-light">
+                <tr>
+                  <th>Name</th>
+                  <th>Status</th>
+                  <th style="width: 120px">Qty</th>
+                  <th style="width: 120px">Borrowed</th>
+                  <th style="width: 180px; text-align: center">Acton</th>
+                </tr>
+              </thead>
+
+              <tbody>
+                <tr v-for="i in nonConsumables" :key="i.iditems">
+                  <td>{{ i.item_name }}</td>
+                  <td>{{ i.status }}</td>
+                  <td>{{ i.quantity }}</td>
+                  <td>{{ Number(i.borrowedQty) || 0 }}</td>
+                  <td class="text-center">
+                    <div class="d-flex justify-content-center gap-2">
+                      <button
+                        class="btn btn-success btn-sm"
+                        @click="openQtyModal('restock', i)"
+                      >
+                        Restock
+                      </button>
+                      <button
+                        class="btn btn-warning btn-sm"
+                        @click="openQtyModal('edit', i)"
+                      >
+                        Edit
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+
+                <tr v-if="nonConsumables.length === 0">
+                  <td colspan="5" class="text-center text-muted">
+                    No non-consumables found.
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div v-else class="d-flex gap-3" style="height: 75vh">
+      <!-- LEFT -->
+      <div class="card shadow-sm" style="flex: 1">
         <div class="table-responsive table-scroll">
-          <table class="table table-striped table-hover align-middle mb-0">
-            <thead class="table-light">
+          <table class="table table-hover">
+            <thead>
               <tr>
                 <th>Name</th>
                 <th>Status</th>
-                <th style="width: 120px">Qty</th>
-                <th style="width: 180px; text-align: center">Acton</th>
+                <th>Borrowed</th>
+                <th>Action</th>
               </tr>
             </thead>
-
             <tbody>
-              <tr v-for="i in consumables" :key="i.id">
-                <td>{{ i.name }}</td>
-                <td>{{ i.status }}</td>
-                <td>{{ i.qty }}</td>
-                <td class="d-flex gap-2">
-
-<button
-  class="btn btn-success"
-  @click="openQtyModal('restock', i)"
->
-  Restock
-</button>
+              <tr v-for="item in borrowedSupplies" :key="item.iditems">
+                <td>{{ item.item_name }}</td>
+                <td>{{ item.status }}</td>
+                <td>{{ item.borrowedQty }}</td>
+                <td>
+                  <button
+                    class="btn btn-success btn-sm"
+                    @click="selectedSupply = item"
+                  >
+                    View Borrowers
+                  </button>
                 </td>
               </tr>
-
-              <tr v-if="consumables.length === 0">
+              <tr v-if="borrowedSupplies.length === 0">
                 <td colspan="4" class="text-center text-muted">
-                  No consumables found.
+                  No borrowed office supplies.
                 </td>
               </tr>
             </tbody>
           </table>
         </div>
       </div>
-    </div>
-
-    <!-- NON-CONSUMABLES -->
-    <div class="card shadow-sm">
-      <div class="card-body">
-        <div
-          class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3"
-        >
-          <h5 class="mb-0">Non-Consumables</h5>
-        </div>
-
-        <div class="table-responsive table-scroll">
-          <table class="table table-striped table-hover align-middle mb-0">
-            <thead class="table-light">
-              <tr>
-                <th>Name</th>
-                <th>Status</th>
-                <th style="width: 120px">Qty</th>
-                <th style="width: 120px">Borrowed</th>
-                <th style="width: 180px; text-align: center">Acton</th>
-              </tr>
-            </thead>
-
-            <tbody>
-              <tr v-for="i in nonConsumables" :key="i.id">
-                <td>{{ i.name }}</td>
-                <td>{{ i.status }}</td>
-                <td>{{ i.qty }}</td>
-                <td>{{ Number(i.borrowedQty) || 0 }}</td>
-                <td class="d-flex gap-2">
-<button
-  class="btn btn-primary"
-  @click="openQtyModal('return', i)"
->
-  Return
-</button>
-                </td>
-              </tr>
-
-              <tr v-if="nonConsumables.length === 0">
-                <td colspan="5" class="text-center text-muted">
-                  No non-consumables found.
-                </td>
-              </tr>
-            </tbody>
-          </table>
+      <!-- RIGHT -->
+      <div class="card shadow-sm" style="flex: 1">
+        <div class="card-body">
+          <h5>Borrower Details</h5>
+          <div v-if="selectedSupply">
+            <div
+              v-for="borrower in supplyBorrowers"
+              :key="borrower.requestItemId"
+              class="border rounded p-3 mb-3"
+            >
+              <div>
+                <strong>Requester:</strong>
+                {{ borrower.requester }}
+              </div>
+              <div>
+                <strong>Request #:</strong>
+                {{ borrower.requestId }}
+              </div>
+              <div>
+                <strong>Location:</strong>
+                {{ borrower.location }}
+              </div>
+              <div>
+                <strong>Room:</strong>
+                {{ borrower.room }}
+              </div>
+              <div>
+                <strong>Borrowed:</strong>
+                {{ borrower.borrowedQty }}
+              </div>
+              <button
+                class="btn btn-success mt-3"
+                @click="
+                  openQtyModal('return', {
+                    item_name: selectedSupply.item_name,
+                    borrowedQty: borrower.borrowedQty,
+                    requestItems: [borrower],
+                  })
+                "
+              >
+                Return
+              </button>
+            </div>
+          </div>
+          <div v-else class="text-center text-muted mt-5">
+            Select an item to view borrowers.
+          </div>
         </div>
       </div>
     </div>
+
     <div v-if="modalOpen" class="modal-backdrop-custom">
       <div class="modal-custom">
         <div class="modal-header">
           <h5 class="mb-0">
-  {{
-    modalMode === "restock"
-      ? `Restock: ${currentItem?.name}`
-      : modalMode === "release"
-      ? `Release: ${currentItem?.name}`
-      : modalMode === "borrow"
-      ? `Borrow: ${currentItem?.name}`
-      : `Return: ${currentItem?.name}`
-  }}
-</h5>
+            {{
+              modalMode === "restock"
+                ? `Restock: ${currentItem?.item_name}`
+                : modalMode === "edit"
+                  ? `Edit: ${currentItem?.item_name}`
+                  : modalMode === "release"
+                    ? `Release: ${currentItem?.item_name}`
+                    : modalMode === "borrow"
+                      ? `Borrow: ${currentItem?.item_name}`
+                      : `Return: ${currentItem?.item_name}`
+            }}
+          </h5>
           <button class="btn-close" @click="closeModal"></button>
         </div>
-
         <div class="modal-body">
-          <label class="form-label">Quantity</label>
-          <input
-            type="number"
-            min="1"
-            :max="modalMax || undefined"
-            class="form-control"
-            v-model="modalQty"
-          />
-          <small v-if="modalMax" class="text-muted d-block mt-1">
+          <template v-if="modalMode === 'edit'">
+            <label class="form-label">Item Name</label>
+            <input class="form-control mb-3" v-model="editName" />
+          </template>
+          <template v-else>
+            <label class="form-label">Quantity</label>
+            <input
+              type="number"
+              min="1"
+              :max="modalMax || undefined"
+              class="form-control"
+              v-model="modalQty"
+            />
+          </template>
+          <small
+            v-if="modalMode !== 'edit' && modalMax"
+            class="text-muted d-block mt-1"
+          >
             Max: {{ modalMax }}
           </small>
-          <div class="small text-muted mt-2">
+          <div v-if="modalMode !== 'edit'" class="small text-muted mt-2">
             This quantity will apply to each selected item.
           </div>
           <div v-if="modalError" class="alert alert-danger py-3 mb-3">
-  <strong>Error:</strong> {{ modalError }}
-</div>
+            <strong>Error:</strong> {{ modalError }}
+          </div>
         </div>
 
         <div class="modal-footer">
           <button class="btn btn-secondary" @click="closeModal">Cancel</button>
-          <button class="btn btn-primary" @click="confirmModal">Confirm</button>
+          <button class="btn btn-primary" @click="confirmAction = true">
+            Confirm
+          </button>
         </div>
       </div>
     </div>
@@ -294,8 +509,8 @@ if (modalMode.value === "return" && qty > currentItem.value.borrowedQty) {
       <div class="modal-body">
         <label class="form-label">Type</label>
         <select class="form-select mb-3" v-model="addSubCategory">
-          <option value="Consumables">Consumables</option>
-          <option value="Non-Consumables">Non-Consumables</option>
+          <option value="Consumable">Consumables</option>
+          <option value="Non-Consumable">Non-Consumables</option>
         </select>
 
         <label class="form-label">Name</label>
@@ -308,12 +523,11 @@ if (modalMode.value === "return" && qty > currentItem.value.borrowedQty) {
         <label class="form-label">Quantity</label>
         <input type="number" min="1" class="form-control" v-model="addQty" />
         <div class="small text-muted mt-2">
-          Consumables will auto-update status 
-          depending on qty.
+          Consumables will auto-update status depending on qty.
         </div>
         <div v-if="addError" class="alert alert-danger py-3 mb-3">
-  <strong>Error:</strong> {{ addError }}
-</div>
+          <strong>Error:</strong> {{ addError }}
+        </div>
       </div>
 
       <div class="modal-footer">
@@ -322,6 +536,48 @@ if (modalMode.value === "return" && qty > currentItem.value.borrowedQty) {
       </div>
     </div>
   </div>
+  <!-- CONFIRMATION MODAL -->
+  <template v-else>
+    <div v-if="confirmAction" class="modal-backdrop-custom">
+      <div class="modal-custom">
+        <div class="modal-header">
+          <h5 class="mb-0">Confirm Action</h5>
+        </div>
+        <div class="modal-body">
+          <div class="alert alert-warning mb-0">
+            <h6 class="mb-3">Confirm Action</h6>
+            <div v-if="modalMode === 'restock'">
+              Restock
+              <strong class="highlight">{{ currentItem.item_name }}</strong>
+              by
+              <strong class="highlight">{{ modalQty }}</strong>
+              item(s)?
+            </div>
+            <div v-else-if="modalMode === 'edit'">
+              Rename
+              <strong class="highlight">{{ currentItem.item_name }}</strong>
+              to
+              <strong class="highlight">{{ editName }}</strong
+              >?
+            </div>
+            <div v-else-if="modalMode === 'return'">
+              Return
+              <strong class="highlight">{{ modalQty }}</strong>
+              item(s) of
+              <strong class="highlight">{{ currentItem.item_name }}</strong
+              >?
+            </div>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button class="btn btn-secondary" @click="confirmAction = false">
+            Cancel
+          </button>
+          <button class="btn btn-primary" @click="proceedAction">Yes</button>
+        </div>
+      </div>
+    </div>
+  </template>
 </template>
 
 <style scoped>
@@ -364,5 +620,8 @@ if (modalMode.value === "return" && qty > currentItem.value.borrowedQty) {
 }
 .modal-body {
   padding: 16px;
+}
+.highlight {
+  text-decoration: underline;
 }
 </style>

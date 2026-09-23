@@ -1,35 +1,58 @@
 <script setup>
-import { ref } from "vue"
-import { useRouter } from "vue-router"
-import { signup } from "../services/auth"
+import { ref } from "vue";
+import { useRouter } from "vue-router";
+import axios from "../axios";
+import AlertMessage from "../components/AlertMessage.vue";
 
-const router = useRouter()
+const router = useRouter();
 
-const fullName = ref("")
-const username = ref("")
-const password = ref("")
-const confirmPassword = ref("")
-const error = ref("")
+const fullName = ref("");
+const username = ref("");
+const password = ref("");
+const confirmPassword = ref("");
+const showAlert = ref(false);
+const alertType = ref("success");
+const alertMessage = ref("");
 
-function submit() {
-  error.value = ""
-
+async function submit() {
   if (password.value !== confirmPassword.value) {
-    error.value = "Passwords do not match."
-    return
+    alertType.value = "danger";
+    alertMessage.value = "Passwords do not match.";
+    showAlert.value = true;
+    return;
   }
 
   try {
-    signup({
-      name: fullName.value,
+    await axios.post("/register", {
+      full_name: fullName.value,
       username: username.value,
-      password: password.value
-    })
+      password: password.value,
+    });
 
-    alert("Account created successfully.")
-    router.push("/login")
+    alertType.value = "success";
+    alertMessage.value = "Account created successfully.";
+    showAlert.value = true;
+
+    // Wait a bit so the user sees it
+    setTimeout(() => {
+      router.push("/login");
+    }, 1500);
   } catch (e) {
-    error.value = String(e.message || e)
+    if (e.response?.data?.message) {
+      alertType.value = "danger";
+      alertMessage.value = e.response.data.message;
+      showAlert.value = true;
+    } else if (e.response?.data?.errors) {
+      alertType.value = "danger";
+      alertMessage.value = Object.values(e.response.data.errors)
+        .flat()
+        .join(", ");
+      showAlert.value = true;
+    } else {
+      alertType.value = "danger";
+      alertMessage.value = "Something went wrong.";
+      showAlert.value = true;
+    }
   }
 }
 </script>
@@ -37,6 +60,11 @@ function submit() {
 <template>
   <div class="auth-bg">
     <div class="card shadow signup-card p-4">
+      <AlertMessage
+        v-model:show="showAlert"
+        :type="alertType"
+        :message="alertMessage"
+      />
       <div class="text-center mb-3">
         <h3 class="fw-bold">Create Account</h3>
         <p class="text-muted">C.I.M.S Registration</p>
@@ -55,21 +83,12 @@ function submit() {
 
         <div class="mb-2">
           <label class="form-label">Password</label>
-          <input v-model="password" type="password" class="form-control" required />
+          <input v-model="password" type="password" class="form-control" required/>
         </div>
 
         <div class="mb-3">
           <label class="form-label">Confirm Password</label>
-          <input
-            v-model="confirmPassword"
-            type="password"
-            class="form-control"
-            required
-          />
-        </div>
-
-        <div v-if="error" class="alert alert-danger py-2">
-          {{ error }}
+          <input v-model="confirmPassword" type="password" class="form-control" required/>
         </div>
 
         <button class="btn btn-primary w-100">Sign Up</button>

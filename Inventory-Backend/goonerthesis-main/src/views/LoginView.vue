@@ -1,22 +1,30 @@
 <script setup>
-import { ref } from "vue"
-import { useRouter } from "vue-router"
-import { login } from "../services/auth"
+import { ref } from "vue";
+import { useRouter } from "vue-router";
+import { login } from "../services/auth";
 
-const router = useRouter()
+const router = useRouter();
 
-const username = ref("")
-const password = ref("")
-const error = ref("")
+const username = ref("");
+const password = ref("");
+const error = ref("");
 
-function submit() {
-  error.value = ""
+async function submit() {
+  error.value = "";
 
   try {
-    login({ username: username.value, password: password.value })
-    router.push("/dashboard")
+    await login({
+      username: username.value,
+      password: password.value,
+    });
+
+    router.push("/dashboard");
   } catch (e) {
-    error.value = "Invalid username or password."
+    if (e.response?.data?.message) {
+      error.value = e.response.data.message;
+    } else {
+      error.value = "Unable to login.";
+    }
   }
 }
 </script>
@@ -37,7 +45,12 @@ function submit() {
 
         <div class="mb-3">
           <label class="form-label">Password</label>
-          <input v-model="password" type="password" class="form-control" required />
+          <input
+            v-model="password"
+            type="password"
+            class="form-control"
+            required
+          />
         </div>
 
         <div v-if="error" class="alert alert-danger py-2">

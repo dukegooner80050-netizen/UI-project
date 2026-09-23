@@ -1,10 +1,6 @@
 <script setup>
 import { ref, computed, onMounted } from "vue";
-import {
-  listRequests,
-  approveRequest,
-  rejectRequest,
-} from "../services/requests";
+import { getRequests, approveRequest, rejectRequest,} from "../services/requests";
 import { getCurrentUser } from "../services/storage";
 import { requireAdmin } from "../services/session";
 
@@ -14,15 +10,21 @@ const admin = getCurrentUser();
 const rejectModal = ref(false);
 const rejectReason = ref("");
 const rejectTargetId = ref(null);
+const confirmModal = ref(false);
+const confirmTitle = ref("");
+const confirmMessage = ref("");
+const confirmButton = ref("Confirm");
+const confirmButtonClass = ref("btn-primary");
+const confirmAction = ref(null);
 
-onMounted(() => {
+onMounted(async () => {
   requireAdmin();
 
-  refresh();
+  await refresh();
 });
 
-function refresh() {
-  requests.value = listRequests();
+async function refresh() {
+  requests.value = await getRequests();
 }
 
 const pendingRequests = computed(() =>
@@ -36,18 +38,28 @@ const displayedRequests = computed(() => {
 
   return data.sort(
     (a, b) =>
-      new Date(b.createdAt).getTime() -
-      new Date(a.createdAt).getTime()
+      new Date(b.request_date) -
+      new Date(a.request_date)
   );
 });
+const requestRows = computed(() => {
+  return displayedRequests.value;
+});
 
-function approve(id) {
-  try {
-    approveRequest(id, admin?.name || admin?.username || "Admin");
-    refresh();
-  } catch (e) {
-    alert(String(e.message || e));
-  }
+async function approve(id) {
+  confirmTitle.value = "Approve Request";
+  confirmMessage.value =
+    "Are you sure you want to approve this request? This action will update the inventory.";
+
+  confirmButton.value = "Approve";
+  confirmButtonClass.value = "btn-success";
+
+  confirmAction.value = async () => {
+    await approveRequest(id);
+    await refresh();
+  };
+
+  confirmModal.value = true;
 }
 
 function openRejectModal(id) {
@@ -56,26 +68,46 @@ function openRejectModal(id) {
   rejectModal.value = true;
 }
 
-function confirmReject() {
+async function confirmReject() {
   if (!rejectReason.value.trim()) {
     alert("Rejection reason is required.");
     return;
   }
 
-  try {
-    rejectRequest(
-      rejectTargetId.value,
-      rejectReason.value.trim(),
-      admin?.name || admin?.username || "Admin"
-    );
+  const id = rejectTargetId.value;
+  const reason = rejectReason.value.trim();
 
-    rejectModal.value = false;
+  rejectModal.value = false;
+
+  confirmTitle.value = "Reject Request";
+  confirmMessage.value =
+    "Are you sure you want to reject this request?";
+
+  confirmButton.value = "Reject";
+  confirmButtonClass.value = "btn-danger";
+
+  confirmAction.value = async () => {
+    await rejectRequest(id, reason);
+
     rejectTargetId.value = null;
     rejectReason.value = "";
-    refresh();
+
+    await refresh();
+  };
+
+  confirmModal.value = true;
+}
+
+async function executeConfirm() {
+  try {
+    if (confirmAction.value) {
+      await confirmAction.value();
+    }
   } catch (e) {
     alert(String(e.message || e));
   }
+
+  confirmModal.value = false;
 }
 
 function statusBadgeClass(status) {
@@ -123,6 +155,7 @@ function statusBadgeClass(status) {
               <th>Type</th>
               <th>Purpose</th>
               <th>Location</th>
+              <th>Room</th>
               <th>Requester</th>
               <th style="width: 120px">Status</th>
               <th style="width: 130px">Date</th>
@@ -133,29 +166,59 @@ function statusBadgeClass(status) {
           <tbody>
             <tr v-for="r in displayedRequests" :key="r.id">
 <td>
-  <div v-for="(item, i) in r.items" :key="i">
+  <!-- Normal inventory items -->
+  <div v-for="item in r.items || []" :key="'item-' + item.itemId"class="mb-1">
     {{ item.itemName }}
   </div>
+  <!-- Uniforms -->
+  <div v-for="uniform in r.uniforms || []" :key="'uniform-' + uniform.uniformVariantId" class="mb-1">
+    <strong>{{ uniform.uniformName || "Uniform" }}</strong>
+    <div class="text-muted small">
+      {{ uniform.department || "N/A" }}
+      — Size {{ uniform.size || "N/A" }}
+    </div>
+  </div>
 </td>
 <td>
-  <div v-for="(item, i) in r.items" :key="i">
+  <!-- Normal inventory quantities -->
+  <div v-for="item in r.items || []" :key="'item-qty-' + item.itemId" class="mb-1">
     {{ item.qty }}
   </div>
-</td>
-              <td>
-                {{
-                  r.items.reduce((sum, item) => sum + Number(item.qty || 0), 0)
-                }}
-              </td>
 
-<td>
-  <div v-for="(item, i) in r.items" :key="i">
-    {{ item.category }}
+  <!-- Uniform quantities -->
+  <div v-for="uniform in r.uniforms || []" :key="'uniform-qty-' + uniform.uniformVariantId" class="mb-1">
+    {{ uniform.quantity }}
   </div>
 </td>
 <td>
-  <div v-for="(item, i) in r.items" :key="i">
+  {{
+    (r.items || []).reduce(
+      (sum, item) => sum + Number(item.qty || 0),
+      0
+    )
+    +
+    (r.uniforms || []).reduce(
+      (sum, uniform) => sum + Number(uniform.quantity || 0),
+      0
+    )
+  }}
+</td>
+
+<td>
+  <div v-for="item in r.items || []" :key="'category-item-' + item.itemId">
+    {{ item.category }}
+  </div>
+  <div v-for="uniform in r.uniforms || []" :key="'category-uniform-' + uniform.uniformVariantId">
+    Uniforms
+  </div>
+</td>
+<td>
+  <div v-for="item in r.items || []" :key="'type-item-' + item.itemId">
     {{ item.itemType }}
+  </div>
+
+  <div v-for="uniform in r.uniforms || []" :key="'type-uniform-' + uniform.uniformVariantId">
+    Uniform
   </div>
 </td>
               <td style="max-width: 260px">
@@ -164,10 +227,11 @@ function statusBadgeClass(status) {
                 </div>
               </td>
               <td>{{ r.location }}</td>
+              <td>{{ r.room }}</td>
               <td>
-                <div>{{ r.requester }}</div>
-                <div class="text-muted small">{{ r.role }}</div>
-              </td>
+  <div>{{ r.requester }}</div>
+  <div class="text-muted small">{{ r.role }}</div>
+</td>
               <td>
                 <span class="badge" :class="statusBadgeClass(r.status)">
                   {{ r.status }}
@@ -183,7 +247,7 @@ function statusBadgeClass(status) {
                 </div>
               </td>
               <td>
-  {{ r.date || "—" }}
+  {{ r.request_date || "—" }}
 </td>
               <td>
                 <div class="d-flex gap-2">
@@ -207,7 +271,7 @@ function statusBadgeClass(status) {
             </tr>
 
             <tr v-if="displayedRequests.length === 0">
-              <td colspan="9" class="text-center text-muted py-4">
+              <td colspan="12" class="text-center text-muted py-4">
                 {{ showAll ? "No requests found." : "No pending requests." }}
               </td>
             </tr>
@@ -241,6 +305,38 @@ function statusBadgeClass(status) {
 
       <button class="btn btn-danger" @click="confirmReject" :disabled="!rejectReason.trim()">
         Reject
+      </button>
+    </div>
+
+  </div>
+</div>
+<div v-if="confirmModal" class="modal-backdrop-custom">
+  <div class="modal-custom" style="max-width:420px">
+
+    <div class="modal-header">
+      <h5 class="mb-0">{{ confirmTitle }}</h5>
+    </div>
+
+    <div class="modal-body">
+      <p class="mb-0">
+        {{ confirmMessage }}
+      </p>
+    </div>
+
+    <div class="modal-footer">
+      <button
+        class="btn btn-outline-secondary"
+        @click="confirmModal = false"
+      >
+        Cancel
+      </button>
+
+      <button
+        class="btn"
+        :class="confirmButtonClass"
+        @click="executeConfirm"
+      >
+        {{ confirmButton }}
       </button>
     </div>
 

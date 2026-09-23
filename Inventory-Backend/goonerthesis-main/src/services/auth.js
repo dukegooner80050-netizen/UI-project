@@ -1,62 +1,39 @@
 // src/services/auth.js
+import axios from "../axios";
 import { setCurrentUser, getCurrentUser, clearCurrentUser } from "./storage";
 
-/** Users are stored the same way as before */
-const USERS_KEY = "users";
-
-function getUsers() {
-  try {
-    return JSON.parse(localStorage.getItem(USERS_KEY)) || [];
-  } catch {
-    return [];
-  }
-}
-
-function saveUsers(users) {
-  localStorage.setItem(USERS_KEY, JSON.stringify(users));
-}
-
 /** SIGN UP */
-export function signup({ name, username, password, role = "user" }) {
-  if (!name || !username || !password) {
-    throw new Error("COMPLETE_ALL_FIELDS");
-  }
+export async function signup({ full_name, username, password }) {
+  const response = await axios.post("/register", {
+        full_name,
+        username,
+        password,
+  });
 
-  const users = getUsers();
-
-  if (users.some(u => u.username === username)) {
-    throw new Error("USERNAME_EXISTS");
-  }
-
-  const newUser = { name, username, password, role };
-  users.push(newUser);
-  saveUsers(users);
-
-  return newUser;
+  return response.data;
 }
 
 /** LOGIN */
-export function login({ username, password }) {
-  if (!username || !password) {
-    throw new Error("COMPLETE_ALL_FIELDS");
-  }
+export async function login({ username, password }) {
+  const response = await axios.post("/login", {
+    username,
+    password,
+  });
 
-  const users = getUsers();
-  const foundUser = users.find(
-    u => u.username === username && u.password === password
-  );
+  localStorage.setItem("token", response.data.token);
+  setCurrentUser(response.data.user);
 
-  if (!foundUser) {
-    throw new Error("INVALID_CREDENTIALS");
-  }
-
-  setCurrentUser(foundUser);
-  return foundUser;
+  return response.data.user;
 }
 
 /** LOGOUT */
-export function logout() {
-  clearCurrentUser();
+export async function logout(){
+
+    await axios.post("/logout");
+
+    localStorage.removeItem("token");
+
+    clearCurrentUser();
 }
 
 /** HELPERS */

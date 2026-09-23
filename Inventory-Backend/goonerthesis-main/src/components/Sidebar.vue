@@ -2,14 +2,14 @@
 import axios from "axios"
 import { computed, ref, onMounted, onBeforeUnmount, watch } from "vue"
 import { useRoute, useRouter } from "vue-router"
-import { getCurrentUser, getRequests } from "../services/storage"
+import { getCurrentUser } from "../services/storage"
 import { logout as doLogout } from "../services/auth"
 
 const showUniforms = ref(false)
 
 const toggleUniforms = () => {
   if (!props.collapsed) {
-  showUniforms.value = !showUniforms.value
+    showUniforms.value = !showUniforms.value
   }
 }
 
@@ -17,56 +17,74 @@ const props = defineProps({
   collapsed: { type: Boolean, default: false },
   mobileOpen: { type: Boolean, default: false },
 })
+
 const emit = defineEmits(["toggle", "closeMobile"])
 
 const pendingCount = ref(0)
-
-function refreshPendingCount() {
-  try {
-    const reqs = getRequests() || []
-    pendingCount.value = reqs.filter(r => (r.status || "").toLowerCase() === "pending").length
-  } catch {
-    pendingCount.value = 0
-  }
-}
 
 const router = useRouter()
 const route = useRoute()
 
 const user = computed(() => getCurrentUser())
-const isAdmin = computed(() => (user.value?.role || "").toLowerCase() === "admin")
+
+const isAdmin = computed(
+  () => (user.value?.role || "").toLowerCase() === "admin"
+)
+
+/* PENDING REQUEST COUNT */
+
+async function refreshPendingCount() {
+  if (!isAdmin.value) {
+    pendingCount.value = 0
+    return
+  }
+
+  try {
+    const response = await axios.get("/requests")
+
+    const requests = Array.isArray(response.data)
+      ? response.data
+      : response.data?.data || []
+
+    pendingCount.value = requests.filter(
+      request =>
+        (request.status || "").toLowerCase() === "pending"
+    ).length
+
+  } catch (error) {
+    console.error("Failed to load pending request count:", error)
+  }
+}
+
+/*  LOGOUT */
 
 function logout() {
   doLogout()
   router.push("/login")
 }
 
+/* ACTIVE LINK */
+
 const active = (path) => route.path === path
 
-watch(() => route.fullPath, () => refreshPendingCount())
+/* AUTO REFRESH */
 
-function onStorage(e) {
-  if (!e || e.key === "requests") refreshPendingCount()
-}
+let pendingRefreshTimer = null
 
 onMounted(async () => {
-  refreshPendingCount()
+  // Load immediately
+  await refreshPendingCount()
 
-  try {
-    const response = await axios.get("/api/requests")
-    const requests = Array.isArray(response.data) ? response.data : response.data?.data || []
-
-    const pending = requests.filter((request) => (request.status || "").toLowerCase() === "pending")
-    pendingCount.value = pending.length
-  } catch (error) {
-    console.error("Failed to load requests", error)
-  }
-
-  window.addEventListener("storage", onStorage)
+  // Check the backend every 5 seconds
+  pendingRefreshTimer = setInterval(() => {
+    refreshPendingCount()
+  }, 2000)
 })
 
 onBeforeUnmount(() => {
-  window.removeEventListener("storage", onStorage)
+  if (pendingRefreshTimer) {
+    clearInterval(pendingRefreshTimer)
+  }
 })
 </script>
 
@@ -170,6 +188,31 @@ onBeforeUnmount(() => {
       <span class="label" v-if="!props.collapsed">School Equipments</span>
     </RouterLink>
 
+    <RouterLink v-if="isAdmin" class="sidebar-link" :class="{ active: active('/item-locator') }" to="/item-locator">
+      <span class="icon">📍</span>
+      <span class="label" v-if="!props.collapsed">Item Locator</span>
+    </RouterLink>
+
+    <RouterLink class="sidebar-link" :class="{ active: active('/consumption-report') }" to="/consumption-report">
+      <span class="icon">📅</span>
+      <span class="label" v-if="!props.collapsed">Monthly Consumption</span>
+    </RouterLink>
+
+    <RouterLink v-if="isAdmin" class="sidebar-link" :class="{ active: active('/equipment-distribution') }" to="/equipment-distribution">
+      <span class="icon">🏢</span>
+      <span class="label" v-if="!props.collapsed">Equipment Distribution</span>
+    </RouterLink>
+
+    <RouterLink v-if="isAdmin" class="sidebar-link" :class="{ active: active('/pending-inspection') }" to="/pending-inspection">
+      <span class="icon">🔍</span>
+      <span class="label" v-if="!props.collapsed">Pending Inspection</span>
+    </RouterLink>
+
+    <RouterLink v-if="isAdmin" class="sidebar-link" :class="{ active: active('/settings') }" to="/settings">
+      <span class="icon">⚙️</span>
+      <span class="label" v-if="!props.collapsed">Settings</span>
+    </RouterLink>
+
     <RouterLink class="sidebar-link" :class="{ active: active('/request') }" to="/request">
       <span class="icon">📝</span>
       <span class="label" v-if="!props.collapsed">Request Item</span>
@@ -206,7 +249,7 @@ onBeforeUnmount(() => {
   position: sticky;
   top: 0;
   height: 100vh;
-  background-color: #31ce12;
+  background-color: #18520c;
   padding: 12px 8px;
   overflow-y: auto;
   overflow-x: visible;
