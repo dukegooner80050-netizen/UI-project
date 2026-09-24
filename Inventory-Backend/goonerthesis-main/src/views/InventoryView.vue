@@ -2,6 +2,7 @@
 import { ref, computed, onMounted } from "vue";
 import { getItems } from "../services/items";
 import { getRequests } from "../services/requests";
+import { returnToService } from "../services/inspections";
 
 const search = ref("");
 const statusFilter = ref("ALL");
@@ -16,7 +17,8 @@ const isLocationView = computed(() => viewMode.value === "LOCATIONS");
 // The Status filter already had a "Damaged" option, but nothing ever set
 // item.status to "Damaged" -- damaged items are tracked separately via
 // damaged_quantity (from the Return Inspection feature). When that filter
-// is selected, show a dedicated damaged-items table instead.
+// is selected, show a dedicated damaged-items table instead. Displayed as
+// "Disposal" in the UI, matching the renamed inspection outcome.
 const isDamagedView = computed(
   () => !isBorrowedView.value && !isLocationView.value && statusFilter.value === "Damaged",
 );
@@ -24,6 +26,49 @@ const isDamagedView = computed(
 const damagedItems = computed(() =>
   items.value.filter((item) => Number(item.damaged_quantity) > 0),
 );
+
+// Items marked "Need Maintenance" during inspection. Unlike Disposal,
+// these can be moved back into available stock later via "Return to
+// Service" once repaired.
+const isMaintenanceView = computed(
+  () => !isBorrowedView.value && !isLocationView.value && statusFilter.value === "Maintenance",
+);
+
+const maintenanceItems = computed(() =>
+  items.value.filter((item) => Number(item.maintenance_quantity) > 0),
+);
+
+const returnQtyInputs = ref({}); // { [itemId]: quantity }
+
+function errMsg(e) {
+  return e?.response?.data?.message || e?.message || "Something went wrong.";
+}
+
+async function handleReturnToService(item) {
+  const qty = Number(returnQtyInputs.value[item.id]) || 0;
+  if (qty < 1) {
+    alert("Enter a quantity of at least 1.");
+    return;
+  }
+  if (qty > Number(item.maintenance_quantity)) {
+    alert(`Only ${item.maintenance_quantity} unit(s) are currently under maintenance.`);
+    return;
+  }
+  if (
+    !confirm(
+      `Return ${qty}x "${item.name}" to available stock from maintenance?`,
+    )
+  )
+    return;
+
+  try {
+    await returnToService(item.id, qty);
+    returnQtyInputs.value[item.id] = "";
+    await loadData();
+  } catch (e) {
+    alert(errMsg(e));
+  }
+}
 
 async function loadData() {
   try {
@@ -156,6 +201,19 @@ const filteredDamagedItems = computed(() => {
   const keyword = search.value.trim().toLowerCase();
 
   return damagedItems.value.filter((item) => {
+    const name = String(item.name || "").toLowerCase();
+    const category = String(item.category || "").toLowerCase();
+    return !keyword || name.includes(keyword) || category.includes(keyword);
+  });
+});
+
+
+// FILTERED MAINTENANCE ITEMS
+
+const filteredMaintenanceItems = computed(() => {
+  const keyword = search.value.trim().toLowerCase();
+
+  return maintenanceItems.value.filter((item) => {
     const name = String(item.name || "").toLowerCase();
     const category = String(item.category || "").toLowerCase();
     return !keyword || name.includes(keyword) || category.includes(keyword);
@@ -296,6 +354,10 @@ function formatDate(date) {
             Damaged
           </option>
 
+          <option value="Maintenance">
+            Maintenance
+          </option>
+
           <option value="Low Stock">
             Low Stock
           </option>
@@ -380,7 +442,8 @@ function formatDate(date) {
               <template v-if="
                 !isBorrowedView &&
                 !isLocationView &&
-                !isDamagedView
+                !isDamagedView &&
+                !isMaintenanceView
               ">
 
                 <th>
@@ -411,6 +474,28 @@ function formatDate(date) {
 
                 <th>
                   Available Qty
+                </th>
+
+              </template>
+
+              <!-- MAINTENANCE ITEMS VIEW -->
+
+              <template v-if="isMaintenanceView">
+
+                <th>
+                  Category
+                </th>
+
+                <th>
+                  Under Maintenance
+                </th>
+
+                <th>
+                  Available Qty
+                </th>
+
+                <th style="width: 220px">
+                  Return to Service
                 </th>
 
               </template>
@@ -486,7 +571,8 @@ function formatDate(date) {
             <template v-if="
               !isBorrowedView &&
               !isLocationView &&
-              !isDamagedView
+              !isDamagedView &&
+              !isMaintenanceView
             ">
 
               <tr v-for="item in filteredItems" :key="item.id">
@@ -559,6 +645,60 @@ function formatDate(date) {
               <tr v-if="filteredDamagedItems.length === 0">
                 <td colspan="4" class="text-center text-muted py-4">
                   No damaged items on record.
+                </td>
+              </tr>
+
+            </template>
+
+            <!-- MAINTENANCE ITEMS VIEW -->
+
+            <template v-else-if="isMaintenanceView">
+
+              <tr v-for="item in filteredMaintenanceItems" :key="item.id">
+
+                <td>
+                  {{ item.name }}
+                </td>
+
+                <td>
+                  {{ item.category }}
+                </td>
+
+                <td>
+                  <span class="badge bg-warning text-dark">
+                    {{ item.maintenance_quantity }}
+                  </span>
+                </td>
+
+                <td>
+                  {{ item.qty }}
+                </td>
+
+                <td>
+                  <div class="d-flex gap-2">
+                    <input
+                      type="number"
+                      min="1"
+                      :max="item.maintenance_quantity"
+                      class="form-control form-control-sm"
+                      style="width: 80px"
+                      v-model="returnQtyInputs[item.id]"
+                      placeholder="Qty"
+                    />
+                    <button
+                      class="btn btn-sm btn-success"
+                      @click="handleReturnToService(item)"
+                    >
+                      Return to Service
+                    </button>
+                  </div>
+                </td>
+
+              </tr>
+
+              <tr v-if="filteredMaintenanceItems.length === 0">
+                <td colspan="5" class="text-center text-muted py-4">
+                  No items currently under maintenance.
                 </td>
               </tr>
 

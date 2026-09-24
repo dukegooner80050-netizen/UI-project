@@ -34,10 +34,20 @@ function formatDate(date) {
 }
 
 async function markInspected(inspection, outcome) {
-  const verb = outcome === "Good" ? "restock" : "write off as damaged";
+  const verbMap = {
+    Good: "restock",
+    Damaged: "permanently write off (disposal)",
+    Maintenance: "hold for maintenance (not available until returned to service)",
+  };
+  const labelMap = {
+    Good: "Fit for Use",
+    Damaged: "Disposal",
+    Maintenance: "Need Maintenance",
+  };
+
   if (
     !confirm(
-      `Mark ${inspection.quantity}x "${inspection.item_name}" as ${outcome}? This will ${verb} that quantity.`,
+      `Mark ${inspection.quantity}x "${inspection.item_name}" as ${labelMap[outcome]}? This will ${verbMap[outcome]} that quantity.`,
     )
   )
     return;
@@ -72,7 +82,7 @@ async function markInspected(inspection, outcome) {
                 <th>Request #</th>
                 <th>Location</th>
                 <th>Returned On</th>
-                <th style="width: 220px"></th>
+                <th style="width: 340px"></th>
               </tr>
             </thead>
             <tbody>
@@ -93,13 +103,19 @@ async function markInspected(inspection, outcome) {
                       class="btn btn-sm btn-success"
                       @click="markInspected(i, 'Good')"
                     >
-                      Good
+                      Fit for Use
+                    </button>
+                    <button
+                      class="btn btn-sm btn-warning"
+                      @click="markInspected(i, 'Maintenance')"
+                    >
+                      Need Maintenance
                     </button>
                     <button
                       class="btn btn-sm btn-danger"
                       @click="markInspected(i, 'Damaged')"
                     >
-                      Damaged
+                      Disposal
                     </button>
                   </div>
                 </td>

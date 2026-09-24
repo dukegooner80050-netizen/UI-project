@@ -55,7 +55,7 @@ class InspectionController extends Controller
         }
 
         $validated = $request->validate([
-            'outcome' => 'required|in:Good,Damaged',
+            'outcome' => 'required|in:Good,Damaged,Maintenance',
         ]);
 
         return DB::transaction(function () use ($validated, $inspection) {
@@ -69,7 +69,15 @@ class InspectionController extends Controller
 
                 $this->logActivity(
                     request()->user()->idUsers,
-                    "Inspected '{$item->item_name}' x{$inspection->quantity} - Good (restocked)"
+                    "Inspected '{$item->item_name}' x{$inspection->quantity} - Fit for Use (restocked)"
+                );
+            } elseif ($validated['outcome'] === 'Maintenance') {
+                $item->maintenance_quantity += $inspection->quantity;
+                $item->save();
+
+                $this->logActivity(
+                    request()->user()->idUsers,
+                    "Inspected '{$item->item_name}' x{$inspection->quantity} - Needs Maintenance"
                 );
             } else {
                 $item->damaged_quantity += $inspection->quantity;
@@ -77,7 +85,7 @@ class InspectionController extends Controller
 
                 $this->logActivity(
                     request()->user()->idUsers,
-                    "Inspected '{$item->item_name}' x{$inspection->quantity} - Damaged (written off)"
+                    "Inspected '{$item->item_name}' x{$inspection->quantity} - Disposal (written off)"
                 );
             }
 
@@ -88,6 +96,46 @@ class InspectionController extends Controller
 
             return response()->json([
                 'message' => "Item marked as {$validated['outcome']}.",
+            ]);
+        });
+    }
+
+    // Move quantity that was under maintenance back into available stock
+    // once it's been fixed.
+    public function returnToService(Request $request, $itemId)
+    {
+        $item = Item::find($itemId);
+
+        if (!$item) {
+            return response()->json([
+                'message' => 'Item not found.'
+            ], 404);
+        }
+
+        $validated = $request->validate([
+            'quantity' => 'required|integer|min:1',
+        ]);
+
+        if ($validated['quantity'] > $item->maintenance_quantity) {
+            return response()->json([
+                'message' => "Only {$item->maintenance_quantity} unit(s) of '{$item->item_name}' are currently under maintenance."
+            ], 400);
+        }
+
+        return DB::transaction(function () use ($validated, $item) {
+            $item->maintenance_quantity -= $validated['quantity'];
+            $item->quantity += $validated['quantity'];
+            $this->updateItemStatus($item);
+            $item->save();
+
+            $this->logActivity(
+                request()->user()->idUsers,
+                "Returned {$validated['quantity']} '{$item->item_name}' to service from maintenance"
+            );
+
+            return response()->json([
+                'message' => 'Item returned to service successfully.',
+                'item' => $item,
             ]);
         });
     }
