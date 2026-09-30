@@ -245,6 +245,7 @@ Route::middleware('role:admin,dean,cashier')->group(function () {
 
         Route::get('/inspections', [InspectionController::class, 'index']);
         Route::put('/inspections/{id}', [InspectionController::class, 'inspect']);
+        Route::put('/items/{itemId}/return-to-service', [InspectionController::class, 'returnToService']);
 
 
         /*

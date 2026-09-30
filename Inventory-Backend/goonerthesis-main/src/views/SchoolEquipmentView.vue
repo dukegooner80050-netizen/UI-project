@@ -7,12 +7,23 @@ import {
   restockItem,
 } from "../services/items";
 import { getRequests, returnEquipment } from "../services/requests";
+import AlertMessage from "../components/AlertMessage.vue";
 
 // STATES
 const items = ref([]);
 const currentItem = ref(null);
 const modalError = ref("");
 const addError = ref("");
+
+const showAlert = ref(false);
+const alertType = ref("success");
+const alertMessage = ref("");
+
+function notify(type, message) {
+  alertType.value = type;
+  alertMessage.value = message;
+  showAlert.value = true;
+}
 const activeTab = ref("inventory");
 const selectedEquipment = ref(null);
 
@@ -73,7 +84,7 @@ async function confirmAdd() {
     await load();
     closeAdd();
   } catch (e) {
-    alert(String(e.message || e));
+    notify("danger", String(e.message || e));
   }
 }
 
@@ -197,12 +208,18 @@ async function confirmModal() {
     await load();
     closeModal();
   } catch (e) {
-    alert(String(e.message || e));
+    notify("danger", String(e.message || e));
   }
 }
 </script>
 
 <template>
+  <AlertMessage
+    v-model:show="showAlert"
+    :type="alertType"
+    :message="alertMessage"
+  />
+
   <h3 class="mb-4">School Equipment</h3>
 
   <!-- ACTION BAR -->

@@ -14,9 +14,20 @@ import {
   borrowNonConsumables,
 } from "../services/inventory";
 import { getRequests, returnEquipment } from "../services/requests";
+import AlertMessage from "../components/AlertMessage.vue";
 
 const modalError = ref("");
 const addError = ref("");
+
+const showAlert = ref(false);
+const alertType = ref("success");
+const alertMessage = ref("");
+
+function notify(type, message) {
+  alertType.value = type;
+  alertMessage.value = message;
+  showAlert.value = true;
+}
 
 // STATES
 const activeTab = ref("inventory");
@@ -68,7 +79,7 @@ async function confirmAdd() {
     await refresh();
     closeAdd();
   } catch (e) {
-    alert(String(e.message || e));
+    notify("danger", String(e.message || e));
   }
 }
 
@@ -202,7 +213,8 @@ async function proceedAction() {
     modalOpen.value = false;
   } catch (e) {
     console.log(e.response?.data);
-    alert(
+    notify(
+      "danger",
       e.response?.data?.message ||
         JSON.stringify(e.response?.data?.errors) ||
         e.message,
@@ -213,6 +225,12 @@ async function proceedAction() {
 
 <template>
   <div>
+    <AlertMessage
+      v-model:show="showAlert"
+      :type="alertType"
+      :message="alertMessage"
+    />
+
     <h3 class="mb-4">Office Supplies</h3>
     <div class="d-flex justify-content-between align-items-center mb-3">
       <div class="d-flex gap-2">

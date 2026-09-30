@@ -3,6 +3,7 @@ import { ref, computed, onMounted } from "vue";
 import { getRequests, approveRequest, rejectRequest,} from "../services/requests";
 import { getCurrentUser } from "../services/storage";
 import { requireAdmin } from "../services/session";
+import AlertMessage from "../components/AlertMessage.vue";
 
 const requests = ref([]);
 const showAll = ref(false);
@@ -16,6 +17,16 @@ const confirmMessage = ref("");
 const confirmButton = ref("Confirm");
 const confirmButtonClass = ref("btn-primary");
 const confirmAction = ref(null);
+
+const showAlert = ref(false);
+const alertType = ref("success");
+const alertMessage = ref("");
+
+function notify(type, message) {
+  alertType.value = type;
+  alertMessage.value = message;
+  showAlert.value = true;
+}
 
 onMounted(async () => {
   requireAdmin();
@@ -70,7 +81,7 @@ function openRejectModal(id) {
 
 async function confirmReject() {
   if (!rejectReason.value.trim()) {
-    alert("Rejection reason is required.");
+    notify("warning", "Rejection reason is required.");
     return;
   }
 
@@ -104,7 +115,7 @@ async function executeConfirm() {
       await confirmAction.value();
     }
   } catch (e) {
-    alert(String(e.message || e));
+    notify("danger", String(e.message || e));
   }
 
   confirmModal.value = false;
@@ -121,6 +132,12 @@ function statusBadgeClass(status) {
 
 <template>
   <div>
+    <AlertMessage
+      v-model:show="showAlert"
+      :type="alertType"
+      :message="alertMessage"
+    />
+
     <div
       class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3"
     >

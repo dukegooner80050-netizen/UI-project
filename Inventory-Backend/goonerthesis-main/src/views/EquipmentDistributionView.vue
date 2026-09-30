@@ -14,6 +14,7 @@ import {
   removeRoomEquipment,
 } from "../services/roomEquipment";
 import { listInventory } from "../services/inventory";
+import AlertMessage from "../components/AlertMessage.vue";
 
 const loading = ref(true);
 const buildings = ref([]);
@@ -37,6 +38,16 @@ const addItemQty = ref(1);
 
 const editingEquipmentId = ref(null);
 const editingEquipmentQty = ref(1);
+
+const showAlert = ref(false);
+const alertType = ref("success");
+const alertMessage = ref("");
+
+function notify(type, message) {
+  alertType.value = type;
+  alertMessage.value = message;
+  showAlert.value = true;
+}
 
 function errMsg(e) {
   return e?.response?.data?.message || e?.message || "Something went wrong.";
@@ -64,7 +75,7 @@ onMounted(async () => {
   try {
     await Promise.all([loadBuildings(), loadEquipmentItems()]);
   } catch (e) {
-    alert(errMsg(e));
+    notify("danger", errMsg(e));
   } finally {
     loading.value = false;
   }
@@ -77,7 +88,7 @@ async function selectBuilding(building) {
   try {
     await loadRoomsForBuilding(building.idbuilding);
   } catch (e) {
-    alert(errMsg(e));
+    notify("danger", errMsg(e));
   }
 }
 
@@ -86,7 +97,7 @@ async function selectRoom(room) {
   try {
     await loadRoomLoadout(room.idroom);
   } catch (e) {
-    alert(errMsg(e));
+    notify("danger", errMsg(e));
   }
 }
 
@@ -98,7 +109,7 @@ async function addBuilding() {
     newBuildingName.value = "";
     await loadBuildings();
   } catch (e) {
-    alert(errMsg(e));
+    notify("danger", errMsg(e));
   }
 }
 
@@ -115,7 +126,7 @@ async function saveEditBuilding() {
     editingBuildingId.value = null;
     await loadBuildings();
   } catch (e) {
-    alert(errMsg(e));
+    notify("danger", errMsg(e));
   }
 }
 
@@ -131,7 +142,7 @@ async function removeBuilding(building) {
     }
     await loadBuildings();
   } catch (e) {
-    alert(errMsg(e));
+    notify("danger", errMsg(e));
   }
 }
 
@@ -146,7 +157,7 @@ async function addRoom() {
     newRoomName.value = "";
     await loadRoomsForBuilding(selectedBuildingId.value);
   } catch (e) {
-    alert(errMsg(e));
+    notify("danger", errMsg(e));
   }
 }
 
@@ -164,7 +175,7 @@ async function saveEditRoom() {
     editingRoomId.value = null;
     await loadRoomsForBuilding(selectedBuildingId.value);
   } catch (e) {
-    alert(errMsg(e));
+    notify("danger", errMsg(e));
   }
 }
 
@@ -178,7 +189,7 @@ async function removeRoom(room) {
     }
     await loadRoomsForBuilding(selectedBuildingId.value);
   } catch (e) {
-    alert(errMsg(e));
+    notify("danger", errMsg(e));
   }
 }
 
@@ -197,7 +208,7 @@ async function addEquipmentToRoom() {
       loadEquipmentItems(),
     ]);
   } catch (e) {
-    alert(errMsg(e));
+    notify("danger", errMsg(e));
   }
 }
 
@@ -217,7 +228,7 @@ async function saveEditEquipment(entry) {
       loadEquipmentItems(),
     ]);
   } catch (e) {
-    alert(errMsg(e));
+    notify("danger", errMsg(e));
   }
 }
 
@@ -231,7 +242,7 @@ async function removeEquipmentFromRoom(entry) {
       loadEquipmentItems(),
     ]);
   } catch (e) {
-    alert(errMsg(e));
+    notify("danger", errMsg(e));
   }
 }
 
@@ -253,6 +264,12 @@ const addItemAvailable = computed(() => {
 
 <template>
   <div>
+    <AlertMessage
+      v-model:show="showAlert"
+      :type="alertType"
+      :message="alertMessage"
+    />
+
     <h3 class="mb-1">Equipment Distribution</h3>
     <p class="text-muted mb-4">
       Manage buildings and rooms, and distribute School Equipment to a room.

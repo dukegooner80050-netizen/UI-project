@@ -74,6 +74,16 @@ const totalDamagedQty = computed(() =>
   damagedItems.value.reduce((a, i) => a + (Number(i.damaged_quantity) || 0), 0),
 );
 
+const maintenanceItems = computed(() =>
+  items.value
+    .filter((i) => Number(i.maintenance_quantity) > 0)
+    .sort((a, b) => Number(b.maintenance_quantity) - Number(a.maintenance_quantity)),
+);
+
+const totalMaintenanceQty = computed(() =>
+  maintenanceItems.value.reduce((a, i) => a + (Number(i.maintenance_quantity) || 0), 0),
+);
+
 const inventoryList = computed(() =>
   items.value
     .slice()
@@ -333,6 +343,49 @@ function printReport() {
               <tr v-if="inventoryList.length === 0">
                 <td colspan="4" class="text-center text-muted py-4">
                   No inventory data
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- MAINTENANCE ITEMS -->
+    <div class="card shadow-sm mb-3">
+      <div class="card-body">
+        <div class="d-flex justify-content-between align-items-center mb-3">
+          <div>
+            <h5 class="mb-0">Maintenance Items</h5>
+            <div class="text-muted small">
+              Items held for repair after failing return inspection
+            </div>
+          </div>
+          <span class="badge bg-warning text-dark">{{ totalMaintenanceQty }} total</span>
+        </div>
+
+        <div class="table-responsive">
+          <table class="table table-striped table-hover align-middle mb-0">
+            <thead class="table-light">
+              <tr>
+                <th>Item</th>
+                <th>Category</th>
+                <th>Under Maintenance</th>
+                <th>Still Available</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="item in maintenanceItems" :key="item.id">
+                <td>{{ item.name }}</td>
+                <td>{{ item.category }}</td>
+                <td>
+                  <span class="badge bg-warning text-dark">{{ item.maintenance_quantity }}</span>
+                </td>
+                <td>{{ item.qty }}</td>
+              </tr>
+              <tr v-if="maintenanceItems.length === 0">
+                <td colspan="4" class="text-center text-muted py-4">
+                  No items currently under maintenance.
                 </td>
               </tr>
             </tbody>
