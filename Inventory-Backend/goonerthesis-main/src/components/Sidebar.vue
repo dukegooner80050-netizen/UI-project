@@ -21,6 +21,7 @@ const props = defineProps({
 const emit = defineEmits(["toggle", "closeMobile"])
 
 const pendingCount = ref(0)
+const pendingInspectionCount = ref(0)
 
 const router = useRouter()
 const route = useRoute()
@@ -56,6 +57,29 @@ async function refreshPendingCount() {
   }
 }
 
+/* PENDING INSPECTION COUNT */
+
+async function refreshPendingInspectionCount() {
+  if (!isAdmin.value) {
+    pendingInspectionCount.value = 0
+    return
+  }
+
+  try {
+    const response = await axios.get("/inspections")
+
+    // /inspections already only returns items still awaiting evaluation
+    const inspections = Array.isArray(response.data)
+      ? response.data
+      : response.data?.data || []
+
+    pendingInspectionCount.value = inspections.length
+
+  } catch (error) {
+    console.error("Failed to load pending inspection count:", error)
+  }
+}
+
 /*  LOGOUT */
 
 function logout() {
@@ -74,10 +98,12 @@ let pendingRefreshTimer = null
 onMounted(async () => {
   // Load immediately
   await refreshPendingCount()
+  await refreshPendingInspectionCount()
 
   // Check the backend every 5 seconds
   pendingRefreshTimer = setInterval(() => {
     refreshPendingCount()
+    refreshPendingInspectionCount()
   }, 2000)
 })
 
@@ -203,9 +229,18 @@ onBeforeUnmount(() => {
       <span class="label" v-if="!props.collapsed">Equipment Distribution</span>
     </RouterLink>
 
-    <RouterLink v-if="isAdmin" class="sidebar-link" :class="{ active: active('/pending-inspection') }" to="/pending-inspection">
-      <span class="icon">🔍</span>
-      <span class="label" v-if="!props.collapsed">Pending Inspection</span>
+    <RouterLink
+      v-if="isAdmin"
+      class="sidebar-link d-flex justify-content-between align-items-center"
+      :class="{ active: active('/pending-inspection') }"
+      to="/pending-inspection"
+    >
+      <span class="d-flex align-items-center gap-2">
+        <span class="icon">🔍</span>
+        <span class="label" v-if="!props.collapsed">Pending Inspection</span>
+      </span>
+
+      <span v-if="!props.collapsed" class="badge bg-danger">{{ pendingInspectionCount }}</span>
     </RouterLink>
 
     <RouterLink v-if="isAdmin" class="sidebar-link" :class="{ active: active('/settings') }" to="/settings">

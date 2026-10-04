@@ -14,6 +14,18 @@ import {
   borrowNonConsumables,
 } from "../services/inventory";
 import { getRequests, returnEquipment } from "../services/requests";
+import AlertMessage from "../components/AlertMessage.vue";
+import { getErrorMessage } from "../services/errors";
+
+const showAlert = ref(false);
+const alertType = ref("success");
+const alertMessage = ref("");
+
+function notify(type, message) {
+  alertType.value = type;
+  alertMessage.value = message;
+  showAlert.value = true;
+}
 
 const modalError = ref("");
 const addError = ref("");
@@ -68,7 +80,7 @@ async function confirmAdd() {
     await refresh();
     closeAdd();
   } catch (e) {
-    alert(String(e.message || e));
+    notify("danger", getErrorMessage(e));
   }
 }
 
@@ -185,7 +197,6 @@ async function proceedAction() {
         item_name: editName.value.trim(),
         description: currentItem.value.description,
         category: currentItem.value.category,
-        price: Number(currentItem.value.price),
         item_type: currentItem.value.item_type,
         quantity: Number(currentItem.value.quantity),
         status: currentItem.value.status,
@@ -202,17 +213,15 @@ async function proceedAction() {
     modalOpen.value = false;
   } catch (e) {
     console.log(e.response?.data);
-    alert(
-      e.response?.data?.message ||
-        JSON.stringify(e.response?.data?.errors) ||
-        e.message,
-    );
+    notify("danger", getErrorMessage(e));
   }
 }
 </script>
 
 <template>
   <div>
+    <AlertMessage v-model:show="showAlert" :type="alertType" :message="alertMessage" />
+
     <h3 class="mb-4">Office Supplies</h3>
     <div class="d-flex justify-content-between align-items-center mb-3">
       <div class="d-flex gap-2">

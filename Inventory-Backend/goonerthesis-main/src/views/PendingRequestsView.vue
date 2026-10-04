@@ -3,6 +3,18 @@ import { ref, computed, onMounted } from "vue";
 import { getRequests, approveRequest, rejectRequest,} from "../services/requests";
 import { getCurrentUser } from "../services/storage";
 import { requireAdmin } from "../services/session";
+import AlertMessage from "../components/AlertMessage.vue";
+import { getErrorMessage } from "../services/errors";
+
+const showAlert = ref(false);
+const alertType = ref("success");
+const alertMessage = ref("");
+
+function notify(type, message) {
+  alertType.value = type;
+  alertMessage.value = message;
+  showAlert.value = true;
+}
 
 const requests = ref([]);
 const showAll = ref(false);
@@ -70,7 +82,7 @@ function openRejectModal(id) {
 
 async function confirmReject() {
   if (!rejectReason.value.trim()) {
-    alert("Rejection reason is required.");
+    notify("warning", "Rejection reason is required.");
     return;
   }
 
@@ -104,7 +116,7 @@ async function executeConfirm() {
       await confirmAction.value();
     }
   } catch (e) {
-    alert(String(e.message || e));
+    notify("danger", getErrorMessage(e));
   }
 
   confirmModal.value = false;
@@ -121,6 +133,8 @@ function statusBadgeClass(status) {
 
 <template>
   <div>
+    <AlertMessage v-model:show="showAlert" :type="alertType" :message="alertMessage" />
+
     <div
       class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3"
     >

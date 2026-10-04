@@ -7,6 +7,18 @@ import {
   restockItem,
 } from "../services/items";
 import { getRequests, returnEquipment } from "../services/requests";
+import AlertMessage from "../components/AlertMessage.vue";
+import { getErrorMessage } from "../services/errors";
+
+const showAlert = ref(false);
+const alertType = ref("success");
+const alertMessage = ref("");
+
+function notify(type, message) {
+  alertType.value = type;
+  alertMessage.value = message;
+  showAlert.value = true;
+}
 
 // STATES
 const items = ref([]);
@@ -73,7 +85,7 @@ async function confirmAdd() {
     await load();
     closeAdd();
   } catch (e) {
-    alert(String(e.message || e));
+    notify("danger", getErrorMessage(e));
   }
 }
 
@@ -188,7 +200,6 @@ async function confirmModal() {
         item_name: editName.value,
         description: currentItem.value.description,
         category: currentItem.value.category,
-        price: currentItem.value.price,
         item_type: currentItem.value.item_type,
         quantity: currentItem.value.qty,
         status: currentItem.value.status,
@@ -197,12 +208,13 @@ async function confirmModal() {
     await load();
     closeModal();
   } catch (e) {
-    alert(String(e.message || e));
+    notify("danger", getErrorMessage(e));
   }
 }
 </script>
 
 <template>
+  <AlertMessage v-model:show="showAlert" :type="alertType" :message="alertMessage" />
   <h3 class="mb-4">School Equipment</h3>
 
   <!-- ACTION BAR -->

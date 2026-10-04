@@ -40,10 +40,12 @@ class ItemController extends Controller
             'item_name' => 'required|string|max:255|unique:items,item_name',
             'description' => 'nullable|string|max:255',
             'category'  => 'required|string|max:255',
-            'price' => 'required|numeric|min:0',
+            'price' => 'required_if:category,Uniforms|nullable|numeric|min:0',
             'item_type' => 'required|string|max:255',
             'quantity'  => 'required|integer|min:0',
         ]);
+
+        $validated['price'] = $validated['price'] ?? 0;
 
         $item = new Item($validated);
         $this->updateItemStatus($item);
@@ -73,11 +75,15 @@ class ItemController extends Controller
             'item_name' => 'required|string|max:255|unique:items,item_name,' . $id . ',iditems',
             'description' => 'nullable|string|max:255',
             'category'  => 'required|string|max:255',
-            'price' => 'required|numeric|min:0',
+            'price' => 'required_if:category,Uniforms|nullable|numeric|min:0',
             'item_type' => 'required|string|max:255',
             'quantity'  => 'required|integer|min:0',
             'status'    => 'required|string|max:255',
         ]);
+
+        if (!array_key_exists('price', $validated) || $validated['price'] === null) {
+            unset($validated['price']);
+        }
 
         $item->update($validated);
         $this->logActivity(

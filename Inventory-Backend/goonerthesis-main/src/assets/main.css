@@ -1,5 +1,15 @@
+:root {
+  --app-bg: #f1f5f9;
+  --app-main-bg: #f4f6f9;
+}
+
+[data-bs-theme="dark"] {
+  --app-bg: #15181c;
+  --app-main-bg: #1a1d21;
+}
+
 body {
-  background: #f1f5f9;
+  background: var(--app-bg);
 }
 
 .card {
