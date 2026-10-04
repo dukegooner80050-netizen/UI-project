@@ -7,12 +7,17 @@ const search = ref("");
 const statusFilter = ref("ALL");
 const borrowerFilter = ref("ALL");
 const viewMode = ref("ALL_ITEMS");
+const activeTab = ref("INVENTORY");
+const locationFilter = ref("");
+const roomFilter = ref("");
+const LOCATIONS = ["SFB.Faculty", "SFB.Building 1", "SFB.Building 2", "SFB.Building 3"];
+const ROOMS = ["Room 201", "Room 202", "Room 203", "N/A"];
 
 const items = ref([]);
 const requests = ref([]);
 
 const isBorrowedView = computed(() => viewMode.value === "BORROWED");
-const isLocationView = computed(() => viewMode.value === "LOCATIONS");
+const isLocationView = computed(() => activeTab.value === "LOCATOR");
 // The Status filter already had a "Damaged" option, but nothing ever set
 // item.status to "Damaged" -- damaged items are tracked separately via
 // damaged_quantity (from the Return Inspection feature). When that filter
@@ -25,6 +30,77 @@ const damagedItems = computed(() =>
   items.value.filter((item) => Number(item.damaged_quantity) > 0),
 );
 
+<<<<<<< Updated upstream
+=======
+// Items marked "Need Maintenance" during inspection. Unlike Disposal,
+// these can be moved back into available stock later via "Return to
+// Service" once repaired.
+const isMaintenanceView = computed(
+  () => !isBorrowedView.value && !isLocationView.value && statusFilter.value === "Maintenance",
+);
+
+const maintenanceItems = computed(() =>
+  items.value.filter((item) => Number(item.maintenance_quantity) > 0),
+);
+
+const returnQtyInputs = ref({}); // { [itemId]: quantity }
+
+const showAlert = ref(false);
+const alertType = ref("success");
+const alertMessage = ref("");
+
+const confirmModalOpen = ref(false);
+const pendingReturnItem = ref(null);
+const pendingReturnQty = ref(0);
+
+function notify(type, message) {
+  alertType.value = type;
+  alertMessage.value = message;
+  showAlert.value = true;
+}
+
+function errMsg(e) {
+  return e?.response?.data?.message || e?.message || "Something went wrong.";
+}
+
+async function handleReturnToService(item) {
+  const qty = Number(returnQtyInputs.value[item.id]) || 0;
+  if (qty < 1) {
+    notify("warning", "Enter a quantity of at least 1.");
+    return;
+  }
+  if (qty > Number(item.maintenance_quantity)) {
+    notify("warning", `Only ${item.maintenance_quantity} unit(s) are currently under maintenance.`);
+    return;
+  }
+  pendingReturnItem.value = item;
+  pendingReturnQty.value = qty;
+  confirmModalOpen.value = true;
+}
+
+function closeConfirm() {
+  confirmModalOpen.value = false;
+  pendingReturnItem.value = null;
+  pendingReturnQty.value = 0;
+}
+
+async function confirmReturnToService() {
+  const item = pendingReturnItem.value;
+  const qty = pendingReturnQty.value;
+  closeConfirm();
+
+  if (!item || qty < 1) return;
+
+  try {
+    await returnToService(item.id, qty);
+    returnQtyInputs.value[item.id] = "";
+    await loadData();
+  } catch (e) {
+    notify("danger", errMsg(e));
+  }
+}
+
+>>>>>>> Stashed changes
 async function loadData() {
   try {
     const [itemData, requestData] = await Promise.all([
@@ -92,6 +168,9 @@ const borrowedRows = computed(() => {
         room:
           request.room || "N/A",
 
+        requestId: request.id ?? request.idrequest ?? "N/A",
+        purpose: request.purpose || "N/A",
+        itemId: item.itemId ?? item.iditems ?? null,
         date:
           request.borrowedAt ||
           request.request_date,
@@ -99,7 +178,19 @@ const borrowedRows = computed(() => {
     }
   }
 
-  return rows;
+  if (!isLocationView.value) return rows;
+
+  const locatableNames = new Set(
+    items.value
+      .filter((item) => {
+        const category = String(item.category || "").toLowerCase();
+        const type = String(item.itemType || item.item_type || item.subCategory || "").toLowerCase();
+        return (category === "office supplies" || category === "school equipment") && type !== "consumable";
+      })
+      .map((item) => String(item.name || "").toLowerCase()),
+  );
+
+  return rows.filter((row) => locatableNames.has(String(row.name || "").toLowerCase()));
 });
 
 
@@ -192,7 +283,18 @@ const filteredBorrowedRows = computed(() => {
 
       String(row.room || "")
         .toLowerCase()
+        .includes(keyword) ||
+      String(row.purpose || "")
+        .toLowerCase()
+        .includes(keyword) ||
+      String(row.requestId || "")
+        .toLowerCase()
         .includes(keyword);
+
+    const matchesLocation =
+      !isLocationView.value ||
+      ((!locationFilter.value || row.location === locationFilter.value) &&
+       (!roomFilter.value || row.room === roomFilter.value));
 
     const matchesBorrower =
       borrowerFilter.value === "ALL" ||
@@ -200,11 +302,19 @@ const filteredBorrowedRows = computed(() => {
 
     return (
       matchesSearch &&
-      matchesBorrower
+      matchesBorrower &&
+      matchesLocation
     );
   });
 });
 
+
+function clearLocationFilters() {
+  search.value = "";
+  locationFilter.value = "";
+  roomFilter.value = "";
+  borrowerFilter.value = "ALL";
+}
 
 // STATUS BADGE
 
@@ -256,20 +366,97 @@ function formatDate(date) {
 
   <div>
 
+<<<<<<< Updated upstream
     <h3 class="mb-4">
       Inventory
     </h3>
+=======
+    <AlertMessage
+      v-model:show="showAlert"
+      :type="alertType"
+      :message="alertMessage"
+    />
 
+    <h3 class="mb-3">Inventory Management</h3>
+>>>>>>> Stashed changes
+
+    <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3" role="tablist" aria-label="Inventory sections">
+      <div class="d-flex flex-wrap gap-2">
+        <button
+          type="button"
+          class="btn"
+          :class="activeTab === 'INVENTORY' ? 'btn-primary' : 'btn-outline-primary'"
+          :aria-selected="activeTab === 'INVENTORY'"
+          role="tab"
+          @click="activeTab = 'INVENTORY'"
+        >
+          Inventory
+        </button>
+        <button
+          type="button"
+          class="btn"
+          :class="activeTab === 'LOCATOR' ? 'btn-primary' : 'btn-outline-primary'"
+          :aria-selected="activeTab === 'LOCATOR'"
+          role="tab"
+          @click="activeTab = 'LOCATOR'"
+        >
+          Item Locator
+        </button>
+      </div>
+    </div>
+
+    <p v-if="isLocationView" class="text-muted mb-4">
+      Search by item name or filter by building/room to find currently borrowed office supplies and school equipment.
+    </p>
+
+    <div v-if="isLocationView" class="card shadow-sm mb-4">
+      <div class="card-body">
+        <div class="row g-2 align-items-end">
+          <div class="col-md-5">
+            <label class="form-label">Search by item name</label>
+            <input v-model="search" class="form-control" placeholder="e.g. Projector, Chairs..." />
+          </div>
+          <div class="col-md-3">
+            <label class="form-label">Building / Location</label>
+            <select v-model="locationFilter" class="form-select">
+              <option value="">All locations</option>
+              <option v-for="loc in LOCATIONS" :key="loc" :value="loc">{{ loc }}</option>
+            </select>
+          </div>
+          <div class="col-md-2">
+            <label class="form-label">Room</label>
+            <select v-model="roomFilter" class="form-select">
+              <option value="">All rooms</option>
+              <option v-for="room in ROOMS" :key="room" :value="room">{{ room }}</option>
+            </select>
+          </div>
+          <div class="col-md-2">
+            <label class="form-label">Borrower</label>
+            <select v-model="borrowerFilter" class="form-select">
+              <option value="ALL">All Borrowers</option>
+              <option v-for="borrower in borrowerOptions" :key="borrower" :value="borrower">
+                {{ borrower }}
+              </option>
+            </select>
+          </div>
+          <div class="col-md-1">
+            <button type="button" class="btn btn-outline-secondary w-100" @click="clearLocationFilters">Clear</button>
+          </div>
+        </div>
+      </div>
+    </div>
 
     <!-- FILTERS -->
 
-    <div class="row mb-3">
+    <div v-if="!isLocationView" class="row mb-3">
 
       <!-- SEARCH -->
 
-      <div :class="isBorrowedView || isLocationView
+      <div :class="isLocationView
         ? 'col-md-5'
-        : 'col-md-6'
+        : isBorrowedView
+          ? 'col-md-5'
+          : 'col-md-9 col-lg-9'
         ">
 
         <input v-model="search" class="form-control"
@@ -327,31 +514,6 @@ function formatDate(date) {
 
       </div>
 
-
-      <!-- VIEW MODE -->
-
-      <div :class="isBorrowedView || isLocationView
-        ? 'col-md-4'
-        : 'col-md-3'
-        ">
-
-        <select v-model="viewMode" class="form-select">
-
-          <option value="ALL_ITEMS">
-            All Items
-          </option>
-
-          <option value="BORROWED">
-            Borrowed Items
-          </option>
-
-          <option value="LOCATIONS">
-            Item Locations
-          </option>
-
-        </select>
-
-      </div>
 
     </div>
 
@@ -443,30 +605,10 @@ function formatDate(date) {
               </template>
 
 
-              <!-- LOCATION VIEW -->
-
+              <!-- ITEM LOCATIONS VIEW -->
               <template v-if="isLocationView">
-
-                <th>
-                  Borrower
-                </th>
-
-                <th>
-                  Location
-                </th>
-
-                <th>
-                  Room
-                </th>
-
-                <th>
-                  Qty
-                </th>
-
-                <th>
-                  Date
-                </th>
-
+                <th>Category</th><th>Qty Out</th><th>Requester</th><th>Request #</th>
+                <th>Location</th><th>Room</th><th>Purpose</th><th>Borrowed On</th>
               </template>
 
             </tr>
@@ -572,40 +714,20 @@ function formatDate(date) {
             <template v-else-if="isBorrowedView">
 
               <tr v-for="row in filteredBorrowedRows" :key="row.id">
-
+                <td> {{ row.name }}</td>
+                <td> {{ row.category }} </td>
                 <td>
-                  {{ row.name }}
-                </td>
-
-                <td>
-                  {{ row.category }}
-                </td>
-
-                <td>
-
                   <span class="badge bg-primary">
                     {{ row.qty }}
                   </span>
-
                 </td>
-
-                <td>
-                  {{ row.borrower }}
-                </td>
-
-                <td>
-                  {{ row.location }}
-
+                <td> {{ row.borrower }} </td>
+                <td> {{ row.location }}
                   <small v-if="row.room" class="text-muted d-block">
                     {{ row.room }}
                   </small>
-
                 </td>
-
-                <td>
-                  {{ formatDate(row.date) }}
-                </td>
-
+                <td> {{ formatDate(row.date) }} </td>
               </tr>
 
 
@@ -621,51 +743,17 @@ function formatDate(date) {
 
             </template>
 
-            <!-- LOCATION VIEW -->
-
+            <!-- ITEM LOCATIONS VIEW -->
             <template v-else-if="isLocationView">
-
               <tr v-for="row in filteredBorrowedRows" :key="row.id">
-
-                <td>
-                  {{ row.name }}
-                </td>
-
-                <td>
-                  {{ row.borrower }}
-                </td>
-
-                <td>
-
-                  {{ row.location }}
-
-                  <small v-if="row.room" class="text-muted d-block">
-                    {{ row.room }}
-                  </small>
-
-                </td>
-
-                <td>
-                  {{ row.qty }}
-                </td>
-
-                <td>
-                  {{ formatDate(row.date) }}
-                </td>
-
+                <td>{{ row.name }}</td><td>{{ row.category }}</td><td>{{ row.qty }}</td>
+                <td>{{ row.borrower }}</td><td>{{ row.requestId }}</td>
+                <td>{{ row.location }}</td><td>{{ row.room }}</td><td>{{ row.purpose }}</td>
+                <td>{{ formatDate(row.date) }}</td>
               </tr>
-
-
-              <tr v-if="
-                filteredBorrowedRows.length === 0
-              ">
-
-                <td colspan="5" class="text-center text-muted py-4">
-                  No item locations found.
-                </td>
-
+              <tr v-if="filteredBorrowedRows.length === 0">
+                <td colspan="9" class="text-center text-muted py-4">No matching borrowed items found.</td>
               </tr>
-
             </template>
 
           </tbody>
@@ -689,6 +777,44 @@ function formatDate(date) {
 
   </div>
 
+    <div v-if="confirmModalOpen" class="modal-backdrop-custom">
+      <div class="modal-custom">
+        <div class="modal-header">
+          <h5 class="mb-0">Confirm Return to Service</h5>
+          <button
+            type="button"
+            class="btn-close"
+            @click="closeConfirm"
+          ></button>
+        </div>
+
+        <div class="modal-body">
+          <p class="mb-0">
+            Return {{ pendingReturnQty }}x
+            "{{ pendingReturnItem?.name }}"
+            to available stock from maintenance?
+          </p>
+        </div>
+
+        <div class="modal-footer">
+          <button
+            type="button"
+            class="btn btn-secondary"
+            @click="closeConfirm"
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            class="btn btn-success"
+            @click="confirmReturnToService"
+          >
+            Confirm
+          </button>
+        </div>
+      </div>
+    </div>
+
 </template>
 
 
@@ -702,5 +828,47 @@ function formatDate(date) {
   position: sticky;
   top: 0;
   z-index: 1;
+}
+</style>
+
+<style scoped>
+.modal-backdrop-custom {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1050;
+}
+
+.modal-custom {
+  width: min(500px, calc(100% - 2rem));
+  background: #fff;
+  border-radius: 0.5rem;
+  box-shadow: 0 0.5rem 1rem rgba(0, 0, 0, 0.15);
+}
+
+.modal-custom .modal-header,
+.modal-custom .modal-footer {
+  padding: 1rem;
+}
+
+.modal-custom .modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: 1px solid #dee2e6;
+}
+
+.modal-custom .modal-body {
+  padding: 1rem;
+}
+
+.modal-custom .modal-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.5rem;
+  border-top: 1px solid #dee2e6;
 }
 </style>

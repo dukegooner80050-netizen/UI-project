@@ -188,10 +188,6 @@ onBeforeUnmount(() => {
       <span class="label" v-if="!props.collapsed">School Equipments</span>
     </RouterLink>
 
-    <RouterLink v-if="isAdmin" class="sidebar-link" :class="{ active: active('/item-locator') }" to="/item-locator">
-      <span class="icon">📍</span>
-      <span class="label" v-if="!props.collapsed">Item Locator</span>
-    </RouterLink>
 
     <RouterLink class="sidebar-link" :class="{ active: active('/consumption-report') }" to="/consumption-report">
       <span class="icon">📅</span>

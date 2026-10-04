@@ -17,12 +17,27 @@ class RequestController extends Controller
 
 public function index()
 {
-$requests = Request::with([
-    'user',
-    'items.item',
-    'uniforms.uniformVariant.type',
-    'uniforms.uniformVariant.department'
-])->get();
+    $user = request()->user();
+
+    $requestsQuery = Request::with([
+        'user',
+        'items.item',
+        'uniforms.uniformVariant.type',
+        'uniforms.uniformVariant.department'
+    ]);
+
+    /*
+     * Inventory Management/Admin can see everyone's requests.
+     * Other users can only access their own requests.
+     */
+    if ($user->role !== 'admin') {
+        $requestsQuery->where(
+            'idUsers',
+            $user->idUsers
+        );
+    }
+
+    $requests = $requestsQuery->get();
 
 return response()->json(
     $requests->map(function ($request) {

@@ -64,7 +64,7 @@ onBeforeUnmount(() => window.removeEventListener("resize", onResize));
   position: sticky;
   top: 0;
   z-index: 2000;
-  background: #31ce12;
+  background: #104605;
   color: white;
   padding: 10px 12px;
   display: flex;

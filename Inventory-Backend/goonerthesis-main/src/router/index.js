@@ -12,7 +12,6 @@ import RequestView from "../views/RequestView.vue";
 import PendingRequestsView from "../views/PendingRequestsView.vue";
 import ReportsView from "../views/ReportsView.vue";
 import ActiveLogsView from "../views/ActiveLogsView.vue";
-import ItemLocatorView from "../views/ItemLocatorView.vue";
 import ConsumptionReportView from "../views/ConsumptionReportView.vue";
 import EquipmentDistributionView from "../views/EquipmentDistributionView.vue";
 import PendingInspectionView from "../views/PendingInspectionView.vue";
@@ -139,17 +138,7 @@ const routes = [
           roles: ["admin"],
         },
       },
-
-      {
-        path: "item-locator",
-        component: ItemLocatorView,
-        meta: {
-          requiresAuth: true,
-          roles: ["admin"],
-        },
-      },
-
-      {
+{
         path: "consumption-report",
         component: ConsumptionReportView,
         meta: {

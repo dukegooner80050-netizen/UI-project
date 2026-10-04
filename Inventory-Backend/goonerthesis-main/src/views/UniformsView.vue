@@ -233,9 +233,23 @@ async function removeUniformType(type) {
     return;
   }
 
-  if (!confirm(`Delete uniform type "${typeName}"?`)) {
+  pendingDeleteType.value = type;
+  deleteTypeConfirmModalOpen.value = true;
+}
+
+function closeDeleteTypeConfirm() {
+  deleteTypeConfirmModalOpen.value = false;
+  pendingDeleteType.value = null;
+}
+
+async function confirmDeleteUniformType() {
+  const type = pendingDeleteType.value;
+  closeDeleteTypeConfirm();
+
+  if (!type) {
     return;
   }
+
   try {
     await deleteUniformType(type.idUniftype);
     await loadAll();
@@ -398,6 +412,9 @@ const stockQuantity = ref(1);
 const actionConfirmModalOpen = ref(false);
 const actionConfirmType = ref("");
 const actionConfirmVariant = ref(null);
+
+const deleteTypeConfirmModalOpen = ref(false);
+const pendingDeleteType = ref(null);
 
 function openActionConfirm(type, variant) {
   actionConfirmType.value = type;
@@ -1002,6 +1019,45 @@ const visibleTypes = computed(() => {
         </div>
       </div>
     </div>
+    <!-- DELETE UNIFORM TYPE CONFIRMATION MODAL -->
+
+    <div v-if="deleteTypeConfirmModalOpen" class="modal-backdrop-custom">
+      <div class="modal-custom">
+        <div class="modal-header">
+          <h5 class="mb-0">Confirm Delete</h5>
+          <button
+            type="button"
+            class="btn-close"
+            @click="closeDeleteTypeConfirm"
+          ></button>
+        </div>
+
+        <div class="modal-body">
+          <p class="mb-0">
+            Delete uniform type
+            "{{ pendingDeleteType?.uniform_name || 'this uniform' }}"?
+          </p>
+        </div>
+
+        <div class="modal-footer">
+          <button
+            type="button"
+            class="btn btn-secondary"
+            @click="closeDeleteTypeConfirm"
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            class="btn btn-danger"
+            @click="confirmDeleteUniformType"
+          >
+            Confirm Delete
+          </button>
+        </div>
+      </div>
+    </div>
+
     <!-- ACTION CONFIRMATION MODAL -->
 
     <div v-if="actionConfirmModalOpen" class="modal-backdrop-custom">

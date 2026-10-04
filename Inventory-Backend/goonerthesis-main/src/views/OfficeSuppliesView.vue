@@ -390,55 +390,89 @@ async function proceedAction() {
           </table>
         </div>
       </div>
-      <!-- RIGHT -->
-      <div class="card shadow-sm" style="flex: 1">
-        <div class="card-body">
-          <h5>Borrower Details</h5>
-          <div v-if="selectedSupply">
-            <div
-              v-for="borrower in supplyBorrowers"
-              :key="borrower.requestItemId"
-              class="border rounded p-3 mb-3"
-            >
-              <div>
-                <strong>Requester:</strong>
-                {{ borrower.requester }}
-              </div>
-              <div>
-                <strong>Request #:</strong>
-                {{ borrower.requestId }}
-              </div>
-              <div>
-                <strong>Location:</strong>
-                {{ borrower.location }}
-              </div>
-              <div>
-                <strong>Room:</strong>
-                {{ borrower.room }}
-              </div>
-              <div>
-                <strong>Borrowed:</strong>
-                {{ borrower.borrowedQty }}
-              </div>
-              <button
-                class="btn btn-success mt-3"
-                @click="
-                  openQtyModal('return', {
-                    item_name: selectedSupply.item_name,
-                    borrowedQty: borrower.borrowedQty,
-                    requestItems: [borrower],
-                  })
-                "
-              >
-                Return
-              </button>
-            </div>
-          </div>
-          <div v-else class="text-center text-muted mt-5">
-            Select an item to view borrowers.
-          </div>
+<!-- RIGHT -->
+<div
+  class="card shadow-sm borrower-details-card"
+  style="flex: 1"
+>
+  <div class="card-body d-flex flex-column">
+
+    <h5 class="flex-shrink-0">
+      Borrower Details
+    </h5>
+
+    <div
+      v-if="selectedSupply"
+      class="borrower-details-scroll"
+    >
+
+      <div
+        v-for="borrower in supplyBorrowers"
+        :key="borrower.requestItemId"
+        class="border rounded p-3 mb-3 borrower-card"
+      >
+
+        <div class="borrower-detail">
+          <strong>Requester:</strong>
+          <span class="borrower-value">
+            {{ borrower.requester }}
+          </span>
         </div>
+
+        <div class="borrower-detail">
+          <strong>Request #:</strong>
+          <span class="borrower-value">
+            {{ borrower.requestId }}
+          </span>
+        </div>
+
+        <div class="borrower-detail">
+          <strong>Location:</strong>
+          <span class="borrower-value">
+            {{ borrower.location }}
+          </span>
+        </div>
+
+        <div class="borrower-detail">
+          <strong>Room:</strong>
+          <span class="borrower-value">
+            {{ borrower.room }}
+          </span>
+        </div>
+
+        <div class="borrower-detail">
+          <strong>Borrowed:</strong>
+          <span class="borrower-value">
+            {{ borrower.borrowedQty }}
+          </span>
+        </div>
+
+        <button
+          class="btn btn-success mt-3"
+          @click="
+            openQtyModal('return', {
+              item_name: selectedSupply.item_name,
+              borrowedQty: borrower.borrowedQty,
+              requestItems: [borrower],
+            })
+          "
+        >
+          Return
+        </button>
+
       </div>
+
+    </div>
+
+    <div
+      v-else
+      class="text-center text-muted mt-5"
+    >
+      Select an item to view borrowers.
+    </div>
+
+  </div>
+</div>
     </div>
 
     <div v-if="modalOpen" class="modal-backdrop-custom">
@@ -584,6 +618,36 @@ async function proceedAction() {
 .table-scroll {
   max-height: 420px;
   overflow-y: auto;
+}
+.borrower-details-card {
+  min-width: 0;
+  overflow: hidden;
+}
+
+.borrower-details-scroll {
+  flex: 1;
+  min-height: 0;
+  max-height: calc(75vh - 90px);
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding-right: 6px;
+}
+
+.borrower-card {
+  overflow: hidden;
+}
+
+.borrower-detail {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 6px;
+  min-width: 0;
+}
+
+.borrower-value {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 .table-scroll thead th {
   position: sticky;
