@@ -566,7 +566,7 @@ function formatDate(date) {
                 <th>
                   Date
                 </th>
-
+                </template> 
               <!-- ITEM LOCATOR VIEW -->
               <template v-if="isLocationView">
                 <th>Category</th><th>Qty Out</th><th>Requester</th><th>Request #</th>
