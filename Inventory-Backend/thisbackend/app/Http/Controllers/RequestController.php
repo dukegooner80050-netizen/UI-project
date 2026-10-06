@@ -91,6 +91,17 @@ public function show($id)
         ], 404);
     }
 
+    $currentUser = request()->user();
+
+    if (
+        strtolower((string) $currentUser->role) !== 'admin' &&
+        (int) $request->idUsers !== (int) $currentUser->idUsers
+    ) {
+        return response()->json([
+            'message' => 'You are not allowed to view this request.'
+        ], 403);
+    }
+
     return response()->json([
         'idUsers' => $request->idUsers,
         'id' => $request->idrequest,

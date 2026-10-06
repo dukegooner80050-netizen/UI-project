@@ -186,6 +186,7 @@ async function proceedAddType() {
 /* EDIT UNIFORM TYPE */
 
 const editTypeModalOpen = ref(false);
+const editTypeConfirm = ref(false);
 const editingType = ref(null);
 
 const editTypeName = ref("");
@@ -195,24 +196,35 @@ function openEditType(type) {
   editingType.value = type;
   editTypeName.value = type.uniform_name || "";
   editTypeDescription.value = type.description || "";
+  editTypeConfirm.value = false;
   editTypeModalOpen.value = true;
 }
 
 function closeEditType() {
   editTypeModalOpen.value = false;
+  editTypeConfirm.value = false;
   editingType.value = null;
 }
 
+// Step 1: validate, then show the confirmation screen.
+function requestTypeEdit() {
+  if (!editingType.value) {
+    return;
+  }
+  if (!editTypeName.value.trim()) {
+    notify("warning", "Uniform name is required.");
+    return;
+  }
+  editTypeConfirm.value = true;
+}
+
+// Step 2: the user confirmed, save it.
 async function saveTypeEdit() {
   if (!editingType.value) {
     return;
   }
   const name = editTypeName.value.trim();
   const description = editTypeDescription.value.trim();
-  if (!name) {
-    notify("warning", "Uniform name is required.");
-    return;
-  }
 
   try {
     await updateUniformType(editingType.value.idUniftype, {
@@ -223,6 +235,7 @@ async function saveTypeEdit() {
     closeEditType();
   } catch (e) {
     console.error("Failed to update uniform type:", e);
+    editTypeConfirm.value = false;
     notify(
       "danger",
       e?.response?.data?.message ||
@@ -248,9 +261,23 @@ async function removeUniformType(type) {
     return;
   }
 
-  if (!confirm(`Delete uniform type "${typeName}"?`)) {
+  pendingDeleteType.value = type;
+  deleteTypeConfirmModalOpen.value = true;
+}
+
+function closeDeleteTypeConfirm() {
+  deleteTypeConfirmModalOpen.value = false;
+  pendingDeleteType.value = null;
+}
+
+async function confirmDeleteUniformType() {
+  const type = pendingDeleteType.value;
+  closeDeleteTypeConfirm();
+
+  if (!type) {
     return;
   }
+
   try {
     await deleteUniformType(type.idUniftype);
     await loadAll();
@@ -415,6 +442,9 @@ const stockQuantity = ref(1);
 const actionConfirmModalOpen = ref(false);
 const actionConfirmType = ref("");
 const actionConfirmVariant = ref(null);
+
+const deleteTypeConfirmModalOpen = ref(false);
+const pendingDeleteType = ref(null);
 
 function openActionConfirm(type, variant) {
   actionConfirmType.value = type;
@@ -811,19 +841,41 @@ const visibleTypes = computed(() => {
         </div>
 
         <div class="modal-body">
-          <label class="form-label"> Uniform Name </label>
-          <input class="form-control mb-3" v-model="editTypeName" />
-          <label class="form-label"> Description </label>
-          <textarea class="form-control" rows="3" v-model="editTypeDescription"></textarea>
+          <template v-if="!editTypeConfirm">
+            <label class="form-label"> Uniform Name </label>
+            <input class="form-control mb-3" v-model="editTypeName" />
+            <label class="form-label"> Description </label>
+            <textarea class="form-control" rows="3" v-model="editTypeDescription"></textarea>
+          </template>
+
+          <!-- CONFIRMATION SCREEN -->
+          <div v-else class="alert alert-warning mb-0">
+            <h6 class="mb-3">Confirm Action</h6>
+            Save changes to
+            <strong>{{ editingType?.uniform_name }}</strong>?
+            <div v-if="editTypeName.trim() !== editingType?.uniform_name" class="mt-2">
+              New name: <strong>{{ editTypeName.trim() }}</strong>
+            </div>
+          </div>
         </div>
 
         <div class="modal-footer">
-          <button class="btn btn-secondary" @click="closeEditType">
-            Cancel
+          <button
+            class="btn btn-secondary"
+            @click="editTypeConfirm ? (editTypeConfirm = false) : closeEditType()"
+          >
+            {{ editTypeConfirm ? "Back" : "Cancel" }}
           </button>
 
-          <button class="btn btn-primary" @click="saveTypeEdit">
+          <button
+            v-if="!editTypeConfirm"
+            class="btn btn-primary"
+            @click="requestTypeEdit"
+          >
             Save Changes
+          </button>
+          <button v-else class="btn btn-success" @click="saveTypeEdit">
+            Confirm
           </button>
         </div>
       </div>
@@ -1023,6 +1075,45 @@ const visibleTypes = computed(() => {
         </div>
       </div>
     </div>
+    <!-- DELETE UNIFORM TYPE CONFIRMATION MODAL -->
+
+    <div v-if="deleteTypeConfirmModalOpen" class="modal-backdrop-custom">
+      <div class="modal-custom">
+        <div class="modal-header">
+          <h5 class="mb-0">Confirm Delete</h5>
+          <button
+            type="button"
+            class="btn-close"
+            @click="closeDeleteTypeConfirm"
+          ></button>
+        </div>
+
+        <div class="modal-body">
+          <p class="mb-0">
+            Delete uniform type
+            "{{ pendingDeleteType?.uniform_name || 'this uniform' }}"?
+          </p>
+        </div>
+
+        <div class="modal-footer">
+          <button
+            type="button"
+            class="btn btn-secondary"
+            @click="closeDeleteTypeConfirm"
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            class="btn btn-danger"
+            @click="confirmDeleteUniformType"
+          >
+            Confirm Delete
+          </button>
+        </div>
+      </div>
+    </div>
+
     <!-- ACTION CONFIRMATION MODAL -->
 
     <div v-if="actionConfirmModalOpen" class="modal-backdrop-custom">

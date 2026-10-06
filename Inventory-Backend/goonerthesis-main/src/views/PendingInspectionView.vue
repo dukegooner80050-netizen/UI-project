@@ -152,12 +152,18 @@ async function confirmInspection() {
               <tr v-for="i in inspections" :key="i.idinspection">
                 <td>{{ i.item_name }}</td>
                 <td>{{ i.quantity }}</td>
-                <td>{{ i.requestId }}</td>
+                <td>{{ i.requestId ?? "-" }}</td>
                 <td>
                   {{ i.location }}
                   <small v-if="i.room" class="text-muted d-block">{{
                     i.room
                   }}</small>
+                  <span
+                    v-if="i.source === 'Room'"
+                    class="badge bg-secondary mt-1"
+                  >
+                    Returned from room
+                  </span>
                 </td>
                 <td>{{ formatDate(i.returned_at) }}</td>
                 <td>

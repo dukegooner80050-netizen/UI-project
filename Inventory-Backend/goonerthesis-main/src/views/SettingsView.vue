@@ -1,13 +1,20 @@
 <script setup>
-import { ref, onMounted } from "vue";
+import { ref, computed, onMounted } from "vue";
 import {
   getMonthlyRequestLimit,
   updateMonthlyRequestLimit,
 } from "../services/settings";
 import { getTheme, setTheme } from "../services/theme";
+import { getCurrentUser } from "../services/storage";
+import { isAdmin } from "../services/session";
 import AlertMessage from "../components/AlertMessage.vue";
 
 const loading = ref(true);
+
+// Only admins can see or change the monthly request limit. Everyone else
+// just gets the Appearance (light/dark) section. The server enforces this
+// too, this just keeps the page from showing something they can't use.
+const canEditLimit = computed(() => isAdmin(getCurrentUser()));
 const saving = ref(false);
 const currentLimit = ref(null);
 const newLimit = ref(5);
@@ -44,6 +51,11 @@ function errMsg(e) {
 }
 
 async function load() {
+  if (!canEditLimit.value) {
+    loading.value = false;
+    return;
+  }
+
   loading.value = true;
 
   try {
@@ -61,6 +73,8 @@ async function load() {
 onMounted(load);
 
 function openConfirm() {
+  if (!canEditLimit.value) return;
+
   if (!newLimit.value || newLimit.value < 1) {
     notify("warning", "Limit must be at least 1.");
     return;
@@ -131,7 +145,7 @@ async function confirmSave() {
     <h3 class="mb-1">Settings</h3>
 
     <p class="text-muted mb-4">
-      System-wide configuration.
+      {{ canEditLimit ? "System-wide configuration." : "Your display preferences." }}
     </p>
 
     <!-- APPEARANCE -->
@@ -170,14 +184,14 @@ async function confirmSave() {
     </div>
 
     <div
-      v-if="loading"
+      v-if="canEditLimit && loading"
       class="text-center text-muted py-4"
     >
       Loading...
     </div>
 
     <div
-      v-else
+      v-else-if="canEditLimit"
       class="card shadow-sm"
       style="max-width: 480px"
     >
@@ -217,7 +231,7 @@ async function confirmSave() {
 
     <!-- CONFIRMATION MODAL -->
     <div
-      v-if="showConfirm"
+      v-if="canEditLimit && showConfirm"
       class="modal fade show d-block"
       tabindex="-1"
       style="background: rgba(0, 0, 0, 0.5);"

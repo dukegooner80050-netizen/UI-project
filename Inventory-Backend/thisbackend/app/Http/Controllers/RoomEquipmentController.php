@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Models\Room;
 use App\Models\Item;
 use App\Models\RoomEquipment;
+use App\Models\PendingInspection;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use App\Traits\ActivityLogger;
@@ -126,6 +127,14 @@ class RoomEquipmentController extends Controller
             $oldQty = $roomEquipment->quantity;
             $delta = $newQty - $oldQty;
 
+            // Taking equipment out of a room has to go through
+            // returnEquipment() so it ends up in Pending Inspection.
+            if ($delta < 0) {
+                return response()->json([
+                    'message' => 'To take equipment out of a room, use Return so it can be inspected first.'
+                ], 400);
+            }
+
             if ($delta > 0 && $item->quantity < $delta) {
                 return response()->json([
                     'message' => "Insufficient available stock for '{$item->item_name}'. Only {$item->quantity} more available."
@@ -152,40 +161,95 @@ class RoomEquipmentController extends Controller
         });
     }
 
-    public function destroy($roomId, $id)
+    // Take some of an assignment out of the room. The units do NOT go back
+    // into available stock; they wait in Pending Inspection until an admin
+    // evaluates them.
+    public function returnEquipment(Request $request, $roomId, $id)
     {
-        $roomEquipment = RoomEquipment::where('idroom', $roomId)->find($id);
+        $validated = $request->validate([
+            'quantity' => 'required|integer|min:1',
+        ]);
 
-        if (!$roomEquipment) {
-            return response()->json([
-                'message' => 'Room equipment assignment not found.'
-            ], 404);
-        }
+        return DB::transaction(function () use ($validated, $roomId, $id) {
 
-        return DB::transaction(function () use ($roomEquipment, $roomId) {
+            $roomEquipment = RoomEquipment::where('idroom', $roomId)
+                ->lockForUpdate()
+                ->find($id);
 
-            $item = Item::find($roomEquipment->iditems);
-            $qty = $roomEquipment->quantity;
-            $itemName = optional($item)->item_name ?? 'Unknown Item';
-
-            if ($item) {
-                $item->quantity += $qty;
-                $this->updateItemStatus($item);
-                $item->save();
+            if (!$roomEquipment) {
+                return response()->json([
+                    'message' => 'Room equipment assignment not found.'
+                ], 404);
             }
 
-            $room = Room::find($roomId);
-            $roomEquipment->delete();
+            $qty = (int) $validated['quantity'];
 
-            $this->logActivity(
-                request()->user()->idUsers,
-                "Removed '{$itemName}' ({$qty}) from Room '{$room->room_name}'"
-            );
+            if ($qty > (int) $roomEquipment->quantity) {
+                return response()->json([
+                    'message' => "Only {$roomEquipment->quantity} unit(s) are assigned to this room."
+                ], 400);
+            }
+
+            $this->sendToInspection($roomEquipment, $qty);
 
             return response()->json([
-                'message' => 'Equipment removed from room and stock restored.'
+                'message' => 'Equipment returned and sent to Pending Inspection.'
             ]);
         });
+    }
+
+    // Remove the whole assignment. Same rule: it goes to Pending Inspection.
+    public function destroy($roomId, $id)
+    {
+        return DB::transaction(function () use ($roomId, $id) {
+
+            $roomEquipment = RoomEquipment::where('idroom', $roomId)
+                ->lockForUpdate()
+                ->find($id);
+
+            if (!$roomEquipment) {
+                return response()->json([
+                    'message' => 'Room equipment assignment not found.'
+                ], 404);
+            }
+
+            $this->sendToInspection($roomEquipment, (int) $roomEquipment->quantity);
+
+            return response()->json([
+                'message' => 'Equipment removed from room and sent to Pending Inspection.'
+            ]);
+        });
+    }
+
+    private function sendToInspection(RoomEquipment $roomEquipment, int $qty): void
+    {
+        $item = Item::find($roomEquipment->iditems);
+        $room = Room::with('building')->find($roomEquipment->idroom);
+
+        PendingInspection::create([
+            'idrequestItem' => null,
+            'iditems' => $roomEquipment->iditems,
+            'source_building' => optional(optional($room)->building)->building_name,
+            'source_room' => optional($room)->room_name,
+            'quantity' => $qty,
+            'status' => 'Pending',
+            'returned_at' => now(),
+        ]);
+
+        if ($qty >= (int) $roomEquipment->quantity) {
+            $roomEquipment->delete();
+        } else {
+            $roomEquipment->quantity -= $qty;
+            $roomEquipment->save();
+        }
+
+        $itemName = optional($item)->item_name ?? 'Unknown Item';
+        $roomName = optional($room)->room_name ?? 'Unknown Room';
+
+        $this->logActivity(
+            request()->user()->idUsers,
+            "Returned {$qty} '{$itemName}' from Room '{$roomName}' (pending inspection)"
+        );
     }
 
     private function updateItemStatus(Item $item)

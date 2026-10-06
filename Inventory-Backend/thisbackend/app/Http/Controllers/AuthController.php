@@ -13,7 +13,7 @@ class AuthController extends Controller
     {
         $validated = $request->validate([
             'full_name' => 'required',
-            'username' => 'required|unique:Users,username',
+            'username' => 'required|unique:users,username',
             'password' => 'required|min:6',
         ]);
 

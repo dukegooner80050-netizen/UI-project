@@ -185,6 +185,7 @@ Route::middleware('role:admin,dean,cashier')->group(function () {
         Route::get('/rooms/{roomId}/equipment', [RoomEquipmentController::class, 'index']);
         Route::post('/rooms/{roomId}/equipment', [RoomEquipmentController::class, 'store']);
         Route::put('/rooms/{roomId}/equipment/{id}', [RoomEquipmentController::class, 'update']);
+        Route::post('/rooms/{roomId}/equipment/{id}/return', [RoomEquipmentController::class, 'returnEquipment']);
         Route::delete('/rooms/{roomId}/equipment/{id}', [RoomEquipmentController::class, 'destroy']);
 
 

@@ -214,11 +214,6 @@ onBeforeUnmount(() => {
       <span class="label" v-if="!props.collapsed">School Equipments</span>
     </RouterLink>
 
-    <RouterLink v-if="isAdmin" class="sidebar-link" :class="{ active: active('/item-locator') }" to="/item-locator">
-      <span class="icon">📍</span>
-      <span class="label" v-if="!props.collapsed">Item Locator</span>
-    </RouterLink>
-
     <RouterLink class="sidebar-link" :class="{ active: active('/consumption-report') }" to="/consumption-report">
       <span class="icon">📅</span>
       <span class="label" v-if="!props.collapsed">Monthly Consumption</span>
@@ -243,7 +238,7 @@ onBeforeUnmount(() => {
       <span v-if="!props.collapsed" class="badge bg-danger">{{ pendingInspectionCount }}</span>
     </RouterLink>
 
-    <RouterLink v-if="isAdmin" class="sidebar-link" :class="{ active: active('/settings') }" to="/settings">
+    <RouterLink class="sidebar-link" :class="{ active: active('/settings') }" to="/settings">
       <span class="icon">⚙️</span>
       <span class="label" v-if="!props.collapsed">Settings</span>
     </RouterLink>

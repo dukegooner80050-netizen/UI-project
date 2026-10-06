@@ -24,14 +24,18 @@ class InspectionController extends Controller
             ->map(function ($i) {
                 $request = optional($i->requestItem)->request;
 
+                // Returned from a borrow request, or taken out of a room?
+                $fromRoom = $i->idrequestItem === null;
+
                 return [
                     'idinspection' => $i->idinspection,
                     'item_name' => optional($i->item)->item_name,
                     'quantity' => $i->quantity,
                     'returned_at' => $i->returned_at,
+                    'source' => $fromRoom ? 'Room' : 'Request',
                     'requestId' => optional($request)->idrequest,
-                    'location' => optional($request)->location,
-                    'room' => optional($request)->room,
+                    'location' => $fromRoom ? $i->source_building : optional($request)->location,
+                    'room' => $fromRoom ? $i->source_room : optional($request)->room,
                 ];
             });
 

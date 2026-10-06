@@ -169,6 +169,9 @@ const borrowedRows = computed(() => {
         room:
           request.room || "N/A",
 
+        requestId: request.id ?? request.idrequest ?? "N/A",
+        purpose: request.purpose || "N/A",
+        itemId: item.itemId ?? item.iditems ?? null,
         date:
           request.borrowedAt ||
           request.request_date,
@@ -176,7 +179,19 @@ const borrowedRows = computed(() => {
     }
   }
 
-  return rows;
+  if (!isLocationView.value) return rows;
+
+  const locatableNames = new Set(
+    items.value
+      .filter((item) => {
+        const category = String(item.category || "").toLowerCase();
+        const type = String(item.itemType || item.item_type || item.subCategory || "").toLowerCase();
+        return (category === "office supplies" || category === "school equipment") && type !== "consumable";
+      })
+      .map((item) => String(item.name || "").toLowerCase()),
+  );
+
+  return rows.filter((row) => locatableNames.has(String(row.name || "").toLowerCase()));
 });
 
 
@@ -282,7 +297,18 @@ const filteredBorrowedRows = computed(() => {
 
       String(row.room || "")
         .toLowerCase()
+        .includes(keyword) ||
+      String(row.purpose || "")
+        .toLowerCase()
+        .includes(keyword) ||
+      String(row.requestId || "")
+        .toLowerCase()
         .includes(keyword);
+
+    const matchesLocation =
+      !isLocationView.value ||
+      ((!locationFilter.value || row.location === locationFilter.value) &&
+       (!roomFilter.value || row.room === roomFilter.value));
 
     const matchesBorrower =
       borrowerFilter.value === "ALL" ||
@@ -290,11 +316,19 @@ const filteredBorrowedRows = computed(() => {
 
     return (
       matchesSearch &&
-      matchesBorrower
+      matchesBorrower &&
+      matchesLocation
     );
   });
 });
 
+
+function clearLocationFilters() {
+  search.value = "";
+  locationFilter.value = "";
+  roomFilter.value = "";
+  borrowerFilter.value = "ALL";
+}
 
 // STATUS BADGE
 
@@ -416,7 +450,7 @@ function formatDate(date) {
 
     <!-- FILTERS (Inventory tab only -- Item Locator has its own search/filter card above) -->
 
-    <div class="row mb-3">
+    <div v-if="!isLocationView" class="row mb-3">
 
       <!-- SEARCH -->
 
@@ -548,25 +582,6 @@ function formatDate(date) {
               </template>
 
 
-              <!-- ITEM LOCATIONS VIEW -->
-              <template v-if="isLocationView">
-
-                <th>
-                  Available Qty
-                </th>
-
-                <th style="width: 220px">
-                  Return to Service
-                </th>
-
-                <th>
-                  Qty
-                </th>
-
-                <th>
-                  Date
-                </th>
-                </template> 
               <!-- ITEM LOCATOR VIEW -->
               <template v-if="isLocationView">
                 <th>Category</th><th>Qty Out</th><th>Requester</th><th>Request #</th>
@@ -686,11 +701,6 @@ function formatDate(date) {
                   <span class="badge bg-warning text-dark">
                     {{ item.maintenance_quantity }}
                   </span>
-
-                </td>
-
-                <td>
-                  {{ row.borrower }}
                 </td>
 
                 <td>
@@ -731,48 +741,15 @@ function formatDate(date) {
 
             <!-- ITEM LOCATOR VIEW -->
             <template v-else-if="isLocationView">
-
               <tr v-for="row in filteredBorrowedRows" :key="row.id">
-
-                <td>
-                  {{ row.name }}
-                </td>
-
-                <td>
-                  {{ row.borrower }}
-                </td>
-
-                <td>
-
-                  {{ row.location }}
-
-                  <small v-if="row.room" class="text-muted d-block">
-                    {{ row.room }}
-                  </small>
-
-                </td>
-
-                <td>
-                  {{ row.qty }}
-                </td>
-
-                <td>
-                  {{ formatDate(row.date) }}
-                </td>
-
+                <td>{{ row.name }}</td><td>{{ row.category }}</td><td>{{ row.qty }}</td>
+                <td>{{ row.borrower }}</td><td>{{ row.requestId }}</td>
+                <td>{{ row.location }}</td><td>{{ row.room }}</td><td>{{ row.purpose }}</td>
+                <td>{{ formatDate(row.date) }}</td>
               </tr>
-
-
-              <tr v-if="
-                filteredBorrowedRows.length === 0
-              ">
-
-                <td colspan="5" class="text-center text-muted py-4">
-                  No item locations found.
-                </td>
-
+              <tr v-if="filteredBorrowedRows.length === 0">
+                <td colspan="9" class="text-center text-muted py-4">No matching borrowed items found.</td>
               </tr>
-
             </template>
 
           </tbody>
@@ -836,5 +813,47 @@ function formatDate(date) {
   position: sticky;
   top: 0;
   z-index: 1;
+}
+</style>
+
+<style scoped>
+.modal-backdrop-custom {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1050;
+}
+
+.modal-custom {
+  width: min(500px, calc(100% - 2rem));
+  background: #fff;
+  border-radius: 0.5rem;
+  box-shadow: 0 0.5rem 1rem rgba(0, 0, 0, 0.15);
+}
+
+.modal-custom .modal-header,
+.modal-custom .modal-footer {
+  padding: 1rem;
+}
+
+.modal-custom .modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: 1px solid #dee2e6;
+}
+
+.modal-custom .modal-body {
+  padding: 1rem;
+}
+
+.modal-custom .modal-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.5rem;
+  border-top: 1px solid #dee2e6;
 }
 </style>

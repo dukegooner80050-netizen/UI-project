@@ -10,7 +10,7 @@ import { getRooms, createRoom, updateRoom, deleteRoom } from "../services/rooms"
 import {
   getRoomEquipment,
   assignRoomEquipment,
-  updateRoomEquipment,
+  returnRoomEquipment,
   removeRoomEquipment,
 } from "../services/roomEquipment";
 import { listInventory } from "../services/inventory";
@@ -36,8 +36,26 @@ const editingRoomName = ref("");
 const addItemId = ref("");
 const addItemQty = ref(1);
 
-const editingEquipmentId = ref(null);
-const editingEquipmentQty = ref(1);
+// Return modal (take some or all of an assignment back out of the room)
+const returnOpen = ref(false);
+const returnEntry = ref(null);
+const returnQty = ref(1);
+const returnStep = ref("form"); // "form" -> "confirm"
+const returning = ref(false);
+
+const showAlert = ref(false);
+const alertType = ref("success");
+const alertMessage = ref("");
+
+const confirmModalOpen = ref(false);
+const confirmActionType = ref("");
+const confirmActionMessage = ref("");
+
+function notify(type, message) {
+  alertType.value = type;
+  alertMessage.value = message;
+  showAlert.value = true;
+}
 
 function errMsg(e) {
   return e?.response?.data?.message || e?.message || "Something went wrong.";
@@ -92,8 +110,13 @@ async function selectRoom(room) {
 }
 
 /* ===== BUILDING CRUD ===== */
-async function addBuilding() {
-  if (!newBuildingName.value.trim()) return;
+function addBuilding() {
+  const name = newBuildingName.value.trim();
+  if (!name) return;
+  openConfirm("addBuilding", `Add building "${name}"?`);
+}
+
+async function addBuildingConfirmed() {
   try {
     await createBuilding({ building_name: newBuildingName.value.trim() });
     newBuildingName.value = "";
@@ -108,7 +131,16 @@ function startEditBuilding(building) {
   editingBuildingName.value = building.building_name;
 }
 
-async function saveEditBuilding() {
+function saveEditBuilding() {
+  const name = editingBuildingName.value.trim();
+  if (!name) {
+    notify("warning", "Building name cannot be empty.");
+    return;
+  }
+  openConfirm("saveBuilding", `Rename this building to "${name}"?`);
+}
+
+async function saveEditBuildingConfirmed() {
   try {
     await updateBuilding(editingBuildingId.value, {
       building_name: editingBuildingName.value.trim(),
@@ -120,8 +152,64 @@ async function saveEditBuilding() {
   }
 }
 
+function openConfirm(type, message) {
+  confirmActionType.value = type;
+  confirmActionMessage.value = message;
+  confirmModalOpen.value = true;
+}
+
+function closeConfirm() {
+  confirmModalOpen.value = false;
+  confirmActionType.value = "";
+  confirmActionMessage.value = "";
+}
+
+async function confirmAction() {
+  const type = confirmActionType.value;
+  closeConfirm();
+
+  if (type === "deleteBuilding") {
+    await deleteBuildingConfirmed();
+  } else if (type === "deleteRoom") {
+    await deleteRoomConfirmed();
+  } else if (type === "removeEquipment") {
+    await removeEquipmentConfirmed();
+  } else if (type === "assignEquipment") {
+    await assignEquipmentConfirmed();
+  } else if (type === "addBuilding") {
+    await addBuildingConfirmed();
+  } else if (type === "saveBuilding") {
+    await saveEditBuildingConfirmed();
+  } else if (type === "addRoom") {
+    await addRoomConfirmed();
+  } else if (type === "saveRoom") {
+    await saveEditRoomConfirmed();
+  }
+}
+
+// Only the destructive actions get a red confirm button.
+const confirmIsDanger = computed(() =>
+  ["deleteBuilding", "deleteRoom", "removeEquipment"].includes(
+    confirmActionType.value,
+  ),
+);
+
 async function removeBuilding(building) {
-  if (!confirm(`Delete building "${building.building_name}"?`)) return;
+  openConfirm(
+    "deleteBuilding",
+    `Delete building "${building.building_name}"?`,
+  );
+  pendingBuilding.value = building;
+}
+
+const pendingBuilding = ref(null);
+const pendingRoom = ref(null);
+const pendingEquipment = ref(null);
+
+async function deleteBuildingConfirmed() {
+  const building = pendingBuilding.value;
+  pendingBuilding.value = null;
+  if (!building) return;
   try {
     await deleteBuilding(building.idbuilding);
     if (selectedBuildingId.value === building.idbuilding) {
@@ -137,8 +225,16 @@ async function removeBuilding(building) {
 }
 
 /* ===== ROOM CRUD ===== */
-async function addRoom() {
-  if (!newRoomName.value.trim() || !selectedBuildingId.value) return;
+function addRoom() {
+  const name = newRoomName.value.trim();
+  if (!name || !selectedBuildingId.value) return;
+  openConfirm(
+    "addRoom",
+    `Add room "${name}" to ${selectedBuilding.value?.building_name || "this building"}?`,
+  );
+}
+
+async function addRoomConfirmed() {
   try {
     await createRoom({
       idbuilding: selectedBuildingId.value,
@@ -156,7 +252,16 @@ function startEditRoom(room) {
   editingRoomName.value = room.room_name;
 }
 
-async function saveEditRoom() {
+function saveEditRoom() {
+  const name = editingRoomName.value.trim();
+  if (!name) {
+    notify("warning", "Room name cannot be empty.");
+    return;
+  }
+  openConfirm("saveRoom", `Rename this room to "${name}"?`);
+}
+
+async function saveEditRoomConfirmed() {
   try {
     await updateRoom(editingRoomId.value, {
       idbuilding: selectedBuildingId.value,
@@ -170,7 +275,17 @@ async function saveEditRoom() {
 }
 
 async function removeRoom(room) {
-  if (!confirm(`Delete room "${room.room_name}"?`)) return;
+  pendingRoom.value = room;
+  openConfirm(
+    "deleteRoom",
+    `Delete room "${room.room_name}"?`,
+  );
+}
+
+async function deleteRoomConfirmed() {
+  const room = pendingRoom.value;
+  pendingRoom.value = null;
+  if (!room) return;
   try {
     await deleteRoom(room.idroom);
     if (selectedRoomId.value === room.idroom) {
@@ -184,12 +299,40 @@ async function removeRoom(room) {
 }
 
 /* ===== ROOM EQUIPMENT (LOADOUT) ===== */
-async function addEquipmentToRoom() {
-  if (!addItemId.value || !addItemQty.value || addItemQty.value < 1) return;
+// Step 1: validate, then ask the user to confirm.
+function addEquipmentToRoom() {
+  const qty = Number(addItemQty.value) || 0;
+
+  if (!addItemId.value) {
+    notify("warning", "Select an item to assign.");
+    return;
+  }
+  if (qty < 1) {
+    notify("warning", "Quantity must be at least 1.");
+    return;
+  }
+  if (addItemAvailable.value !== null && qty > addItemAvailable.value) {
+    notify("warning", `Only ${addItemAvailable.value} available in inventory.`);
+    return;
+  }
+
+  const item = equipmentItems.value.find(
+    (i) => String(i.iditems) === String(addItemId.value),
+  );
+  const roomName = selectedRoom.value?.room_name || "this room";
+
+  openConfirm(
+    "assignEquipment",
+    `Assign ${qty} x "${item?.item_name || "item"}" to ${roomName}? It will be taken out of available inventory.`,
+  );
+}
+
+// Step 2: the user confirmed, save it.
+async function assignEquipmentConfirmed() {
   try {
     await assignRoomEquipment(selectedRoomId.value, {
       iditems: addItemId.value,
-      quantity: addItemQty.value,
+      quantity: Number(addItemQty.value),
     });
     addItemId.value = "";
     addItemQty.value = 1;
@@ -197,40 +340,89 @@ async function addEquipmentToRoom() {
       loadRoomLoadout(selectedRoomId.value),
       loadEquipmentItems(),
     ]);
+    notify("success", "Equipment assigned to room.");
   } catch (e) {
     notify("danger", errMsg(e));
   }
 }
 
-function startEditEquipment(entry) {
-  editingEquipmentId.value = entry.idroomequipment;
-  editingEquipmentQty.value = entry.quantity;
+/* ----- RETURN (replaces the old Edit button) ----- */
+
+function openReturn(entry) {
+  returnEntry.value = entry;
+  returnQty.value = 1;
+  returnStep.value = "form";
+  returnOpen.value = true;
 }
 
-async function saveEditEquipment(entry) {
+function closeReturn() {
+  if (returning.value) return;
+  returnOpen.value = false;
+  returnEntry.value = null;
+  returnStep.value = "form";
+}
+
+// Step 1: check the amount, then show the confirmation screen.
+function requestReturn() {
+  const qty = Number(returnQty.value) || 0;
+  const max = Number(returnEntry.value?.quantity) || 0;
+
+  if (qty < 1) {
+    notify("warning", "Quantity must be at least 1.");
+    return;
+  }
+  if (qty > max) {
+    notify("warning", `Only ${max} unit(s) are assigned to this room.`);
+    return;
+  }
+  returnStep.value = "confirm";
+}
+
+// Step 2: the user confirmed, send it to Pending Inspection.
+async function confirmReturn() {
+  const entry = returnEntry.value;
+  if (!entry) return;
+
+  returning.value = true;
   try {
-    await updateRoomEquipment(selectedRoomId.value, entry.idroomequipment, {
-      quantity: editingEquipmentQty.value,
-    });
-    editingEquipmentId.value = null;
+    await returnRoomEquipment(
+      selectedRoomId.value,
+      entry.idroomequipment,
+      Number(returnQty.value),
+    );
+    returning.value = false;
+    closeReturn();
     await Promise.all([
       loadRoomLoadout(selectedRoomId.value),
       loadEquipmentItems(),
     ]);
+    notify("success", "Returned and sent to Pending Inspection.");
   } catch (e) {
+    returning.value = false;
+    returnStep.value = "form";
     notify("danger", errMsg(e));
   }
 }
 
-async function removeEquipmentFromRoom(entry) {
-  if (!confirm(`Remove "${entry.item_name}" from this room? This restores its stock.`))
-    return;
+function removeEquipmentFromRoom(entry) {
+  pendingEquipment.value = entry;
+  openConfirm(
+    "removeEquipment",
+    `Remove all ${entry.quantity} x "${entry.item_name}" from this room? It will be sent to Pending Inspection before it goes back into inventory.`,
+  );
+}
+
+async function removeEquipmentConfirmed() {
+  const entry = pendingEquipment.value;
+  pendingEquipment.value = null;
+  if (!entry) return;
   try {
     await removeRoomEquipment(selectedRoomId.value, entry.idroomequipment);
     await Promise.all([
       loadRoomLoadout(selectedRoomId.value),
       loadEquipmentItems(),
     ]);
+    notify("success", "Removed from room and sent to Pending Inspection.");
   } catch (e) {
     notify("danger", errMsg(e));
   }
@@ -414,7 +606,7 @@ const addItemAvailable = computed(() => {
             </h6>
 
             <div v-if="!selectedRoomId" class="text-muted small">
-              Select a room to view and edit its assigned equipment.
+              Select a room to view and manage its assigned equipment.
             </div>
 
             <template v-else>
@@ -430,40 +622,14 @@ const addItemAvailable = computed(() => {
                   <tbody>
                     <tr v-for="entry in roomLoadout" :key="entry.idroomequipment">
                       <td>{{ entry.item_name }}</td>
+                      <td>{{ entry.quantity }}</td>
                       <td>
-                        <input
-                          v-if="editingEquipmentId === entry.idroomequipment"
-                          type="number"
-                          min="1"
-                          class="form-control form-control-sm"
-                          v-model.number="editingEquipmentQty"
-                        />
-                        <span v-else>{{ entry.quantity }}</span>
-                      </td>
-                      <td>
-                        <div
-                          v-if="editingEquipmentId === entry.idroomequipment"
-                          class="d-flex gap-1"
-                        >
+                        <div class="d-flex gap-1">
                           <button
-                            class="btn btn-sm btn-success"
-                            @click="saveEditEquipment(entry)"
+                            class="btn btn-sm btn-outline-primary"
+                            @click="openReturn(entry)"
                           >
-                            Save
-                          </button>
-                          <button
-                            class="btn btn-sm btn-outline-secondary"
-                            @click="editingEquipmentId = null"
-                          >
-                            Cancel
-                          </button>
-                        </div>
-                        <div v-else class="d-flex gap-1">
-                          <button
-                            class="btn btn-sm btn-outline-secondary"
-                            @click="startEditEquipment(entry)"
-                          >
-                            Edit
+                            Return
                           </button>
                           <button
                             class="btn btn-sm btn-outline-danger"
@@ -530,4 +696,156 @@ const addItemAvailable = computed(() => {
       </div>
     </div>
   </div>
+
+
+    <!-- RETURN MODAL -->
+    <div v-if="returnOpen" class="modal-backdrop-custom">
+      <div class="modal-custom">
+        <div class="modal-header">
+          <h5 class="mb-0">Return: {{ returnEntry?.item_name }}</h5>
+          <button
+            type="button"
+            class="btn-close"
+            :disabled="returning"
+            @click="closeReturn"
+          ></button>
+        </div>
+
+        <div class="modal-body">
+          <template v-if="returnStep === 'form'">
+            <label class="form-label">Return Quantity</label>
+            <input
+              type="number"
+              min="1"
+              :max="returnEntry?.quantity"
+              class="form-control"
+              v-model.number="returnQty"
+              @keyup.enter="requestReturn"
+            />
+            <small class="text-muted">
+              Max: {{ returnEntry?.quantity }}. Returned items go to Pending
+              Inspection first.
+            </small>
+          </template>
+
+          <!-- CONFIRMATION SCREEN -->
+          <div v-else class="alert alert-warning mb-0">
+            <h6 class="mb-3">Confirm Action</h6>
+            Return
+            <strong>{{ returnQty }}</strong>
+            x
+            <strong>{{ returnEntry?.item_name }}</strong>
+            from
+            <strong>{{ selectedRoom?.room_name }}</strong>
+            and send it to Pending Inspection?
+          </div>
+        </div>
+
+        <div class="modal-footer">
+          <button
+            type="button"
+            class="btn btn-secondary"
+            :disabled="returning"
+            @click="returnStep === 'confirm' ? (returnStep = 'form') : closeReturn()"
+          >
+            {{ returnStep === "confirm" ? "Back" : "Cancel" }}
+          </button>
+          <button
+            v-if="returnStep === 'form'"
+            type="button"
+            class="btn btn-primary"
+            @click="requestReturn"
+          >
+            Continue
+          </button>
+          <button
+            v-else
+            type="button"
+            class="btn btn-success"
+            :disabled="returning"
+            @click="confirmReturn"
+          >
+            {{ returning ? "Returning..." : "Confirm" }}
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <div v-if="confirmModalOpen" class="modal-backdrop-custom">
+      <div class="modal-custom">
+        <div class="modal-header">
+          <h5 class="mb-0">Confirm Action</h5>
+          <button
+            type="button"
+            class="btn-close"
+            @click="closeConfirm"
+          ></button>
+        </div>
+
+        <div class="modal-body">
+          <p class="mb-0">{{ confirmActionMessage }}</p>
+        </div>
+
+        <div class="modal-footer">
+          <button
+            type="button"
+            class="btn btn-secondary"
+            @click="closeConfirm"
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            class="btn"
+            :class="confirmIsDanger ? 'btn-danger' : 'btn-primary'"
+            @click="confirmAction"
+          >
+            Confirm
+          </button>
+        </div>
+      </div>
+    </div>
 </template>
+
+
+<style scoped>
+.modal-backdrop-custom {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1050;
+}
+
+.modal-custom {
+  width: min(500px, calc(100% - 2rem));
+  background: #fff;
+  border-radius: 0.5rem;
+  box-shadow: 0 0.5rem 1rem rgba(0, 0, 0, 0.15);
+}
+
+.modal-custom .modal-header,
+.modal-custom .modal-footer {
+  padding: 1rem;
+}
+
+.modal-custom .modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: 1px solid #dee2e6;
+}
+
+.modal-custom .modal-body {
+  padding: 1rem;
+}
+
+.modal-custom .modal-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.5rem;
+  border-top: 1px solid #dee2e6;
+}
+</style>
