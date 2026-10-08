@@ -30,13 +30,14 @@ async function submit() {
     });
 
     alertType.value = "success";
-    alertMessage.value = "Account created successfully.";
+    alertMessage.value =
+      "Account submitted. Please wait for an administrator to approve it.";
     showAlert.value = true;
 
     // Wait a bit so the user sees it
     setTimeout(() => {
       router.push("/login");
-    }, 1500);
+    }, 4000);
   } catch (e) {
     if (e.response?.data?.message) {
       alertType.value = "danger";

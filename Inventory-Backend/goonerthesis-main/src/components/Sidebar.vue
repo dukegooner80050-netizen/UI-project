@@ -21,6 +21,8 @@ const props = defineProps({
 const emit = defineEmits(["toggle", "closeMobile"])
 
 const pendingCount = ref(0)
+const pendingInspectionCount = ref(0)
+const accountRequestCount = ref(0)
 
 const router = useRouter()
 const route = useRoute()
@@ -56,6 +58,49 @@ async function refreshPendingCount() {
   }
 }
 
+/* PENDING INSPECTION COUNT */
+
+async function refreshPendingInspectionCount() {
+  if (!isAdmin.value) {
+    pendingInspectionCount.value = 0
+    return
+  }
+
+  try {
+    const response = await axios.get("/inspections")
+
+    // /inspections already only returns items still awaiting evaluation
+    const inspections = Array.isArray(response.data)
+      ? response.data
+      : response.data?.data || []
+
+    pendingInspectionCount.value = inspections.length
+
+  } catch (error) {
+    console.error("Failed to load pending inspection count:", error)
+  }
+}
+
+/* ACCOUNT REQUEST COUNT (sign-ups waiting for approval) */
+
+async function refreshAccountRequestCount() {
+  if (!isAdmin.value) {
+    accountRequestCount.value = 0
+    return
+  }
+
+  try {
+    const response = await axios.get("/account-requests")
+
+    accountRequestCount.value = Array.isArray(response.data)
+      ? response.data.length
+      : 0
+
+  } catch (error) {
+    console.error("Failed to load account request count:", error)
+  }
+}
+
 /*  LOGOUT */
 
 function logout() {
@@ -70,20 +115,31 @@ const active = (path) => route.path === path
 /* AUTO REFRESH */
 
 let pendingRefreshTimer = null
+let accountRequestTimer = null
 
 onMounted(async () => {
   // Load immediately
   await refreshPendingCount()
+  await refreshPendingInspectionCount()
+  await refreshAccountRequestCount()
 
   // Check the backend every 5 seconds
   pendingRefreshTimer = setInterval(() => {
     refreshPendingCount()
+    refreshPendingInspectionCount()
   }, 2000)
+
+  // New sign-ups are rare, so this one checks far less often
+  accountRequestTimer = setInterval(refreshAccountRequestCount, 15000)
 })
 
 onBeforeUnmount(() => {
   if (pendingRefreshTimer) {
     clearInterval(pendingRefreshTimer)
+  }
+
+  if (accountRequestTimer) {
+    clearInterval(accountRequestTimer)
   }
 })
 </script>
@@ -188,11 +244,6 @@ onBeforeUnmount(() => {
       <span class="label" v-if="!props.collapsed">School Equipments</span>
     </RouterLink>
 
-    <RouterLink v-if="isAdmin" class="sidebar-link" :class="{ active: active('/item-locator') }" to="/item-locator">
-      <span class="icon">📍</span>
-      <span class="label" v-if="!props.collapsed">Item Locator</span>
-    </RouterLink>
-
     <RouterLink class="sidebar-link" :class="{ active: active('/consumption-report') }" to="/consumption-report">
       <span class="icon">📅</span>
       <span class="label" v-if="!props.collapsed">Monthly Consumption</span>
@@ -203,14 +254,34 @@ onBeforeUnmount(() => {
       <span class="label" v-if="!props.collapsed">Equipment Distribution</span>
     </RouterLink>
 
-    <RouterLink v-if="isAdmin" class="sidebar-link" :class="{ active: active('/pending-inspection') }" to="/pending-inspection">
-      <span class="icon">🔍</span>
-      <span class="label" v-if="!props.collapsed">Pending Inspection</span>
+    <RouterLink
+      v-if="isAdmin"
+      class="sidebar-link d-flex justify-content-between align-items-center"
+      :class="{ active: active('/pending-inspection') }"
+      to="/pending-inspection"
+    >
+      <span class="d-flex align-items-center gap-2">
+        <span class="icon">🔍</span>
+        <span class="label" v-if="!props.collapsed">Pending Inspection</span>
+      </span>
+
+      <span v-if="!props.collapsed" class="badge bg-danger">{{ pendingInspectionCount }}</span>
     </RouterLink>
 
-    <RouterLink v-if="isAdmin" class="sidebar-link" :class="{ active: active('/settings') }" to="/settings">
-      <span class="icon">⚙️</span>
-      <span class="label" v-if="!props.collapsed">Settings</span>
+    <RouterLink
+      class="sidebar-link d-flex justify-content-between align-items-center"
+      :class="{ active: active('/settings') }"
+      to="/settings"
+    >
+      <span class="d-flex align-items-center gap-2">
+        <span class="icon">⚙️</span>
+        <span class="label" v-if="!props.collapsed">Settings</span>
+      </span>
+
+      <span
+        v-if="isAdmin && !props.collapsed && accountRequestCount > 0"
+        class="badge bg-danger"
+      >{{ accountRequestCount }}</span>
     </RouterLink>
 
     <RouterLink class="sidebar-link" :class="{ active: active('/request') }" to="/request">

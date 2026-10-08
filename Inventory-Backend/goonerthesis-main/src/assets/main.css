@@ -1,5 +1,15 @@
+:root {
+  --app-bg: #f1f5f9;
+  --app-main-bg: #f4f6f9;
+}
+
+[data-bs-theme="dark"] {
+  --app-bg: #15181c;
+  --app-main-bg: #1a1d21;
+}
+
 body {
-  background: #f1f5f9;
+  background: var(--app-bg);
 }
 
 .card {
@@ -10,4 +20,53 @@ body {
   text-transform: uppercase;
   font-size: 12px;
   letter-spacing: 0.04em;
+}
+
+/* ---------------------------------------------------------------------
+   Dark mode fixes
+   Several pages draw their own modals and sticky table headers with a
+   fixed white / light-grey background. In dark mode the text inside them
+   is light, so it became unreadable. These rules make them follow the
+   active theme. They have no effect in light mode.
+   --------------------------------------------------------------------- */
+
+[data-bs-theme="dark"] .modal-custom {
+  background-color: var(--bs-body-bg) !important;
+  color: var(--bs-body-color) !important;
+}
+
+[data-bs-theme="dark"] .modal-custom .modal-header,
+[data-bs-theme="dark"] .modal-custom .modal-footer {
+  border-color: var(--bs-border-color) !important;
+}
+
+[data-bs-theme="dark"] .table-scroll thead th {
+  background-color: var(--bs-tertiary-bg) !important;
+  color: var(--bs-body-color) !important;
+}
+
+/* Light grey info panels (confirm summaries, read-only boxes) */
+[data-bs-theme="dark"] .bg-light {
+  background-color: var(--bs-tertiary-bg) !important;
+  color: var(--bs-body-color) !important;
+}
+
+/* Bootstrap's .table-light is a fixed light colour */
+[data-bs-theme="dark"] .table-light {
+  --bs-table-bg: var(--bs-tertiary-bg);
+  --bs-table-color: var(--bs-body-color);
+  --bs-table-border-color: var(--bs-border-color);
+  --bs-table-striped-bg: var(--bs-tertiary-bg);
+  --bs-table-hover-bg: var(--bs-tertiary-bg);
+  color: var(--bs-body-color);
+}
+
+/* FullCalendar (Dashboard) */
+[data-bs-theme="dark"] .fc {
+  --fc-page-bg-color: var(--bs-body-bg);
+  --fc-neutral-bg-color: var(--bs-tertiary-bg);
+  --fc-neutral-text-color: var(--bs-secondary-color);
+  --fc-border-color: var(--bs-border-color);
+  --fc-today-bg-color: rgba(255, 220, 40, 0.15);
+  --fc-list-event-hover-bg-color: var(--bs-tertiary-bg);
 }

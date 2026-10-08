@@ -12,6 +12,10 @@ export async function updateRoomEquipment(roomId, id, data) {
     return (await axios.put(`/rooms/${roomId}/equipment/${id}`, data)).data;
 }
 
+export async function returnRoomEquipment(roomId, id, quantity) {
+    return (await axios.post(`/rooms/${roomId}/equipment/${id}/return`, { quantity })).data;
+}
+
 export async function removeRoomEquipment(roomId, id) {
     return (await axios.delete(`/rooms/${roomId}/equipment/${id}`)).data;
 }

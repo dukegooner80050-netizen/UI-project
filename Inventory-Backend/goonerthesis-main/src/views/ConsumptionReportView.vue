@@ -1,13 +1,36 @@
 <script setup>
 import { ref, computed, onMounted } from "vue";
 import { getRequests } from "../services/requests";
+import { getCurrentUser } from "../services/storage";
+import AlertMessage from "../components/AlertMessage.vue";
 
 const loading = ref(true);
 const viewMode = ref("item"); // "item" | "requester"
 const selectedMonth = ref(""); // "YYYY-MM"
+const currentUser = getCurrentUser();
+const isInventoryManagement =
+  String(currentUser?.role || "").toLowerCase() === "admin";
 
 // Flattened list of every consumed thing (consumable items + uniforms)
 const consumptionRecords = ref([]);
+
+const showAlert = ref(false);
+const alertType = ref("info");
+const alertMessage = ref("");
+
+function showNotification(type, message) {
+  alertType.value = type;
+  alertMessage.value = message;
+  showAlert.value = true;
+}
+
+function errMsg(e) {
+  return (
+    e?.response?.data?.message ||
+    e?.message ||
+    "Something went wrong."
+  );
+}
 
 function formatDate(date) {
   if (!date) return "-";
@@ -33,20 +56,31 @@ function monthLabel(key) {
 
 async function load() {
   loading.value = true;
+
   try {
     const requests = await getRequests();
     const records = [];
 
     requests.forEach((request) => {
-      // Only things that were actually granted count as "consumed".
-      if (request.status !== "Approved" && request.status !== "Returned") return;
-      if (!request.borrowedAt) return;
+      // Only things that were actually granted count as consumed.
+      if (
+        request.status !== "Approved" &&
+        request.status !== "Returned"
+      ) {
+        return;
+      }
+
+      if (!request.borrowedAt) {
+        return;
+      }
 
       const month = monthKey(request.borrowedAt);
 
-      // Consumable items (e.g. Bond Paper)
+      // Consumable items
       request.items.forEach((reqItem) => {
-        if (reqItem.itemType !== "Consumable") return;
+        if (reqItem.itemType !== "Consumable") {
+          return;
+        }
 
         records.push({
           key: `item-${reqItem.requestItemId}`,
@@ -60,7 +94,7 @@ async function load() {
         });
       });
 
-      // Uniforms are always treated as consumed, never returned
+      // Uniforms are treated as consumed.
       request.uniforms.forEach((u) => {
         records.push({
           key: `uniform-${u.requestUniformId}`,
@@ -77,9 +111,20 @@ async function load() {
 
     consumptionRecords.value = records;
 
-    // Default to the most recent month with data, else current month.
-    const months = [...new Set(records.map((r) => r.month))].sort().reverse();
-    selectedMonth.value = months[0] || monthKey(new Date());
+    const months = [
+      ...new Set(records.map((r) => r.month)),
+    ]
+      .sort()
+      .reverse();
+
+    selectedMonth.value =
+      months[0] || monthKey(new Date());
+
+  } catch (e) {
+    showNotification(
+      "danger",
+      errMsg(e)
+    );
   } finally {
     loading.value = false;
   }
@@ -134,10 +179,17 @@ function toggleExpand(key) {
 
 <template>
   <div>
-    <h3 class="mb-1">Monthly Consumption</h3>
+        <AlertMessage
+      v-model:show="showAlert"
+      :type="alertType"
+      :message="alertMessage"
+    />
+    <h3 class="mb-1">  {{ isInventoryManagement ? "Monthly Consumption" : "My Monthly Consumption" }}</h3>
     <p class="text-muted mb-4">
-      Consumable office supplies and uniforms requested per month. These are
-      treated as consumed, not returned.
+       {{ isInventoryManagement
+      ? "View monthly consumption of consumable office supplies and uniforms."
+      : "View your monthly consumption of consumable office supplies and uniforms."
+       }}
     </p>
 
     <div class="card shadow-sm mb-4">
@@ -151,11 +203,8 @@ function toggleExpand(key) {
             >
               By Item
             </button>
-            <button
-              class="btn"
-              :class="viewMode === 'requester' ? 'btn-primary' : 'btn-outline-primary'"
-              @click="viewMode = 'requester'"
-            >
+            <button v-if="isInventoryManagement" class="btn" :class=" viewMode === 'requester'
+             ? 'btn-primary' : 'btn-outline-primary'" @click="viewMode = 'requester'">
               By Requester
             </button>
           </div>
@@ -200,7 +249,7 @@ function toggleExpand(key) {
                   <td>{{ entry.total }}</td>
                   <td>
                     <button
-                      class="btn btn-sm btn-outline-secondary"
+                      class="btn btn-sm btn-secondary text-white"
                       @click="toggleExpand(entry.name)"
                     >
                       {{ expandedRow === entry.name ? "Hide" : "Details" }}
@@ -255,7 +304,7 @@ function toggleExpand(key) {
                   <td>{{ entry.total }}</td>
                   <td>
                     <button
-                      class="btn btn-sm btn-outline-secondary"
+                      class="btn btn-sm btn-secondary text-white"
                       @click="toggleExpand(entry.requester)"
                     >
                       {{ expandedRow === entry.requester ? "Hide" : "Details" }}

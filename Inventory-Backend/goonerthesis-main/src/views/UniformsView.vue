@@ -5,6 +5,17 @@ import { useRoute } from "vue-router";
 import { listUniformTypes, listUniformVariants, createUniformType, updateUniformType, deleteUniformType,
   createUniformVariant, updateUniformVariant, deleteUniformVariant, restockUniformVariant, releaseUniformVariant,} from "../services/uniforms";
 import { getDepartments } from "../services/departments";
+import AlertMessage from "../components/AlertMessage.vue";
+
+const showAlert = ref(false);
+const alertType = ref("success");
+const alertMessage = ref("");
+
+function notify(type, message) {
+  alertType.value = type;
+  alertMessage.value = message;
+  showAlert.value = true;
+}
 const route = useRoute();
 
 /* PAGE / FILTER */
@@ -61,7 +72,8 @@ async function loadAll() {
     departments.value = departmentList || [];
   } catch (e) {
     console.error("Failed to load uniform data:", e);
-    alert(
+    notify(
+      "danger",
       e?.response?.data?.message ||
         e?.message ||
         "Failed to load uniform data.",
@@ -127,7 +139,7 @@ async function confirmAddType() {
   const description = typeDescription.value.trim();
 
   if (!name) {
-    alert("Please enter a uniform name.");
+    notify("warning", "Please enter a uniform name.");
     return;
   }
 
@@ -143,7 +155,7 @@ async function proceedAddType() {
   const description = typeDescription.value.trim();
 
   if (!name) {
-    alert("Please enter a uniform name.");
+    notify("warning", "Please enter a uniform name.");
     closeTypeConfirm();
     return;
   }
@@ -161,7 +173,8 @@ async function proceedAddType() {
   } catch (e) {
     console.error("Failed to create uniform type:", e);
 
-    alert(
+    notify(
+      "danger",
       e?.response?.data?.message ||
         JSON.stringify(e?.response?.data?.errors) ||
         e?.message ||
@@ -173,6 +186,7 @@ async function proceedAddType() {
 /* EDIT UNIFORM TYPE */
 
 const editTypeModalOpen = ref(false);
+const editTypeConfirm = ref(false);
 const editingType = ref(null);
 
 const editTypeName = ref("");
@@ -182,24 +196,35 @@ function openEditType(type) {
   editingType.value = type;
   editTypeName.value = type.uniform_name || "";
   editTypeDescription.value = type.description || "";
+  editTypeConfirm.value = false;
   editTypeModalOpen.value = true;
 }
 
 function closeEditType() {
   editTypeModalOpen.value = false;
+  editTypeConfirm.value = false;
   editingType.value = null;
 }
 
+// Step 1: validate, then show the confirmation screen.
+function requestTypeEdit() {
+  if (!editingType.value) {
+    return;
+  }
+  if (!editTypeName.value.trim()) {
+    notify("warning", "Uniform name is required.");
+    return;
+  }
+  editTypeConfirm.value = true;
+}
+
+// Step 2: the user confirmed, save it.
 async function saveTypeEdit() {
   if (!editingType.value) {
     return;
   }
   const name = editTypeName.value.trim();
   const description = editTypeDescription.value.trim();
-  if (!name) {
-    alert("Uniform name is required.");
-    return;
-  }
 
   try {
     await updateUniformType(editingType.value.idUniftype, {
@@ -210,7 +235,9 @@ async function saveTypeEdit() {
     closeEditType();
   } catch (e) {
     console.error("Failed to update uniform type:", e);
-    alert(
+    editTypeConfirm.value = false;
+    notify(
+      "danger",
       e?.response?.data?.message ||
         JSON.stringify(e?.response?.data?.errors) ||
         e?.message ||
@@ -227,21 +254,37 @@ async function removeUniformType(type) {
     (variant) => String(variant.idUniftype) === String(type.idUniftype),
   );
   if (hasVariants) {
-    alert(
+    notify(
+      "warning",
       `Cannot delete "${typeName}" because it still has uniform variants. Delete its variants first.`,
     );
     return;
   }
 
-  if (!confirm(`Delete uniform type "${typeName}"?`)) {
+  pendingDeleteType.value = type;
+  deleteTypeConfirmModalOpen.value = true;
+}
+
+function closeDeleteTypeConfirm() {
+  deleteTypeConfirmModalOpen.value = false;
+  pendingDeleteType.value = null;
+}
+
+async function confirmDeleteUniformType() {
+  const type = pendingDeleteType.value;
+  closeDeleteTypeConfirm();
+
+  if (!type) {
     return;
   }
+
   try {
     await deleteUniformType(type.idUniftype);
     await loadAll();
   } catch (e) {
     console.error("Failed to delete uniform type:", e);
-    alert(
+    notify(
+      "danger",
       e?.response?.data?.message ||
         JSON.stringify(e?.response?.data?.errors) ||
         e?.message ||
@@ -299,23 +342,23 @@ function confirmAddVariant() {
   const quantity = Number(variantQuantity.value) || 0;
 
   if (!typeId) {
-    alert("Please select a uniform type.");
+    notify("warning", "Please select a uniform type.");
     return;
   }
   if (!departmentId) {
-    alert("Please select a department.");
+    notify("warning", "Please select a department.");
     return;
   }
   if (!size) {
-    alert("Please enter a uniform size.");
+    notify("warning", "Please enter a uniform size.");
     return;
   }
   if (price < 0) {
-    alert("Price cannot be negative.");
+    notify("warning", "Price cannot be negative.");
     return;
   }
   if (quantity < 0) {
-    alert("Quantity cannot be negative.");
+    notify("warning", "Quantity cannot be negative.");
     return;
   }
   variantConfirmModalOpen.value = true;
@@ -337,7 +380,8 @@ async function createConfirmedVariant() {
   } catch (e) {
     console.error("Failed to create uniform variant:", e);
     variantConfirmModalOpen.value = false;
-    alert(
+    notify(
+      "danger",
       e?.response?.data?.message ||
         JSON.stringify(e?.response?.data?.errors) ||
         e?.message ||
@@ -375,7 +419,7 @@ function saveVariantEdit() {
   }
   const price = Number(editVariantPrice.value) || 0;
   if (price < 0) {
-    alert("Price cannot be negative.");
+    notify("warning", "Price cannot be negative.");
     return;
   }
 
@@ -398,6 +442,9 @@ const stockQuantity = ref(1);
 const actionConfirmModalOpen = ref(false);
 const actionConfirmType = ref("");
 const actionConfirmVariant = ref(null);
+
+const deleteTypeConfirmModalOpen = ref(false);
+const pendingDeleteType = ref(null);
 
 function openActionConfirm(type, variant) {
   actionConfirmType.value = type;
@@ -459,7 +506,7 @@ async function confirmAction() {
     if (actionConfirmType.value === "release") {
       const quantity = Number(stockQuantity.value) || 0;
       if (quantity <= 0) {
-        alert("Quantity must be at least 1.");
+        notify("warning", "Quantity must be at least 1.");
         return;
       }
       await releaseUniformVariant(variant.idUnifvariant, quantity);
@@ -468,7 +515,7 @@ async function confirmAction() {
     /* RESTOCK */
       const quantity = Number(stockQuantity.value) || 0;
       if (quantity <= 0) {
-        alert("Quantity must be at least 1.");
+        notify("warning", "Quantity must be at least 1.");
         return;
       }
       await restockUniformVariant(variant.idUnifvariant, quantity);
@@ -477,11 +524,11 @@ async function confirmAction() {
     /* EDIT */
       const newPrice = Number(editVariantPrice.value);
       if (isNaN(newPrice)) {
-        alert("Please enter a valid price.");
+        notify("warning", "Please enter a valid price.");
         return;
       }
       if (newPrice < 0) {
-        alert("Price cannot be negative.");
+        notify("warning", "Price cannot be negative.");
         return;
       }
       await updateUniformVariant(variant.idUnifvariant, {
@@ -511,7 +558,8 @@ async function confirmAction() {
     }
   } catch (e) {
     console.error("Uniform action failed:", e);
-    alert(
+    notify(
+      "danger",
       e?.response?.data?.message ||
         JSON.stringify(e?.response?.data?.errors) ||
         e?.message ||
@@ -536,13 +584,13 @@ function closeStockModal() {
 
 function confirmStockAction() {
   if (!stockVariant.value) {
-    alert("No uniform selected.");
+    notify("warning", "No uniform selected.");
     return;
   }
 
   const quantity = Number(stockQuantity.value) || 0;
   if (quantity <= 0) {
-    alert("Quantity must be at least 1.");
+    notify("warning", "Quantity must be at least 1.");
     return;
   }
 
@@ -551,7 +599,8 @@ function confirmStockAction() {
     stockMode.value === "release" &&
     quantity > Number(stockVariant.value.quantity)
   ) {
-    alert(
+    notify(
+      "warning",
       `Cannot release ${quantity} unit(s). Only ${stockVariant.value.quantity} unit(s) are available.`,
     );
     return;
@@ -579,6 +628,8 @@ const visibleTypes = computed(() => {
 
 <template>
   <div>
+    <AlertMessage v-model:show="showAlert" :type="alertType" :message="alertMessage" />
+
     <!-- PAGE TITLE -->
 
     <h3 class="mb-4">
@@ -595,7 +646,7 @@ const visibleTypes = computed(() => {
       <div class="d-flex gap-2" v-if="!isAllView">
         <!-- ADD TYPE -->
 
-        <button class="btn btn-outline-primary" @click="openAddType">
+        <button class="btn btn-primary text-white" @click="openAddType">
           + Add Uniform Type
         </button>
 
@@ -790,19 +841,41 @@ const visibleTypes = computed(() => {
         </div>
 
         <div class="modal-body">
-          <label class="form-label"> Uniform Name </label>
-          <input class="form-control mb-3" v-model="editTypeName" />
-          <label class="form-label"> Description </label>
-          <textarea class="form-control" rows="3" v-model="editTypeDescription"></textarea>
+          <template v-if="!editTypeConfirm">
+            <label class="form-label"> Uniform Name </label>
+            <input class="form-control mb-3" v-model="editTypeName" />
+            <label class="form-label"> Description </label>
+            <textarea class="form-control" rows="3" v-model="editTypeDescription"></textarea>
+          </template>
+
+          <!-- CONFIRMATION SCREEN -->
+          <div v-else class="alert alert-warning mb-0">
+            <h6 class="mb-3">Confirm Action</h6>
+            Save changes to
+            <strong>{{ editingType?.uniform_name }}</strong>?
+            <div v-if="editTypeName.trim() !== editingType?.uniform_name" class="mt-2">
+              New name: <strong>{{ editTypeName.trim() }}</strong>
+            </div>
+          </div>
         </div>
 
         <div class="modal-footer">
-          <button class="btn btn-secondary" @click="closeEditType">
-            Cancel
+          <button
+            class="btn btn-secondary"
+            @click="editTypeConfirm ? (editTypeConfirm = false) : closeEditType()"
+          >
+            {{ editTypeConfirm ? "Back" : "Cancel" }}
           </button>
 
-          <button class="btn btn-primary" @click="saveTypeEdit">
+          <button
+            v-if="!editTypeConfirm"
+            class="btn btn-primary"
+            @click="requestTypeEdit"
+          >
             Save Changes
+          </button>
+          <button v-else class="btn btn-success" @click="saveTypeEdit">
+            Confirm
           </button>
         </div>
       </div>
@@ -1002,6 +1075,45 @@ const visibleTypes = computed(() => {
         </div>
       </div>
     </div>
+    <!-- DELETE UNIFORM TYPE CONFIRMATION MODAL -->
+
+    <div v-if="deleteTypeConfirmModalOpen" class="modal-backdrop-custom">
+      <div class="modal-custom">
+        <div class="modal-header">
+          <h5 class="mb-0">Confirm Delete</h5>
+          <button
+            type="button"
+            class="btn-close"
+            @click="closeDeleteTypeConfirm"
+          ></button>
+        </div>
+
+        <div class="modal-body">
+          <p class="mb-0">
+            Delete uniform type
+            "{{ pendingDeleteType?.uniform_name || 'this uniform' }}"?
+          </p>
+        </div>
+
+        <div class="modal-footer">
+          <button
+            type="button"
+            class="btn btn-secondary"
+            @click="closeDeleteTypeConfirm"
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            class="btn btn-danger"
+            @click="confirmDeleteUniformType"
+          >
+            Confirm Delete
+          </button>
+        </div>
+      </div>
+    </div>
+
     <!-- ACTION CONFIRMATION MODAL -->
 
     <div v-if="actionConfirmModalOpen" class="modal-backdrop-custom">

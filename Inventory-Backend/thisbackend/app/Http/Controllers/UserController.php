@@ -33,7 +33,7 @@ public function store(Request $request)
 {
     $validated = $request->validate([
         'full_name' => 'required|string|max:255',
-        'username'  => 'required|string|max:255|unique:Users,username',
+        'username'  => 'required|string|max:255|unique:users,username',
         'password'  => 'required|min:6',
         'role'      => 'required|in:admin,dean,cashier',
     ]);
@@ -69,7 +69,7 @@ public function update(Request $request, $id)
 
     $validated = $request->validate([
         'full_name' => 'required|string|max:255',
-        'username'  => 'required|string|max:255|unique:Users,username,' . $id . ',idUsers',
+        'username'  => 'required|string|max:255|unique:users,username,' . $id . ',idUsers',
         'role'      => 'required|in:admin,dean,cashier',
     ]);
 

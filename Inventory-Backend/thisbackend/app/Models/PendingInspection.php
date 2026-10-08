@@ -13,6 +13,11 @@ class PendingInspection extends Model
     protected $fillable = [
         'idrequestItem',
         'iditems',
+        'source_building',
+        'source_room',
+        'fit_for_use_qty',
+        'maintenance_qty',
+        'disposal_qty',
         'quantity',
         'status',
         'returned_at',

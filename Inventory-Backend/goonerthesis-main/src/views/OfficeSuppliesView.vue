@@ -14,6 +14,18 @@ import {
   borrowNonConsumables,
 } from "../services/inventory";
 import { getRequests, returnEquipment } from "../services/requests";
+import AlertMessage from "../components/AlertMessage.vue";
+import { getErrorMessage } from "../services/errors";
+
+const showAlert = ref(false);
+const alertType = ref("success");
+const alertMessage = ref("");
+
+function notify(type, message) {
+  alertType.value = type;
+  alertMessage.value = message;
+  showAlert.value = true;
+}
 
 const modalError = ref("");
 const addError = ref("");
@@ -68,7 +80,7 @@ async function confirmAdd() {
     await refresh();
     closeAdd();
   } catch (e) {
-    alert(String(e.message || e));
+    notify("danger", getErrorMessage(e));
   }
 }
 
@@ -185,7 +197,6 @@ async function proceedAction() {
         item_name: editName.value.trim(),
         description: currentItem.value.description,
         category: currentItem.value.category,
-        price: Number(currentItem.value.price),
         item_type: currentItem.value.item_type,
         quantity: Number(currentItem.value.quantity),
         status: currentItem.value.status,
@@ -202,17 +213,15 @@ async function proceedAction() {
     modalOpen.value = false;
   } catch (e) {
     console.log(e.response?.data);
-    alert(
-      e.response?.data?.message ||
-        JSON.stringify(e.response?.data?.errors) ||
-        e.message,
-    );
+    notify("danger", getErrorMessage(e));
   }
 }
 </script>
 
 <template>
   <div>
+    <AlertMessage v-model:show="showAlert" :type="alertType" :message="alertMessage" />
+
     <h3 class="mb-4">Office Supplies</h3>
     <div class="d-flex justify-content-between align-items-center mb-3">
       <div class="d-flex gap-2">
@@ -391,35 +400,62 @@ async function proceedAction() {
         </div>
       </div>
       <!-- RIGHT -->
-      <div class="card shadow-sm" style="flex: 1">
-        <div class="card-body">
-          <h5>Borrower Details</h5>
-          <div v-if="selectedSupply">
+      <div
+        class="card shadow-sm borrower-details-card"
+        style="flex: 1"
+      >
+        <div class="card-body d-flex flex-column">
+
+          <h5 class="flex-shrink-0">
+            Borrower Details
+          </h5>
+
+          <div
+            v-if="selectedSupply"
+            class="borrower-details-scroll"
+          >
+
             <div
               v-for="borrower in supplyBorrowers"
               :key="borrower.requestItemId"
-              class="border rounded p-3 mb-3"
+              class="border rounded p-3 mb-3 borrower-card"
             >
-              <div>
+
+              <div class="borrower-detail">
                 <strong>Requester:</strong>
-                {{ borrower.requester }}
+                <span class="borrower-value">
+                  {{ borrower.requester }}
+                </span>
               </div>
-              <div>
+
+              <div class="borrower-detail">
                 <strong>Request #:</strong>
-                {{ borrower.requestId }}
+                <span class="borrower-value">
+                  {{ borrower.requestId }}
+                </span>
               </div>
-              <div>
+
+              <div class="borrower-detail">
                 <strong>Location:</strong>
-                {{ borrower.location }}
+                <span class="borrower-value">
+                  {{ borrower.location }}
+                </span>
               </div>
-              <div>
+
+              <div class="borrower-detail">
                 <strong>Room:</strong>
-                {{ borrower.room }}
+                <span class="borrower-value">
+                  {{ borrower.room }}
+                </span>
               </div>
-              <div>
+
+              <div class="borrower-detail">
                 <strong>Borrowed:</strong>
-                {{ borrower.borrowedQty }}
+                <span class="borrower-value">
+                  {{ borrower.borrowedQty }}
+                </span>
               </div>
+
               <button
                 class="btn btn-success mt-3"
                 @click="
@@ -432,11 +468,18 @@ async function proceedAction() {
               >
                 Return
               </button>
+
             </div>
+
           </div>
-          <div v-else class="text-center text-muted mt-5">
+
+          <div
+            v-else
+            class="text-center text-muted mt-5"
+          >
             Select an item to view borrowers.
           </div>
+
         </div>
       </div>
     </div>
@@ -623,5 +666,35 @@ async function proceedAction() {
 }
 .highlight {
   text-decoration: underline;
+}
+.borrower-details-card {
+  min-width: 0;
+  overflow: hidden;
+}
+
+.borrower-details-scroll {
+  flex: 1;
+  min-height: 0;
+  max-height: calc(75vh - 90px);
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding-right: 6px;
+}
+
+.borrower-card {
+  overflow: hidden;
+}
+
+.borrower-detail {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 6px;
+  min-width: 0;
+}
+
+.borrower-value {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 </style>
