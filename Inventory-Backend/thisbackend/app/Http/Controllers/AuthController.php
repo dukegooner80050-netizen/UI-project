@@ -6,6 +6,9 @@ use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\DB;
+use Laravel\Sanctum\PersonalAccessToken;
+use Carbon\Carbon;
 
 class AuthController extends Controller
 {
@@ -13,21 +16,26 @@ class AuthController extends Controller
     {
         $validated = $request->validate([
             'full_name' => 'required',
-            'username' => 'required|unique:Users,username',
+            'username' => 'required|unique:users,username',
             'password' => 'required|min:6',
         ]);
 
-$user = User::create([
+$user = new User([
     'full_name' => $validated['full_name'],
     'username'  => $validated['username'],
     'password'  => Hash::make($validated['password']),
     'role'      => 'dean',
 ]);
 
+        // Self sign-ups cannot sign in until an admin approves them.
+        // (status is not mass assignable, so it is set explicitly.)
+        $user->status = 'pending';
+        $user->save();
+
         return response()->json([
-            'message' => 'Account created successfully.',
-            'user' => $user,
-        ]);
+            'message' => 'Your account has been created and is waiting for administrator approval.',
+            'status'  => 'pending',
+        ], 201);
     }
 
     public function login(Request $request)
@@ -45,7 +53,76 @@ $user = User::create([
         ], 401);
     }
 
-$token = $user->createToken('cims')->plainTextToken;
+// Checked after the password on purpose, so only someone who knows
+// the password can learn that the account is still waiting.
+if (($user->status ?? 'active') === 'pending') {
+    return response()->json([
+        'message' => 'Your account is waiting for administrator approval. Please try again once an admin has approved it.',
+        'code' => 'account_pending',
+    ], 403);
+}
+
+if (($user->status ?? 'active') !== 'active') {
+    return response()->json([
+        'message' => 'Your account is not active. Please contact the administrator.',
+    ], 403);
+}
+
+// Only Admin accounts share the two-session limit. Other roles are unaffected.
+// Admin tokens expire after 30 minutes without activity; stale tokens are
+// removed before checking the limit so abandoned sessions release their slots.
+$token = DB::transaction(function () use ($user) {
+    $idleCutoff = now()->subMinutes(30);
+
+    if (strtolower((string) $user->role) === 'admin') {
+        // Lock the same admin row for every admin login attempt. This serializes
+        // concurrent logins so two simultaneous requests cannot both take the last slot.
+        $adminIds = User::whereRaw('LOWER(role) = ?', ['admin'])
+            ->orderBy('idUsers')
+            ->lockForUpdate()
+            ->pluck('idUsers');
+
+        $adminTokens = PersonalAccessToken::where('tokenable_type', User::class)
+            ->whereIn('tokenable_id', $adminIds);
+
+        // A token with no recorded use is measured from creation time.
+        $adminTokens->where(function ($query) use ($idleCutoff) {
+            $query->where('last_used_at', '>=', $idleCutoff)
+                ->orWhere(function ($query) use ($idleCutoff) {
+                    $query->whereNull('last_used_at')
+                        ->where('created_at', '>=', $idleCutoff);
+                });
+        });
+        $activeAdminTokens = $adminTokens->count();
+
+        // Delete stale Admin tokens to release slots and prevent old credentials
+        // from continuing to work after the inactivity timeout.
+        PersonalAccessToken::where('tokenable_type', User::class)
+            ->whereIn('tokenable_id', $adminIds)
+            ->where(function ($query) use ($idleCutoff) {
+                $query->where('last_used_at', '<', $idleCutoff)
+                    ->orWhere(function ($query) use ($idleCutoff) {
+                        $query->whereNull('last_used_at')
+                            ->where('created_at', '<', $idleCutoff);
+                    });
+            })->delete();
+
+        if ($activeAdminTokens >= 2) {
+            return null;
+        }
+    }
+
+    return $user->createToken(
+        strtolower((string) $user->role) === 'admin' ? 'cims-admin-session' : 'cims'
+    )->plainTextToken;
+});
+
+if ($token === null) {
+    return response()->json([
+        'message' => 'The maximum of 2 simultaneous Admin sessions has been reached. Please try again after an Admin logs out or their session expires after 30 minutes of inactivity.',
+        'code' => 'admin_session_limit',
+    ], 429);
+}
 
 return response()->json([
     'message' => 'Login successful.',

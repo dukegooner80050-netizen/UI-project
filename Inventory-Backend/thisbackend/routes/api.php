@@ -18,6 +18,8 @@ use App\Http\Controllers\RoomController;
 use App\Http\Controllers\RoomEquipmentController;
 use App\Http\Controllers\SettingController;
 use App\Http\Controllers\InspectionController;
+use App\Http\Controllers\AccountRequestController;
+use App\Http\Middleware\AdminSessionTimeoutMiddleware;
 
 
 /*
@@ -26,11 +28,13 @@ use App\Http\Controllers\InspectionController;
 |--------------------------------------------------------------------------
 */
 
-Route::post('/register', [AuthController::class, 'register']);
+// Rate limited so the approval queue cannot be flooded.
+Route::post('/register', [AuthController::class, 'register'])
+    ->middleware('throttle:5,1');
 Route::post('/login', [AuthController::class, 'login']);
 
 Route::post('/logout', [AuthController::class, 'logout'])
-    ->middleware('auth:sanctum');
+    ->middleware([AdminSessionTimeoutMiddleware::class, 'auth:sanctum']);
 
 
 /*
@@ -39,7 +43,7 @@ Route::post('/logout', [AuthController::class, 'logout'])
 |--------------------------------------------------------------------------
 */
 
-Route::middleware('auth:sanctum')->group(function () {
+Route::middleware([AdminSessionTimeoutMiddleware::class, 'auth:sanctum'])->group(function () {
 
     /*
     |--------------------------------------------------------------------------
@@ -156,6 +160,15 @@ Route::middleware('role:admin,dean,cashier')->group(function () {
 
 
         /*
+        | Account requests (self sign-ups waiting for approval)
+        */
+
+        Route::get('/account-requests', [AccountRequestController::class, 'index']);
+        Route::post('/account-requests/{id}/approve', [AccountRequestController::class, 'approve']);
+        Route::post('/account-requests/{id}/decline', [AccountRequestController::class, 'decline']);
+
+
+        /*
         | Departments
         */
 
@@ -185,6 +198,7 @@ Route::middleware('role:admin,dean,cashier')->group(function () {
         Route::get('/rooms/{roomId}/equipment', [RoomEquipmentController::class, 'index']);
         Route::post('/rooms/{roomId}/equipment', [RoomEquipmentController::class, 'store']);
         Route::put('/rooms/{roomId}/equipment/{id}', [RoomEquipmentController::class, 'update']);
+        Route::post('/rooms/{roomId}/equipment/{id}/return', [RoomEquipmentController::class, 'returnEquipment']);
         Route::delete('/rooms/{roomId}/equipment/{id}', [RoomEquipmentController::class, 'destroy']);
 
 
@@ -245,6 +259,7 @@ Route::middleware('role:admin,dean,cashier')->group(function () {
 
         Route::get('/inspections', [InspectionController::class, 'index']);
         Route::put('/inspections/{id}', [InspectionController::class, 'inspect']);
+        Route::put('/items/{itemId}/return-to-service', [InspectionController::class, 'returnToService']);
 
 
         /*

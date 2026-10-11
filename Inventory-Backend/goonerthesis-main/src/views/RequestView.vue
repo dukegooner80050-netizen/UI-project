@@ -4,6 +4,7 @@ import { createRequestBatch, getRequests } from "../services/requests";
 import { listUniformTypes, listUniformVariants } from "../services/uniforms";
 import { getCurrentUser } from "../services/storage";
 import { getItems } from "../services/items";
+import { TYPE_B, OFFICE_TYPE_OPTIONS } from "../services/itemTypes";
 import { getMonthlyRequestLimit } from "../services/settings";
 
 const user = getCurrentUser();
@@ -29,6 +30,8 @@ const uniformVariants = ref([]);
 const selectedUniformTypeId = ref("");
 const selectedUniformVariantId = ref("");
 const warningModal = ref(false);
+const submitConfirmOpen = ref(false);
+const submitting = ref(false);
 const warningTitle = ref("");
 const warningMessage = ref("");
 
@@ -146,7 +149,7 @@ const itemOptions = computed(() => {
         return (item.subCategory || "") === type;
       }
       if (cat === "School Equipment") {
-        return type === "Non-Consumable";
+        return type === TYPE_B;
       }
       return false;
     })
@@ -231,7 +234,7 @@ watch(category, async (value) => {
   selectedItemId.value = "";
 
   if (value === "School Equipment") {
-    itemType.value = "Non-Consumable";
+    itemType.value = TYPE_B;
   } else {
     itemType.value = "";
   }
@@ -417,7 +420,9 @@ function showWarning(title, message) {
 
 // SUBMIT REQUEST //
 
-async function submitRequest() {
+// Called with no argument from the button (shows the confirmation first)
+// and with `true` from the confirmation modal (really submits).
+async function submitRequest(confirmed = false) {
   error.value = "";
 
   if (requestItems.value.length === 0 && requestUniforms.value.length === 0) {
@@ -446,6 +451,11 @@ async function submitRequest() {
       "Purpose Required",
       "Please fill out the purpose field before submitting your request.",
     );
+    return;
+  }
+
+  if (confirmed !== true) {
+    submitConfirmOpen.value = true;
     return;
   }
 
@@ -525,6 +535,7 @@ async function submitRequest() {
     })),
   };
 
+  submitting.value = true;
   try {
     const response = await createRequestBatch(payload);
 
@@ -553,7 +564,14 @@ async function submitRequest() {
       "Request Failed",
       err.response?.data?.message || "Unable to submit request.",
     );
+  } finally {
+    submitting.value = false;
   }
+}
+
+function confirmSubmit() {
+  submitConfirmOpen.value = false;
+  submitRequest(true);
 }
 
 // TAB WATCHER //
@@ -645,8 +663,13 @@ watch(activeTab, async () => {
               :disabled="isItemTypeLocked"
             >
               <option value="">Select item type</option>
-              <option value="Consumable">Consumable</option>
-              <option value="Non-Consumable">Non-Consumable</option>
+              <option
+                v-for="opt in OFFICE_TYPE_OPTIONS"
+                :key="opt.value"
+                :value="opt.value"
+              >
+                {{ opt.label }}
+              </option>
             </select>
           </div>
 
@@ -809,7 +832,7 @@ watch(activeTab, async () => {
 
                   <td>
                     <button
-                      class="btn btn-sm btn-outline-danger"
+                      class="btn btn-sm btn-danger text-white"
                       @click="removeItem(index)"
                     >
                       ✕
@@ -841,7 +864,7 @@ watch(activeTab, async () => {
 
                   <td>
                     <button
-                      class="btn btn-sm btn-outline-danger"
+                      class="btn btn-sm btn-danger text-white"
                       @click="removeUniform(index)"
                     >
                       ✕
@@ -901,9 +924,10 @@ watch(activeTab, async () => {
           <button
             class="btn btn-primary w-100"
             :disabled="
-              requestItems.length === 0 && requestUniforms.length === 0
+              submitting ||
+              (requestItems.length === 0 && requestUniforms.length === 0)
             "
-            @click="submitRequest"
+            @click="submitRequest()"
           >
             Submit All Requests
           </button>
@@ -1036,7 +1060,7 @@ watch(activeTab, async () => {
                     <td>{{ formatDate(r.date) }}</td>
                     <td>
                       <button
-                        class="btn btn-sm btn-outline-secondary"
+                        class="btn btn-sm btn-secondary text-white"
                         @click="selected = r"
                       >
                         View
@@ -1119,6 +1143,44 @@ watch(activeTab, async () => {
       </div>
     </div>
   </div>
+  <div v-if="submitConfirmOpen" class="modal-backdrop-custom">
+    <div class="modal-custom">
+      <div class="modal-header">
+        <h5 class="mb-0">Submit Request</h5>
+        <button class="btn-close" @click="submitConfirmOpen = false"></button>
+      </div>
+
+      <div class="modal-body">
+        <p class="mb-2">
+          Submit this request for
+          <strong>{{ requestItems.length + requestUniforms.length }}</strong>
+          line(s)?
+        </p>
+        <ul class="small mb-2">
+          <li v-for="(it, idx) in requestItems" :key="'i' + idx">
+            {{ it.qty }} x {{ it.itemName }}
+          </li>
+          <li v-for="(u, idx) in requestUniforms" :key="'u' + idx">
+            {{ u.quantity }} x {{ u.uniformName || "Uniform" }}
+            <span v-if="u.size">({{ u.size }})</span>
+          </li>
+        </ul>
+        <p class="text-muted small mb-0">
+          It will count toward your monthly request limit.
+        </p>
+      </div>
+
+      <div class="modal-footer">
+        <button class="btn btn-secondary" @click="submitConfirmOpen = false">
+          Cancel
+        </button>
+        <button class="btn btn-success" @click="confirmSubmit">
+          Confirm
+        </button>
+      </div>
+    </div>
+  </div>
+
   <div v-if="warningModal" class="modal-backdrop-custom">
     <div class="modal-custom">
       <div class="modal-header">

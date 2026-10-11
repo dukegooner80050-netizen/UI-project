@@ -91,6 +91,17 @@ public function show($id)
         ], 404);
     }
 
+    $currentUser = request()->user();
+
+    if (
+        strtolower((string) $currentUser->role) !== 'admin' &&
+        (int) $request->idUsers !== (int) $currentUser->idUsers
+    ) {
+        return response()->json([
+            'message' => 'You are not allowed to view this request.'
+        ], 403);
+    }
+
     return response()->json([
         'idUsers' => $request->idUsers,
         'id' => $request->idrequest,
@@ -329,7 +340,7 @@ public function approve($id)
             $item = Item::find($requestedItem->iditems);
 
             $item->quantity -= $requestedItem->quantity;
-            $this->updateItemStatus($item);
+            $item->refreshStatus();
 
             $item->save();
         }
@@ -398,34 +409,6 @@ public function approve($id)
     ]
 ]);
     });
-}
-
-private function updateItemStatus(Item $item)
-{
-    if (
-        $item->category === "Office Supplies" &&
-        $item->item_type === "Consumable"
-    ) {
-
-        if ($item->quantity <= 0) {
-            $item->status = "Out of Stock";
-        }
-        elseif ($item->quantity <= 5) {
-            $item->status = "Low Stock";
-        }
-        else {
-            $item->status = "Available";
-        }
-
-        return;
-    }
-
-    if ($item->quantity <= 0) {
-        $item->status = "Borrowed";
-    }
-    else {
-        $item->status = "Available";
-    }
 }
 
 public function reject(HttpRequest $httpRequest, $id)
@@ -503,7 +486,13 @@ public function returnEquipment(HttpRequest $request, $id)
     return DB::transaction(function () use ($id, $validated) {
 
         $requestItem = RequestItem::findOrFail($id);
-        $requestItem->load('request');
+        $requestItem->load('request', 'item');
+
+        if ($requestItem->item && !$requestItem->item->isReturnable()) {
+            return response()->json([
+                'message' => 'This item was issued and does not need to be returned.'
+            ], 400);
+        }
 if ($requestItem->request->status !== 'Approved') {
     return response()->json([
         'message' => 'Only approved requests can be returned.'
@@ -526,8 +515,13 @@ $requestItem->save();
 
 $request = $requestItem->request;
 
+// Only tracked items count: issued ones (Consumable / Type A) are never
+// returned and must not keep the request open forever.
 $allReturned = $request->items()
     ->whereColumn('returned_quantity', '<', 'quantity')
+    ->whereHas('item', function ($query) {
+        $query->whereNotIn('item_type', Item::nonReturnableTypes());
+    })
     ->doesntExist();
 
 if ($allReturned) {

@@ -83,7 +83,7 @@ onBeforeUnmount(() => window.removeEventListener("resize", onResize));
 /* main content */
 .main-content {
   flex: 1;
-  background-color: #f4f6f9;
+  background-color: var(--app-main-bg, #f4f6f9);
   min-height: 100vh;
   padding: 1.5rem;
 }

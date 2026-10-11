@@ -8,6 +8,9 @@ import AlertMessage from "../components/AlertMessage.vue"
 //ALERT STATE
 const logs = ref([])
 const search = ref("")
+const dateFrom = ref("")
+const dateTo = ref("")
+const userFilter = ref("")
 
 const showAlert = ref(false)
 const alertType = ref("success")
@@ -35,24 +38,46 @@ async function refresh() {
   }
 }
 
+const uniqueUsers = computed(() => {
+  const names = logs.value.map(l => l.performedBy).filter(Boolean)
+  return [...new Set(names)].sort((a, b) => a.localeCompare(b))
+})
+
 const filteredLogs = computed(() => {
   const q = search.value.trim().toLowerCase()
-  if (!q) return logs.value
 
   return logs.value.filter(l => {
-    const blob = [
-      l.action,
-      l.performedBy,
-      l.role,
-      l.date,
-      l.time
-    ]
-      .join(" ")
-      .toLowerCase()
+    if (q) {
+      const blob = [
+        l.action,
+        l.performedBy,
+        l.role,
+        l.date,
+        l.time
+      ]
+        .join(" ")
+        .toLowerCase()
 
-    return blob.includes(q)
+      if (!blob.includes(q)) return false
+    }
+
+    // l.date is "YYYY-MM-DD", same format as the date inputs below,
+    // so these compare as plain strings.
+    if (dateFrom.value && l.date < dateFrom.value) return false
+    if (dateTo.value && l.date > dateTo.value) return false
+
+    if (userFilter.value && l.performedBy !== userFilter.value) return false
+
+    return true
   })
 })
+
+function clearFilters() {
+  search.value = ""
+  dateFrom.value = ""
+  dateTo.value = ""
+  userFilter.value = ""
+}
 
 function badgeClass(action) {
   const a = (action || "").toLowerCase()
@@ -83,13 +108,41 @@ function badgeClass(action) {
     <div class="card shadow-sm">
       <div class="card-body">
 
-        <div class="row mb-3">
-          <div class="col-md-6">
+        <div class="row g-2 mb-3 align-items-end">
+          <div class="col-md-4">
+            <label class="form-label small text-muted mb-1">Search</label>
             <input v-model="search" class="form-control" placeholder="Search logs (action, item, user, date...)" />
           </div>
-          <div class="col-md-6 text-md-end text-muted small mt-2 mt-md-0">
-            Total: <strong>{{ filteredLogs.length }}</strong>
+
+          <div class="col-md-2">
+            <label class="form-label small text-muted mb-1">From</label>
+            <input v-model="dateFrom" type="date" class="form-control" />
           </div>
+
+          <div class="col-md-2">
+            <label class="form-label small text-muted mb-1">To</label>
+            <input v-model="dateTo" type="date" class="form-control" />
+          </div>
+
+          <div class="col-md-2">
+            <label class="form-label small text-muted mb-1">User</label>
+            <select v-model="userFilter" class="form-select">
+              <option value="">All users</option>
+              <option v-for="name in uniqueUsers" :key="name" :value="name">
+                {{ name }}
+              </option>
+            </select>
+          </div>
+
+          <div class="col-md-2 d-flex gap-2">
+            <button class="btn btn-outline-secondary w-100" @click="clearFilters">
+              Clear Filters
+            </button>
+          </div>
+        </div>
+
+        <div class="text-muted small mb-3">
+          Total: <strong>{{ filteredLogs.length }}</strong>
         </div>
 
         <div class="table-scroll">
