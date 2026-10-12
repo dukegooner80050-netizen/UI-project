@@ -10,6 +10,7 @@ function normalize(item) {
     price: Number(item.price),
     qty: Number(item.quantity),
     subCategory: item.item_type,
+    requestLimit: item.request_limit ?? null,
   };
 }
 
@@ -58,6 +59,16 @@ export async function borrowItem(id, quantity) {
   return (
     await axios.put(`/items/${id}/borrow`, {
       quantity,
+    })
+  ).data;
+}
+
+export async function adjustStock(id, quantity, reason, notes) {
+  return (
+    await axios.post(`/items/${id}/adjust-stock`, {
+      quantity,
+      reason,
+      notes: notes || null,
     })
   ).data;
 }

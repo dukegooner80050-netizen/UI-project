@@ -14,6 +14,7 @@ import {
   borrowNonConsumables,
 } from "../services/inventory";
 import { getRequests, returnEquipment } from "../services/requests";
+import StockAdjustmentModal from "../components/StockAdjustmentModal.vue";
 
 const modalError = ref("");
 const addError = ref("");
@@ -37,6 +38,15 @@ function openAdd() {
   addQty.value = 1;
   addError.value = "";
   addOpen.value = true;
+}
+
+// STOCK ADJUSTMENT (missing / lost / stolen)
+const missingOpen = ref(false);
+const missingItem = ref({ id: null, name: "", available: 0 });
+
+function openMissing(id, name, available) {
+  missingItem.value = { id, name, available: Number(available) || 0 };
+  missingOpen.value = true;
 }
 
 function closeAdd() {
@@ -260,7 +270,7 @@ async function proceedAction() {
                   <th>Name</th>
                   <th>Status</th>
                   <th style="width: 120px">Qty</th>
-                  <th style="width: 180px; text-align: center">Acton</th>
+                  <th style="width: 240px; text-align: center">Acton</th>
                 </tr>
               </thead>
 
@@ -282,6 +292,12 @@ async function proceedAction() {
                         @click="openQtyModal('edit', i)"
                       >
                         Edit
+                      </button>
+                      <button
+                        class="btn btn-danger btn-sm"
+                        @click="openMissing(i.iditems, i.item_name, i.quantity)"
+                      >
+                        Missing
                       </button>
                     </div>
                   </td>
@@ -315,7 +331,7 @@ async function proceedAction() {
                   <th>Status</th>
                   <th style="width: 120px">Qty</th>
                   <th style="width: 120px">Borrowed</th>
-                  <th style="width: 180px; text-align: center">Acton</th>
+                  <th style="width: 240px; text-align: center">Acton</th>
                 </tr>
               </thead>
 
@@ -338,6 +354,12 @@ async function proceedAction() {
                         @click="openQtyModal('edit', i)"
                       >
                         Edit
+                      </button>
+                      <button
+                        class="btn btn-danger btn-sm"
+                        @click="openMissing(i.iditems, i.item_name, i.quantity)"
+                      >
+                        Missing
                       </button>
                     </div>
                   </td>
@@ -578,6 +600,15 @@ async function proceedAction() {
       </div>
     </div>
   </template>
+
+  <StockAdjustmentModal
+    :show="missingOpen"
+    :item-id="missingItem.id"
+    :item-name="missingItem.name"
+    :available="missingItem.available"
+    @close="missingOpen = false"
+    @done="refresh"
+  />
 </template>
 
 <style scoped>
