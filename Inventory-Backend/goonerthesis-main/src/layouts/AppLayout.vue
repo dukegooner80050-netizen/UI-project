@@ -1,6 +1,7 @@
 <script setup>
 import { ref, onMounted, onBeforeUnmount } from "vue";
 import Sidebar from "../components/Sidebar.vue";
+import OverdueAlert from "../components/OverdueAlert.vue";
 
 const sidebarCollapsed = ref(false);
 const mobileOpen = ref(false);
@@ -48,6 +49,7 @@ onBeforeUnmount(() => window.removeEventListener("resize", onResize));
     />
 
     <main class="main-content">
+      <OverdueAlert />
       <RouterView />
     </main>
   </div>
@@ -83,7 +85,7 @@ onBeforeUnmount(() => window.removeEventListener("resize", onResize));
 /* main content */
 .main-content {
   flex: 1;
-  background-color: #f4f6f9;
+  background-color: var(--app-main-bg, #f4f6f9);
   min-height: 100vh;
   padding: 1.5rem;
 }

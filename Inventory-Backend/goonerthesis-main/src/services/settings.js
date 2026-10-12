@@ -11,3 +11,17 @@ export async function updateMonthlyRequestLimit(limit) {
         })
     ).data;
 }
+
+
+export async function getReturnDays() {
+    return (await axios.get("/settings/return-days")).data;
+}
+
+export async function updateReturnDays(category, returnDays) {
+    return (
+        await axios.put("/settings/return-days", {
+            category,
+            return_days: returnDays,
+        })
+    ).data;
+}

@@ -111,6 +111,7 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::middleware('role:admin,dean,cashier')->group(function () {
 
         Route::post('/requests', [RequestController::class, 'store']);
+        Route::get('/item-usage', [RequestController::class, 'itemUsage']);
 
         // Anyone who submits requests needs to see their own limit.
         Route::get('/settings/monthly-request-limit', [SettingController::class, 'monthlyRequestLimit']);
@@ -252,6 +253,8 @@ Route::middleware('role:admin,dean,cashier')->group(function () {
         */
 
         Route::put('/settings/monthly-request-limit', [SettingController::class, 'updateMonthlyRequestLimit']);
+        Route::get('/settings/return-days', [SettingController::class, 'returnDays']);
+        Route::put('/settings/return-days', [SettingController::class, 'updateReturnDays']);
 
 
         /*

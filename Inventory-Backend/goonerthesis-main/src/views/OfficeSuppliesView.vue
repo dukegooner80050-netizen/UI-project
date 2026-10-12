@@ -14,6 +14,33 @@ import {
   borrowNonConsumables,
 } from "../services/inventory";
 import { getRequests, returnEquipment } from "../services/requests";
+import AlertMessage from "../components/AlertMessage.vue";
+import StockBadge from "../components/StockBadge.vue";
+import {
+  OFFICE_TYPE_OPTIONS,
+  TYPE_CONSUMABLE,
+  TYPE_A,
+  TYPE_B,
+} from "../services/itemTypes";
+import { getErrorMessage } from "../services/errors";
+import { parseLimit } from "../services/limits";
+import {
+  isOverdue,
+  daysOverdue,
+  formatDue,
+  formatReturnDays,
+  parseReturnDays,
+} from "../services/dueDates";
+
+const showAlert = ref(false);
+const alertType = ref("success");
+const alertMessage = ref("");
+
+function notify(type, message) {
+  alertType.value = type;
+  alertMessage.value = message;
+  showAlert.value = true;
+}
 
 const modalError = ref("");
 const addError = ref("");
@@ -25,16 +52,44 @@ const selectedSupply = ref(null);
 const items = ref([]);
 const currentItem = ref(null);
 const addOpen = ref(false);
-const addSubCategory = ref("Consumable");
+const addSubCategory = ref(TYPE_CONSUMABLE);
 const addName = ref("");
 const addQty = ref(1);
+const addCritical = ref(2);
+const addMinimum = ref(5);
+const addOptimal = ref(20);
+const addReturnDays = ref("");
+const editReturnDays = ref("");
+const addLimit = ref("");
+const editLimit = ref("");
 const editName = ref("");
+const editType = ref(TYPE_CONSUMABLE);
+const editCritical = ref(2);
+const editMinimum = ref(5);
+const editOptimal = ref(20);
+
+// Stock levels must be whole numbers with Critical <= Minimum <= Optimal.
+function thresholdProblem(critical, minimum, optimal) {
+  const [c, m, o] = [critical, minimum, optimal].map(Number);
+  if ([c, m, o].some((n) => !Number.isInteger(n) || n < 0)) {
+    return "Stock levels must be whole numbers, 0 or higher.";
+  }
+  if (c > m || m > o) {
+    return "Stock levels must satisfy: Critical <= Minimum <= Optimal.";
+  }
+  return "";
+}
 const confirmAction = ref(false);
 
 function openAdd() {
-  addSubCategory.value = "Consumable";
+  addSubCategory.value = TYPE_CONSUMABLE;
   addName.value = "";
   addQty.value = 1;
+  addCritical.value = 2;
+  addMinimum.value = 5;
+  addOptimal.value = 20;
+  addReturnDays.value = "";
+  addLimit.value = "";
   addError.value = "";
   addOpen.value = true;
 }
@@ -56,6 +111,15 @@ async function confirmAdd() {
     addError.value = "Quantity must be at least 1.";
     return;
   }
+  const problem = thresholdProblem(
+    addCritical.value,
+    addMinimum.value,
+    addOptimal.value,
+  );
+  if (problem) {
+    addError.value = problem;
+    return;
+  }
 
   try {
     await addItem({
@@ -63,12 +127,20 @@ async function confirmAdd() {
       category: "Office Supplies",
       item_type: addSubCategory.value,
       quantity: qty,
+      critical_stock: Number(addCritical.value),
+      minimum_stock: Number(addMinimum.value),
+      optimal_stock: Number(addOptimal.value),
+      limit_per_requester: parseLimit(addLimit.value),
+      return_days:
+        addSubCategory.value === TYPE_B
+          ? parseReturnDays(addReturnDays.value)
+          : null,
     });
 
     await refresh();
     closeAdd();
   } catch (e) {
-    alert(String(e.message || e));
+    notify("danger", getErrorMessage(e));
   }
 }
 
@@ -102,11 +174,11 @@ async function refresh() {
     if (request.status !== "Approved") return;
     request.items.forEach((reqItem) => {
       const item = officeInventory.find(
-        (i) => i.iditems === reqItem.itemId && i.item_type === "Non-Consumable",
+        (i) => i.iditems === reqItem.itemId && i.item_type === TYPE_B,
       );
       if (!item) return;
       item.borrowedQty += Number(reqItem.borrowedQty);
-      item.requestItems.push({
+      const borrower = {
         requestItemId: reqItem.requestItemId,
         requester: request.requester,
         requestId: request.id,
@@ -116,39 +188,94 @@ async function refresh() {
         returnedQty: reqItem.returnedQty,
         qty: reqItem.qty,
         borrowedAt: request.borrowedAt,
-      });
+        dueAt: reqItem.dueAt,
+      };
+      if (isOverdue(borrower)) item.overdueCount = (item.overdueCount || 0) + 1;
+      item.requestItems.push(borrower);
     });
   });
+  // Most overdue borrower first inside each item.
+  officeInventory.forEach((i) =>
+    i.requestItems.sort((a, b) => daysOverdue(b) - daysOverdue(a)),
+  );
   items.value = officeInventory;
+
+  // The Borrower Details panel holds a snapshot of the selected item.
+  // refresh() rebuilds brand-new item objects every time (e.g. right
+  // after a partial return), so without this the panel would keep
+  // showing the old borrowedQty/requestItems instead of the new ones.
+  if (selectedSupply.value) {
+    const updated = officeInventory.find(
+      (i) => i.iditems === selectedSupply.value.iditems,
+    );
+    selectedSupply.value =
+      updated && Number(updated.borrowedQty) > 0 ? updated : null;
+  }
 }
 
 const borrowedSupplies = computed(() =>
-  nonConsumables.value
+  typeBItems.value
     .filter((i) => Number(i.borrowedQty) > 0)
-    .sort((a, b) => a.item_name.localeCompare(b.item_name)),
+    .sort(
+      (a, b) =>
+        (b.overdueCount || 0) - (a.overdueCount || 0) ||
+        a.item_name.localeCompare(b.item_name),
+    ),
 );
 
 const supplyBorrowers = computed(
   () => selectedSupply.value?.requestItems || [],
 );
 
+function toggleSupplyDetails(item) {
+  selectedSupply.value =
+    selectedSupply.value?.iditems === item.iditems ? null : item;
+}
+
 const officeItems = computed(() =>
   items.value.filter((i) => i.category === "Office Supplies"),
 );
 
+// Consumable and Type A are handed over for good (never returned); only
+// Type B is tracked and expected back.
 const consumables = computed(() =>
-  officeItems.value.filter((i) => i.item_type === "Consumable"),
+  officeItems.value.filter((i) => i.item_type === TYPE_CONSUMABLE),
 );
 
-const nonConsumables = computed(() =>
-  officeItems.value.filter((i) => i.item_type === "Non-Consumable"),
+const typeAItems = computed(() =>
+  officeItems.value.filter((i) => i.item_type === TYPE_A),
 );
+
+const typeBItems = computed(() =>
+  officeItems.value.filter((i) => i.item_type === TYPE_B),
+);
+
+const issuedSections = computed(() => [
+  {
+    key: "consumable",
+    title: "Consumables",
+    note: "Used up, never returned",
+    items: consumables.value,
+  },
+  {
+    key: "type-a",
+    title: "Non-Consumable Type A",
+    note: "Issued items: handed over for good, never returned",
+    items: typeAItems.value,
+  },
+]);
 
 function openQtyModal(mode, item) {
   modalMode.value = mode;
   currentItem.value = item;
   modalQty.value = 1;
   editName.value = item.item_name;
+  editType.value = item.item_type;
+  editCritical.value = item.critical_stock ?? 2;
+  editMinimum.value = item.minimum_stock ?? 5;
+  editOptimal.value = item.optimal_stock ?? 20;
+  editReturnDays.value = item.return_days ?? "";
+  editLimit.value = item.limit_per_requester ?? "";
   modalError.value = "";
   confirmAction.value = false;
   modalOpen.value = true;
@@ -180,15 +307,31 @@ async function proceedAction() {
         modalError.value = "Item name is required.";
         return;
       }
+      const problem = thresholdProblem(
+        editCritical.value,
+        editMinimum.value,
+        editOptimal.value,
+      );
+      if (problem) {
+        modalError.value = problem;
+        confirmAction.value = false;
+        return;
+      }
 
       await updateItem(currentItem.value.iditems, {
         item_name: editName.value.trim(),
         description: currentItem.value.description,
         category: currentItem.value.category,
-        price: Number(currentItem.value.price),
-        item_type: currentItem.value.item_type,
+        item_type: editType.value,
         quantity: Number(currentItem.value.quantity),
-        status: currentItem.value.status,
+        critical_stock: Number(editCritical.value),
+        minimum_stock: Number(editMinimum.value),
+        optimal_stock: Number(editOptimal.value),
+        limit_per_requester: parseLimit(editLimit.value),
+        return_days:
+          editType.value === TYPE_B
+            ? parseReturnDays(editReturnDays.value)
+            : null,
       });
     } else if (modalMode.value === "return") {
       await returnEquipment(
@@ -202,17 +345,15 @@ async function proceedAction() {
     modalOpen.value = false;
   } catch (e) {
     console.log(e.response?.data);
-    alert(
-      e.response?.data?.message ||
-        JSON.stringify(e.response?.data?.errors) ||
-        e.message,
-    );
+    notify("danger", getErrorMessage(e));
   }
 }
 </script>
 
 <template>
   <div>
+    <AlertMessage v-model:show="showAlert" :type="alertType" :message="alertMessage" />
+
     <h3 class="mb-4">Office Supplies</h3>
     <div class="d-flex justify-content-between align-items-center mb-3">
       <div class="d-flex gap-2">
@@ -244,13 +385,18 @@ async function proceedAction() {
       </button>
     </div>
     <div v-if="activeTab === 'inventory'">
-      <!-- CONSUMABLES -->
-      <div class="card shadow-sm mb-4">
+      <!-- CONSUMABLES + NON-CONSUMABLE TYPE A (issued, never returned) -->
+      <div
+        v-for="section in issuedSections"
+        :key="section.key"
+        class="card shadow-sm mb-4"
+      >
         <div class="card-body">
           <div
             class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3"
           >
-            <h5 class="mb-0">Consumables</h5>
+            <h5 class="mb-0">{{ section.title }}</h5>
+            <small class="text-muted">{{ section.note }}</small>
           </div>
 
           <div class="table-responsive table-scroll">
@@ -258,17 +404,24 @@ async function proceedAction() {
               <thead class="table-light">
                 <tr>
                   <th>Name</th>
-                  <th>Status</th>
+                  <th>Stock Level</th>
                   <th style="width: 120px">Qty</th>
+                  <th style="width: 110px">Limit</th>
                   <th style="width: 180px; text-align: center">Acton</th>
                 </tr>
               </thead>
 
               <tbody>
-                <tr v-for="i in consumables" :key="i.iditems">
+                <tr v-for="i in section.items" :key="i.iditems">
                   <td>{{ i.item_name }}</td>
-                  <td>{{ i.status }}</td>
+                  <td>
+                    <StockBadge
+                      :level="i.stock_level"
+                      :title="`Critical ≤ ${i.critical_stock} · Minimum ≤ ${i.minimum_stock} · Optimal ≥ ${i.optimal_stock}`"
+                    />
+                  </td>
                   <td>{{ i.quantity }}</td>
+                  <td>{{ i.limit_per_requester ?? "—" }}</td>
                   <td class="text-center">
                     <div class="d-flex justify-content-center gap-2">
                       <button
@@ -287,9 +440,9 @@ async function proceedAction() {
                   </td>
                 </tr>
 
-                <tr v-if="consumables.length === 0">
-                  <td colspan="4" class="text-center text-muted">
-                    No consumables found.
+                <tr v-if="section.items.length === 0">
+                  <td colspan="5" class="text-center text-muted">
+                    No items found.
                   </td>
                 </tr>
               </tbody>
@@ -304,7 +457,8 @@ async function proceedAction() {
           <div
             class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3"
           >
-            <h5 class="mb-0">Non-Consumables</h5>
+            <h5 class="mb-0">Non-Consumable Type B</h5>
+            <small class="text-muted">Tracked items: lent out, must be returned</small>
           </div>
 
           <div class="table-responsive table-scroll">
@@ -313,18 +467,29 @@ async function proceedAction() {
                 <tr>
                   <th>Name</th>
                   <th>Status</th>
+                  <th>Stock Level</th>
                   <th style="width: 120px">Qty</th>
                   <th style="width: 120px">Borrowed</th>
+                  <th style="width: 140px">Return Period</th>
+                  <th style="width: 110px">Limit</th>
                   <th style="width: 180px; text-align: center">Acton</th>
                 </tr>
               </thead>
 
               <tbody>
-                <tr v-for="i in nonConsumables" :key="i.iditems">
+                <tr v-for="i in typeBItems" :key="i.iditems">
                   <td>{{ i.item_name }}</td>
                   <td>{{ i.status }}</td>
+                  <td>
+                    <StockBadge
+                      :level="i.stock_level"
+                      :title="`Critical ≤ ${i.critical_stock} · Minimum ≤ ${i.minimum_stock} · Optimal ≥ ${i.optimal_stock}`"
+                    />
+                  </td>
                   <td>{{ i.quantity }}</td>
                   <td>{{ Number(i.borrowedQty) || 0 }}</td>
+                  <td>{{ formatReturnDays(i.return_days) }}</td>
+                  <td>{{ i.limit_per_requester ?? "—" }}</td>
                   <td class="text-center">
                     <div class="d-flex justify-content-center gap-2">
                       <button
@@ -343,9 +508,9 @@ async function proceedAction() {
                   </td>
                 </tr>
 
-                <tr v-if="nonConsumables.length === 0">
-                  <td colspan="5" class="text-center text-muted">
-                    No non-consumables found.
+                <tr v-if="typeBItems.length === 0">
+                  <td colspan="8" class="text-center text-muted">
+                    No Type B items found.
                   </td>
                 </tr>
               </tbody>
@@ -370,14 +535,20 @@ async function proceedAction() {
             <tbody>
               <tr v-for="item in borrowedSupplies" :key="item.iditems">
                 <td>{{ item.item_name }}</td>
-                <td>{{ item.status }}</td>
+                <td>
+                  {{ item.status }}
+                  <span v-if="item.overdueCount" class="badge bg-danger ms-1">
+                    {{ item.overdueCount }} overdue
+                  </span>
+                </td>
                 <td>{{ item.borrowedQty }}</td>
                 <td>
                   <button
-                    class="btn btn-success btn-sm"
-                    @click="selectedSupply = item"
+                    class="btn btn-sm"
+                    :class="selectedSupply?.iditems === item.iditems ? 'btn-outline-success' : 'btn-success'"
+                    @click="toggleSupplyDetails(item)"
                   >
-                    View Borrowers
+                    {{ selectedSupply?.iditems === item.iditems ? "Hide Borrowers" : "View Borrowers" }}
                   </button>
                 </td>
               </tr>
@@ -391,35 +562,73 @@ async function proceedAction() {
         </div>
       </div>
       <!-- RIGHT -->
-      <div class="card shadow-sm" style="flex: 1">
-        <div class="card-body">
-          <h5>Borrower Details</h5>
-          <div v-if="selectedSupply">
+      <div
+        class="card shadow-sm borrower-details-card"
+        style="flex: 1"
+      >
+        <div class="card-body d-flex flex-column">
+
+          <h5 class="flex-shrink-0">
+            Borrower Details
+          </h5>
+
+          <div
+            v-if="selectedSupply"
+            class="borrower-details-scroll"
+          >
+
             <div
               v-for="borrower in supplyBorrowers"
               :key="borrower.requestItemId"
-              class="border rounded p-3 mb-3"
+              class="border rounded p-3 mb-3 borrower-card"
             >
-              <div>
+
+              <div class="borrower-detail">
                 <strong>Requester:</strong>
-                {{ borrower.requester }}
+                <span class="borrower-value">
+                  {{ borrower.requester }}
+                </span>
               </div>
-              <div>
+
+              <div class="borrower-detail">
                 <strong>Request #:</strong>
-                {{ borrower.requestId }}
+                <span class="borrower-value">
+                  {{ borrower.requestId }}
+                </span>
               </div>
-              <div>
+
+              <div class="borrower-detail">
                 <strong>Location:</strong>
-                {{ borrower.location }}
+                <span class="borrower-value">
+                  {{ borrower.location }}
+                </span>
               </div>
-              <div>
+
+              <div class="borrower-detail">
                 <strong>Room:</strong>
-                {{ borrower.room }}
+                <span class="borrower-value">
+                  {{ borrower.room }}
+                </span>
               </div>
-              <div>
+
+              <div class="borrower-detail">
+                <strong>Due By:</strong>
+                <span class="borrower-value">
+                  {{ formatDue(borrower.dueAt) }}
+                  <span v-if="isOverdue(borrower)" class="badge bg-danger ms-1">
+                    Overdue {{ daysOverdue(borrower) }}
+                    day{{ daysOverdue(borrower) === 1 ? "" : "s" }}
+                  </span>
+                </span>
+              </div>
+
+              <div class="borrower-detail">
                 <strong>Borrowed:</strong>
-                {{ borrower.borrowedQty }}
+                <span class="borrower-value">
+                  {{ borrower.borrowedQty }}
+                </span>
               </div>
+
               <button
                 class="btn btn-success mt-3"
                 @click="
@@ -432,11 +641,18 @@ async function proceedAction() {
               >
                 Return
               </button>
+
             </div>
+
           </div>
-          <div v-else class="text-center text-muted mt-5">
+
+          <div
+            v-else
+            class="text-center text-muted mt-5"
+          >
             Select an item to view borrowers.
           </div>
+
         </div>
       </div>
     </div>
@@ -463,6 +679,66 @@ async function proceedAction() {
           <template v-if="modalMode === 'edit'">
             <label class="form-label">Item Name</label>
             <input class="form-control mb-3" v-model="editName" />
+
+            <label class="form-label">Type</label>
+            <select class="form-select mb-3" v-model="editType">
+              <option
+                v-for="opt in OFFICE_TYPE_OPTIONS"
+                :key="opt.value"
+                :value="opt.value"
+              >
+                {{ opt.label }}
+              </option>
+            </select>
+
+            <label class="form-label">Limit per requester (optional)</label>
+            <input
+              type="number"
+              min="1"
+              max="1000"
+              class="form-control"
+              v-model="editLimit"
+              placeholder="Blank = no limit"
+            />
+            <small class="text-muted d-block mb-3">
+              Most one person can have at once.
+              {{
+                editType === TYPE_B
+                  ? "Counts what they still hold (pending + approved, not yet returned)."
+                  : "Counts what they requested this month (pending + approved)."
+              }}
+            </small>
+
+            <template v-if="editType === TYPE_B">
+              <label class="form-label">Return Period (days)</label>
+              <input
+                type="number"
+                min="1"
+                max="365"
+                class="form-control"
+                v-model="editReturnDays"
+                placeholder="Blank = use category default"
+              />
+              <small class="text-muted d-block mb-3">
+                Pre-fills the due date on Pending Requests.
+              </small>
+            </template>
+
+            <label class="form-label">Stock Levels</label>
+            <div class="row g-2 mb-1">
+              <div class="col">
+                <small class="text-muted">Critical (at or below)</small>
+                <input type="number" min="0" class="form-control" v-model="editCritical" />
+              </div>
+              <div class="col">
+                <small class="text-muted">Minimum (at or below)</small>
+                <input type="number" min="0" class="form-control" v-model="editMinimum" />
+              </div>
+              <div class="col">
+                <small class="text-muted">Optimal (at or above)</small>
+                <input type="number" min="0" class="form-control" v-model="editOptimal" />
+              </div>
+            </div>
           </template>
           <template v-else>
             <label class="form-label">Quantity</label>
@@ -509,8 +785,13 @@ async function proceedAction() {
       <div class="modal-body">
         <label class="form-label">Type</label>
         <select class="form-select mb-3" v-model="addSubCategory">
-          <option value="Consumable">Consumables</option>
-          <option value="Non-Consumable">Non-Consumables</option>
+          <option
+            v-for="opt in OFFICE_TYPE_OPTIONS"
+            :key="opt.value"
+            :value="opt.value"
+          >
+            {{ opt.label }}
+          </option>
         </select>
 
         <label class="form-label">Name</label>
@@ -522,8 +803,46 @@ async function proceedAction() {
 
         <label class="form-label">Quantity</label>
         <input type="number" min="1" class="form-control" v-model="addQty" />
+
+        <label class="form-label mt-3">Limit per requester (optional)</label>
+        <input
+          type="number"
+          min="1"
+          max="1000"
+          class="form-control"
+          v-model="addLimit"
+          placeholder="Blank = no limit"
+        />
+
+        <template v-if="addSubCategory === TYPE_B">
+          <label class="form-label mt-3">Return Period (days, optional)</label>
+          <input
+            type="number"
+            min="1"
+            max="365"
+            class="form-control"
+            v-model="addReturnDays"
+            placeholder="Blank = use category default"
+          />
+        </template>
+
+        <label class="form-label mt-3">Stock Levels</label>
+        <div class="row g-2">
+          <div class="col">
+            <small class="text-muted">Critical (at or below)</small>
+            <input type="number" min="0" class="form-control" v-model="addCritical" />
+          </div>
+          <div class="col">
+            <small class="text-muted">Minimum (at or below)</small>
+            <input type="number" min="0" class="form-control" v-model="addMinimum" />
+          </div>
+          <div class="col">
+            <small class="text-muted">Optimal (at or above)</small>
+            <input type="number" min="0" class="form-control" v-model="addOptimal" />
+          </div>
+        </div>
         <div class="small text-muted mt-2">
-          Consumables will auto-update status depending on qty.
+          The stock level badge updates automatically from the quantity.
         </div>
         <div v-if="addError" class="alert alert-danger py-3 mb-3">
           <strong>Error:</strong> {{ addError }}
@@ -554,11 +873,11 @@ async function proceedAction() {
               item(s)?
             </div>
             <div v-else-if="modalMode === 'edit'">
-              Rename
+              Save changes to
               <strong class="highlight">{{ currentItem.item_name }}</strong>
-              to
-              <strong class="highlight">{{ editName }}</strong
-              >?
+              (name: <strong class="highlight">{{ editName }}</strong>, Critical
+              ≤ {{ editCritical }}, Minimum ≤ {{ editMinimum }}, Optimal ≥
+              {{ editOptimal }})?
             </div>
             <div v-else-if="modalMode === 'return'">
               Return
@@ -623,5 +942,35 @@ async function proceedAction() {
 }
 .highlight {
   text-decoration: underline;
+}
+.borrower-details-card {
+  min-width: 0;
+  overflow: hidden;
+}
+
+.borrower-details-scroll {
+  flex: 1;
+  min-height: 0;
+  max-height: calc(75vh - 90px);
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding-right: 6px;
+}
+
+.borrower-card {
+  overflow: hidden;
+}
+
+.borrower-detail {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 6px;
+  min-width: 0;
+}
+
+.borrower-value {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 </style>

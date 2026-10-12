@@ -29,9 +29,11 @@ export async function createRequestBatch(requestData) {
     return await createRequest(requestData);
 }
 
-export async function approveRequest(id) {
+// dueDates: { [requestItemId]: "YYYY-MM-DD" } for school equipment / Type B items.
+export async function approveRequest(id, dueDates = {}) {
     const response = await axios.put(
-        `/requests/${id}/approve`
+        `/requests/${id}/approve`,
+        { due_dates: dueDates }
     );
 
     return response.data;
@@ -59,5 +61,11 @@ export async function returnEquipment(
         }
     );
 
+    return response.data;
+}
+// Per-item limits plus how much the logged-in user already has:
+// [{ itemId, limit, held, remaining }] (only items that have a limit).
+export async function getItemUsage() {
+    const response = await axios.get("/item-usage");
     return response.data;
 }

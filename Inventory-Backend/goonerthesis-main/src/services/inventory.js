@@ -1,12 +1,16 @@
+import { isIssuedType } from "./itemTypes";
 import { getItems, createItem, updateItem as updateItemApi, deleteItem, restockItem,
     releaseItem, borrowItem, returnItem,} from "./items";
 
 export function autoStatus(item) {
   const qty = Number(item.qty) || 0;
 
-  if (item.category === "Office Supplies" && item.subCategory === "Consumables") {
+  // Mirrors Item::refreshStatus() on the backend (the server is the source
+  // of truth; this is only a client-side preview).
+  if (item.category === "Office Supplies" && isIssuedType(item.item_type)) {
+    const minimum = Number(item.minimum_stock ?? 5);
     if (qty <= 0) item.status = "Out of Stock";
-    else if (qty <= 5) item.status = "Low Stock";
+    else if (qty <= minimum) item.status = "Low Stock";
     else item.status = "Available";
     return item;
   }

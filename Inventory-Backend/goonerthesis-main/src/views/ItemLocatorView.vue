@@ -2,6 +2,7 @@
 import { ref, computed, onMounted } from "vue";
 import { listInventory } from "../services/inventory";
 import { getRequests } from "../services/requests";
+import { isReturnableType } from "../services/itemTypes";
 
 const loading = ref(true);
 const searchText = ref("");
@@ -43,7 +44,7 @@ async function load() {
     // (Uniforms are handled separately and are excluded here.)
     const locatableItems = inventory.filter(
       (i) =>
-        i.item_type !== "Consumable" &&
+        isReturnableType(i.item_type) &&
         (i.category === "Office Supplies" || i.category === "School Equipment"),
     );
     const locatableIds = new Set(locatableItems.map((i) => i.iditems));

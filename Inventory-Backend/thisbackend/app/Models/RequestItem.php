@@ -15,6 +15,11 @@ protected $fillable = [
     'iditems',
     'quantity',
     'returned_quantity',
+    'due_at',
+];
+
+protected $casts = [
+    'due_at' => 'date',
 ];
 
 public $timestamps = false;

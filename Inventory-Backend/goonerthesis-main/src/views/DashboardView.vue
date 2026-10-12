@@ -2,6 +2,7 @@
 import { ref, computed, onMounted, watch, onBeforeUnmount } from "vue";
 import { useRouter } from "vue-router";
 import { getItems } from "../services/items";
+import StockBadge from "../components/StockBadge.vue";
 import { getRequests } from "../services/requests";
 import { getLogs } from "../services/logs";
 import { getCurrentUser } from "../services/storage";
@@ -111,8 +112,11 @@ const totalItems = computed(() =>
   items.value.reduce((a, i) => a + (Number(i.qty) || 0), 0),
 );
 
+// Low stock = at or below the item's own Minimum level (Critical, Minimum
+// or Out of Stock) -- see roadmap #6.
+const LOW_LEVELS = ["Out of Stock", "Critical", "Minimum"];
 const lowStockCount = computed(
-  () => items.value.filter((i) => (Number(i.qty) || 0) <= 5).length,
+  () => items.value.filter((i) => LOW_LEVELS.includes(i.stockLevel)).length,
 );
 
 const pendingRequests = computed(
@@ -152,7 +156,7 @@ const myRejectedCount = computed(
 
 /*  LISTS (CARDS)  */
 const lowStockItems = computed(() =>
-  items.value.filter((i) => (Number(i.qty) || 0) <= 5).slice(0, 20),
+  items.value.filter((i) => LOW_LEVELS.includes(i.stockLevel)).slice(0, 20),
 );
 
 const recentRequestsList = computed(() => {
@@ -672,7 +676,10 @@ eventContent(arg) {
               <strong>{{ item.name }}</strong><br />
               <small class="text-muted">{{ item.category }}</small>
             </div>
-            <span class="badge bg-danger rounded-pill">{{ item.qty }}</span>
+            <span class="d-flex align-items-center gap-2">
+              <StockBadge :level="item.stockLevel" />
+              <span class="badge bg-secondary rounded-pill">{{ item.qty }}</span>
+            </span>
           </li>
 
           <!-- Empty state -->

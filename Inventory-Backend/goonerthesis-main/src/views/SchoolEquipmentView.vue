@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed, onMounted } from "vue";
+import { ref, computed, onMounted, watch } from "vue";
 import {
   getItems,
   createItem,
@@ -7,6 +7,33 @@ import {
   restockItem,
 } from "../services/items";
 import { getRequests, returnEquipment } from "../services/requests";
+import AlertMessage from "../components/AlertMessage.vue";
+import StockBadge from "../components/StockBadge.vue";
+import { getErrorMessage } from "../services/errors";
+import { parseLimit } from "../services/limits";
+import {
+  EQUIPMENT_FIXED,
+  EQUIPMENT_LIMITED,
+  EQUIPMENT_KIND_OPTIONS,
+  equipmentKindLabel,
+} from "../services/itemTypes";
+import {
+  isOverdue,
+  daysOverdue,
+  formatDue,
+  formatReturnDays,
+  parseReturnDays,
+} from "../services/dueDates";
+
+const showAlert = ref(false);
+const alertType = ref("success");
+const alertMessage = ref("");
+
+function notify(type, message) {
+  alertType.value = type;
+  alertMessage.value = message;
+  showAlert.value = true;
+}
 
 // STATES
 const items = ref([]);
@@ -24,7 +51,39 @@ const editName = ref("");
 const addOpen = ref(false);
 const addName = ref("");
 const addQty = ref(1);
+const addCritical = ref(2);
+const addMinimum = ref(5);
+const addOptimal = ref(20);
+const addReturnDays = ref("");
+const editReturnDays = ref("");
+const addLimit = ref("");
+const editLimit = ref("");
+const addKind = ref(EQUIPMENT_FIXED);
+const editKind = ref(EQUIPMENT_FIXED);
+
+// A fixed asset can't have a limit, so drop whatever was typed.
+watch(addKind, (k) => {
+  if (k !== EQUIPMENT_LIMITED) addLimit.value = "";
+});
+watch(editKind, (k) => {
+  if (k !== EQUIPMENT_LIMITED) editLimit.value = "";
+});
+const editCritical = ref(2);
+const editMinimum = ref(5);
+const editOptimal = ref(20);
 const confirmAction = ref(false);
+
+// Stock levels must be whole numbers with Critical <= Minimum <= Optimal.
+function thresholdProblem(critical, minimum, optimal) {
+  const [c, m, o] = [critical, minimum, optimal].map(Number);
+  if ([c, m, o].some((n) => !Number.isInteger(n) || n < 0)) {
+    return "Stock levels must be whole numbers, 0 or higher.";
+  }
+  if (c > m || m > o) {
+    return "Stock levels must satisfy: Critical <= Minimum <= Optimal.";
+  }
+  return "";
+}
 
 function formatDate(date) {
   if (!date) return "-";
@@ -40,6 +99,13 @@ function formatDate(date) {
 function openAdd() {
   addName.value = "";
   addQty.value = 1;
+  addCritical.value = 2;
+  addMinimum.value = 5;
+  addOptimal.value = 20;
+  addReturnDays.value = "";
+  addLimit.value = "";
+  addKind.value = EQUIPMENT_FIXED;
+  addError.value = "";
   addOpen.value = true;
 }
 
@@ -60,20 +126,34 @@ async function confirmAdd() {
     addError.value = "Quantity must be at least 1.";
     return;
   }
+  const problem = thresholdProblem(
+    addCritical.value,
+    addMinimum.value,
+    addOptimal.value,
+  );
+  if (problem) {
+    addError.value = problem;
+    return;
+  }
 
   try {
     await createItem({
       item_name: name,
       category: "School Equipment",
-      item_type: "Equipment",
+      item_type: addKind.value,
       quantity: qty,
-      status: "Available",
+      critical_stock: Number(addCritical.value),
+      minimum_stock: Number(addMinimum.value),
+      optimal_stock: Number(addOptimal.value),
+      return_days: parseReturnDays(addReturnDays.value),
+      limit_per_requester:
+        addKind.value === EQUIPMENT_LIMITED ? parseLimit(addLimit.value) : null,
     });
 
     await load();
     closeAdd();
   } catch (e) {
-    alert(String(e.message || e));
+    notify("danger", getErrorMessage(e));
   }
 }
 
@@ -103,6 +183,7 @@ async function load() {
       name: i.name,
       qty: i.qty,
       borrowedQty: 0,
+      overdueCount: 0,
       requestItems: [],
     }));
   requests.forEach((request) => {
@@ -111,7 +192,7 @@ async function load() {
       const equipment = equipments.find((e) => e.id === reqItem.itemId);
       if (!equipment) return;
       equipment.borrowedQty += Number(reqItem.borrowedQty);
-      equipment.requestItems.push({
+      const borrower = {
         requestItemId: reqItem.requestItemId,
         requester: request.requester,
         requestId: request.id,
@@ -121,28 +202,62 @@ async function load() {
         returnedQty: reqItem.returnedQty,
         qty: reqItem.qty,
         borrowedAt: request.borrowedAt,
-      });
+        dueAt: reqItem.dueAt,
+      };
+      if (isOverdue(borrower)) equipment.overdueCount += 1;
+      equipment.requestItems.push(borrower);
     });
   });
+  // Most overdue borrower first inside each equipment.
+  equipments.forEach((e) =>
+    e.requestItems.sort((a, b) => daysOverdue(b) - daysOverdue(a)),
+  );
   items.value = equipments;
+
+  // Keep the Borrower Details panel in sync with live data. load()
+  // rebuilds brand-new item objects each time (e.g. right after a
+  // partial return), so without this the panel would keep showing
+  // the old borrowedQty/requestItems instead of the new ones.
+  if (selectedEquipment.value) {
+    const updated = equipments.find(
+      (e) => e.id === selectedEquipment.value.id,
+    );
+    selectedEquipment.value =
+      updated && Number(updated.borrowedQty) > 0 ? updated : null;
+  }
 }
 
 const equipments = computed(() => items.value);
 const borrowedEquipments = computed(() => {
   return items.value
     .filter((item) => Number(item.borrowedQty) > 0)
-    .sort((a, b) => a.name.localeCompare(b.name));
+    .sort(
+      (a, b) =>
+        b.overdueCount - a.overdueCount || a.name.localeCompare(b.name),
+    );
 });
 
 const equipmentBorrowers = computed(() => {
   return selectedEquipment.value?.requestItems || [];
 });
 
+function toggleEquipmentDetails(equipment) {
+  selectedEquipment.value =
+    selectedEquipment.value?.id === equipment.id ? null : equipment;
+}
+
 function openModal(mode, item) {
   modalMode.value = mode;
   currentItem.value = item;
   modalQty.value = 1;
   editName.value = item.name;
+  editCritical.value = item.critical_stock ?? 2;
+  editMinimum.value = item.minimum_stock ?? 5;
+  editOptimal.value = item.optimal_stock ?? 20;
+  editReturnDays.value = item.return_days ?? "";
+  editLimit.value = item.limit_per_requester ?? "";
+  editKind.value =
+    item.item_type === EQUIPMENT_LIMITED ? EQUIPMENT_LIMITED : EQUIPMENT_FIXED;
   modalError.value = "";
   confirmAction.value = false;
   modalOpen.value = true;
@@ -184,25 +299,40 @@ async function confirmModal() {
         modalError.value = "Equipment name cannot be empty.";
         return;
       }
+      const problem = thresholdProblem(
+        editCritical.value,
+        editMinimum.value,
+        editOptimal.value,
+      );
+      if (problem) {
+        modalError.value = problem;
+        confirmAction.value = false;
+        return;
+      }
       await updateItem(currentItem.value.id, {
         item_name: editName.value,
         description: currentItem.value.description,
         category: currentItem.value.category,
-        price: currentItem.value.price,
-        item_type: currentItem.value.item_type,
+        item_type: editKind.value,
         quantity: currentItem.value.qty,
-        status: currentItem.value.status,
+        critical_stock: Number(editCritical.value),
+        minimum_stock: Number(editMinimum.value),
+        optimal_stock: Number(editOptimal.value),
+        return_days: parseReturnDays(editReturnDays.value),
+        limit_per_requester:
+          editKind.value === EQUIPMENT_LIMITED ? parseLimit(editLimit.value) : null,
       });
     }
     await load();
     closeModal();
   } catch (e) {
-    alert(String(e.message || e));
+    notify("danger", getErrorMessage(e));
   }
 }
 </script>
 
 <template>
+  <AlertMessage v-model:show="showAlert" :type="alertType" :message="alertMessage" />
   <h3 class="mb-4">School Equipment</h3>
 
   <!-- ACTION BAR -->
@@ -246,9 +376,13 @@ async function confirmModal() {
           <thead class="table-light">
             <tr>
               <th>Name</th>
+              <th style="width: 130px">Type</th>
               <th>Status</th>
+              <th>Stock Level</th>
               <th style="width: 120px">Available</th>
               <th style="width: 120px">Borrowed</th>
+              <th style="width: 140px">Return Period</th>
+              <th style="width: 110px">Limit</th>
               <th style="width: 220px; text-align: center">Actions</th>
             </tr>
           </thead>
@@ -256,9 +390,37 @@ async function confirmModal() {
           <tbody>
             <tr v-for="e in equipments" :key="e.iditems">
               <td>{{ e.name }}</td>
+              <td>
+                <span
+                  class="badge"
+                  :class="
+                    e.item_type === EQUIPMENT_LIMITED ? 'bg-info text-dark' : 'bg-secondary'
+                  "
+                >
+                  {{ equipmentKindLabel(e.item_type) }}
+                </span>
+              </td>
               <td>{{ e.status }}</td>
+              <td>
+                <StockBadge
+                  :level="e.stock_level"
+                  :title="`Critical ≤ ${e.critical_stock} · Minimum ≤ ${e.minimum_stock} · Optimal ≥ ${e.optimal_stock}`"
+                />
+              </td>
               <td>{{ e.qty }}</td>
               <td>{{ Number(e.borrowedQty) || 0 }}</td>
+              <td>{{ formatReturnDays(e.return_days) }}</td>
+              <td>
+                <template v-if="e.item_type === EQUIPMENT_LIMITED">
+                  {{ e.limit_per_requester ?? "—" }}
+                </template>
+                <span
+                  v-else
+                  class="text-muted"
+                  title="Fixed assets can't have a per-requester limit"
+                  >n/a</span
+                >
+              </td>
               <td class="text-center">
                 <div class="d-flex justify-content-center gap-2">
                   <button
@@ -278,7 +440,7 @@ async function confirmModal() {
             </tr>
 
             <tr v-if="!equipments.length">
-              <td colspan="5" class="text-center text-muted">
+              <td colspan="9" class="text-center text-muted">
                 No school equipment found.
               </td>
             </tr>
@@ -303,14 +465,20 @@ async function confirmModal() {
           <tbody>
             <tr v-for="equipment in borrowedEquipments" :key="equipment.id">
               <td>{{ equipment.name }}</td>
-              <td>{{ equipment.status }}</td>
+              <td>
+                {{ equipment.status }}
+                <span v-if="equipment.overdueCount" class="badge bg-danger ms-1">
+                  {{ equipment.overdueCount }} overdue
+                </span>
+              </td>
               <td>{{ equipment.borrowedQty }}</td>
               <td>
                 <button
-                  class="btn btn-success btn-sm"
-                  @click="selectedEquipment = equipment"
+                  class="btn btn-sm"
+                  :class="selectedEquipment?.id === equipment.id ? 'btn-outline-success' : 'btn-success'"
+                  @click="toggleEquipmentDetails(equipment)"
                 >
-                  View Borrowers
+                  {{ selectedEquipment?.id === equipment.id ? "Hide Borrowers" : "View Borrowers" }}
                 </button>
               </td>
             </tr>
@@ -352,6 +520,14 @@ async function confirmModal() {
             <div>
               <strong>Borrowed On:</strong>
               {{ formatDate(borrower.borrowedAt) }}
+            </div>
+            <div>
+              <strong>Due By:</strong>
+              {{ formatDue(borrower.dueAt) }}
+              <span v-if="isOverdue(borrower)" class="badge bg-danger ms-1">
+                Overdue {{ daysOverdue(borrower) }}
+                day{{ daysOverdue(borrower) === 1 ? "" : "s" }}
+              </span>
             </div>
             <div>
               <strong>Borrowed:</strong>
@@ -405,6 +581,64 @@ async function confirmModal() {
             <label class="form-label"> Equipment Name </label>
 
             <input class="form-control" v-model="editName" />
+
+        <label class="form-label mt-3">Equipment Type</label>
+        <select class="form-select" v-model="editKind">
+          <option
+            v-for="opt in EQUIPMENT_KIND_OPTIONS"
+            :key="opt.value"
+            :value="opt.value"
+          >
+            {{ opt.label }}
+          </option>
+        </select>
+
+        <template v-if="editKind === EQUIPMENT_LIMITED">
+          <label class="form-label mt-3">Limit per requester (optional)</label>
+          <input
+            type="number"
+            min="1"
+            max="1000"
+            class="form-control"
+            v-model="editLimit"
+            placeholder="Blank = no limit"
+          />
+          <small class="text-muted">
+            Most one person can have at once (counts what they still hold).
+          </small>
+        </template>
+        <small v-else class="text-muted d-block mt-1">
+          Fixed assets can't have a per-requester limit.
+        </small>
+
+        <label class="form-label mt-3">Return Period (days)</label>
+        <input
+          type="number"
+          min="1"
+          max="365"
+          class="form-control"
+          v-model="editReturnDays"
+          placeholder="Blank = use category default"
+        />
+        <small class="text-muted">
+          Pre-fills the due date on Pending Requests. Items already out keep their due date.
+        </small>
+
+        <label class="form-label mt-3">Stock Levels</label>
+        <div class="row g-2">
+          <div class="col">
+            <small class="text-muted">Critical (at or below)</small>
+            <input type="number" min="0" class="form-control" v-model="editCritical" />
+          </div>
+          <div class="col">
+            <small class="text-muted">Minimum (at or below)</small>
+            <input type="number" min="0" class="form-control" v-model="editMinimum" />
+          </div>
+          <div class="col">
+            <small class="text-muted">Optimal (at or above)</small>
+            <input type="number" min="0" class="form-control" v-model="editOptimal" />
+          </div>
+        </div>
           </template>
 
           <!-- RESTOCK / RETURN -->
@@ -452,11 +686,13 @@ async function confirmModal() {
               item(s)?
             </div>
             <div v-if="modalMode === 'edit'">
-              Rename
+              Save changes to
               <strong class="highlight">{{ currentItem.name }}</strong>
-              to
-              <strong class="highlight">{{ editName }}</strong
-              >?
+              (name: <strong class="highlight">{{ editName }}</strong>, type:
+              {{ equipmentKindLabel(editKind) }}, Critical
+              ≤ {{ editCritical }}, Minimum ≤ {{ editMinimum }}, Optimal ≥
+              {{ editOptimal }}, Return period:
+              {{ formatReturnDays(parseReturnDays(editReturnDays)) }})?
             </div>
             <div v-if="modalMode === 'return'">
               Return
@@ -518,6 +754,55 @@ async function confirmModal() {
 
         <label class="form-label">Quantity</label>
         <input type="number" min="1" class="form-control" v-model="addQty" />
+
+        <label class="form-label mt-3">Equipment Type</label>
+        <select class="form-select" v-model="addKind">
+          <option
+            v-for="opt in EQUIPMENT_KIND_OPTIONS"
+            :key="opt.value"
+            :value="opt.value"
+          >
+            {{ opt.label }}
+          </option>
+        </select>
+
+        <template v-if="addKind === EQUIPMENT_LIMITED">
+          <label class="form-label mt-3">Limit per requester (optional)</label>
+          <input
+            type="number"
+            min="1"
+            max="1000"
+            class="form-control"
+            v-model="addLimit"
+            placeholder="Blank = no limit"
+          />
+        </template>
+
+        <label class="form-label mt-3">Return Period (days, optional)</label>
+        <input
+          type="number"
+          min="1"
+          max="365"
+          class="form-control"
+          v-model="addReturnDays"
+          placeholder="Blank = use category default"
+        />
+
+        <label class="form-label mt-3">Stock Levels</label>
+        <div class="row g-2">
+          <div class="col">
+            <small class="text-muted">Critical (at or below)</small>
+            <input type="number" min="0" class="form-control" v-model="addCritical" />
+          </div>
+          <div class="col">
+            <small class="text-muted">Minimum (at or below)</small>
+            <input type="number" min="0" class="form-control" v-model="addMinimum" />
+          </div>
+          <div class="col">
+            <small class="text-muted">Optimal (at or above)</small>
+            <input type="number" min="0" class="form-control" v-model="addOptimal" />
+          </div>
+        </div>
       </div>
       <div v-if="addError" class="alert alert-danger py-3 mb-3">
         <strong>Error:</strong> {{ addError }}

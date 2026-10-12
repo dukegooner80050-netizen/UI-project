@@ -53,6 +53,8 @@ return response()->json(
                     'qty' => $item->quantity,
                     'returnedQty' => $item->returned_quantity,
                     'borrowedQty' => $item->quantity - $item->returned_quantity,
+                'dueAt' => optional($item->due_at)->format('Y-m-d'),
+                'suggestedDueDays' => $this->suggestedDueDays($item->item),
                 ];
 
             }),
@@ -117,6 +119,8 @@ public function show($id)
                 'qty' => $item->quantity,
                 'returnedQty' => $item->returned_quantity,
                 'borrowedQty' => $item->quantity - $item->returned_quantity,
+                'dueAt' => optional($item->due_at)->format('Y-m-d'),
+                'suggestedDueDays' => $this->suggestedDueDays($item->item),
             ];
 
         }),
@@ -140,7 +144,7 @@ public function show($id)
 public function store(HttpRequest $request)
 {
     $validated = $request->validate([
-        'request_date' => 'required|date',
+        'request_date' => 'nullable|date', // ignored: the server stamps the real time
         'items' => 'nullable|array',
         'items.*.iditems' => 'required|exists:items,iditems',
         'items.*.quantity' => 'required|integer|min:1',
@@ -182,12 +186,40 @@ if (
         }
     }
 
+    // Per-item limit: the most one requester may have of an item at once.
+    // Same exemption as the monthly limit: admins are not capped.
+    if ($role !== 'admin') {
+        $wanted = [];
+        foreach ($validated['items'] ?? [] as $line) {
+            $wanted[$line['iditems']] = ($wanted[$line['iditems']] ?? 0) + $line['quantity'];
+        }
+
+        foreach ($wanted as $itemId => $quantity) {
+            $limited = Item::find($itemId);
+
+            if (!$limited || !$limited->limit_per_requester) {
+                continue;
+            }
+
+            $held = $this->heldQuantity($idUsers, $limited);
+
+            if ($held + $quantity > $limited->limit_per_requester) {
+                $left = max($limited->limit_per_requester - $held, 0);
+
+                return response()->json([
+                    'message' => "Limit reached for {$limited->item_name}: at most {$limited->limit_per_requester} per requester. "
+                        . "You already have {$held} requested, so you can request {$left} more."
+                ], 422);
+            }
+        }
+    }
+
     DB::transaction(function () use ($validated, $idUsers, &$newRequest) {
 
         $newRequest = Request::create([
             'idUsers' => $idUsers,
             'approved_by' => null,
-            'request_date' => $validated['request_date'],
+            'request_date' => now(),
             'status' => 'Pending',
             'location' => $validated['location'],
             'room' => $validated['room'],
@@ -259,6 +291,7 @@ return response()->json([
                 'qty' => $item->quantity,
                 'returnedQty' => $item->returned_quantity,
                 'borrowedQty' => $item->quantity - $item->returned_quantity,
+                'dueAt' => optional($item->due_at)->format('Y-m-d'),
             ];
         }),
         'uniforms' => $newRequest->uniforms->map(function ($uniform) {
@@ -278,9 +311,16 @@ return response()->json([
 ], 201);
 }
 
-public function approve($id)
+public function approve(HttpRequest $httpRequest, $id)
 {
-    return DB::transaction(function () use ($id) {
+    $httpRequest->validate([
+        'due_dates' => 'nullable|array',
+        'due_dates.*' => 'nullable|date_format:Y-m-d|after_or_equal:today',
+    ]);
+
+    $dueDates = $httpRequest->input('due_dates', []);
+
+    return DB::transaction(function () use ($id, $dueDates) {
 
         $request = Request::with([
             'items',
@@ -323,6 +363,19 @@ public function approve($id)
             }
         }
 
+        // School equipment and Type B items are lent out, so each needs a
+        // due date picked on the Pending Requests page.
+        foreach ($request->items as $requestedItem) {
+
+            $item = Item::find($requestedItem->iditems);
+
+            if ($this->requiresDueDate($item) && empty($dueDates[$requestedItem->idrequestItem])) {
+                return response()->json([
+                    'message' => "Please set a due date for {$item->item_name}."
+                ], 422);
+            }
+        }
+
         // Deduct office supplies
         foreach ($request->items as $requestedItem) {
 
@@ -332,6 +385,12 @@ public function approve($id)
             $this->updateItemStatus($item);
 
             $item->save();
+
+            // Store the due date chosen at approval (borrowed items only).
+            $requestedItem->due_at = $this->requiresDueDate($item)
+                ? $dueDates[$requestedItem->idrequestItem]
+                : null;
+            $requestedItem->save();
         }
 
         // Deduct uniforms
@@ -381,6 +440,7 @@ public function approve($id)
                 'qty' => $item->quantity,
                 'returnedQty' => $item->returned_quantity,
                 'borrowedQty' => $item->quantity - $item->returned_quantity,
+                'dueAt' => optional($item->due_at)->format('Y-m-d'),
             ];
         }),
         'uniforms' => $request->uniforms->map(function ($uniform) {
@@ -400,32 +460,85 @@ public function approve($id)
     });
 }
 
+// How much of an item this user already has: pending + approved requests.
+// Borrowed types count what is still out (not yet returned). Issued types
+// (Consumable, Type A) are never returned, so they count this month's
+// requests, the same window as the monthly request limit.
+private function heldQuantity(int $userId, Item $item): int
+{
+    $issued = $item->isIssuedType();
+
+    return (int) RequestItem::where('iditems', $item->iditems)
+        ->whereHas('request', function ($q) use ($userId, $issued) {
+            $q->where('idUsers', $userId)
+                ->whereIn('status', ['Pending', 'Approved']);
+
+            if ($issued) {
+                $q->whereYear('request_date', now()->year)
+                    ->whereMonth('request_date', now()->month);
+            }
+        })
+        ->get()
+        ->sum(function ($requestItem) use ($issued) {
+            return $issued
+                ? $requestItem->quantity
+                : $requestItem->quantity - $requestItem->returned_quantity;
+        });
+}
+
+// Per-item limits with how much the logged-in user already has, so the
+// Request page can show "you have 3 of 5". Only items that have a limit.
+public function itemUsage(HttpRequest $httpRequest)
+{
+    $userId = $httpRequest->user()->idUsers;
+
+    $rows = Item::whereNotNull('limit_per_requester')->get()->map(function ($item) use ($userId) {
+        $held = $this->heldQuantity($userId, $item);
+        $limit = (int) $item->limit_per_requester;
+
+        return [
+            'itemId' => $item->iditems,
+            'limit' => $limit,
+            'held' => $held,
+            'remaining' => max($limit - $held, 0),
+        ];
+    })->values();
+
+    return response()->json($rows);
+}
+
+// Only school equipment and Type B non-consumables are lent out and
+// expected back, so only they get a due date.
+private function requiresDueDate(?Item $item): bool
+{
+    if (!$item) {
+        return false;
+    }
+
+    return $item->category === 'School Equipment'
+        || $item->item_type === 'Non-Consumable Type B';
+}
+
+// Suggested days for pre-filling the due date field: the item's own return
+// period, else the category default from Settings. Null = no suggestion.
+private function suggestedDueDays(?Item $item): ?int
+{
+    if (!$this->requiresDueDate($item)) {
+        return null;
+    }
+
+    if ($item->return_days) {
+        return (int) $item->return_days;
+    }
+
+    $setting = \App\Models\Setting::where('setting_key', 'return_days:' . $item->category)->first();
+
+    return $setting ? (int) $setting->setting_value : null;
+}
+
 private function updateItemStatus(Item $item)
 {
-    if (
-        $item->category === "Office Supplies" &&
-        $item->item_type === "Consumable"
-    ) {
-
-        if ($item->quantity <= 0) {
-            $item->status = "Out of Stock";
-        }
-        elseif ($item->quantity <= 5) {
-            $item->status = "Low Stock";
-        }
-        else {
-            $item->status = "Available";
-        }
-
-        return;
-    }
-
-    if ($item->quantity <= 0) {
-        $item->status = "Borrowed";
-    }
-    else {
-        $item->status = "Available";
-    }
+    $item->status = $item->computeStatus();
 }
 
 public function reject(HttpRequest $httpRequest, $id)
@@ -487,6 +600,7 @@ return response()->json([
                 'qty' => $item->quantity,
                 'returnedQty' => $item->returned_quantity,
                 'borrowedQty' => $item->quantity - $item->returned_quantity,
+                'dueAt' => optional($item->due_at)->format('Y-m-d'),
             ];
         }),
     ]
@@ -526,7 +640,13 @@ $requestItem->save();
 
 $request = $requestItem->request;
 
+// Issued items (Consumable and Type A) are handed over for good and are
+// never returned, so only the items that are lent out decide whether the
+// request is finished.
 $allReturned = $request->items()
+    ->whereHas('item', function ($q) {
+        $q->whereNotIn('item_type', ['Consumable', 'Non-Consumable Type A']);
+    })
     ->whereColumn('returned_quantity', '<', 'quantity')
     ->doesntExist();
 

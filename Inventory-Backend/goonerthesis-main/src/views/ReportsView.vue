@@ -1,9 +1,11 @@
 <script setup>
 import { ref, computed, onMounted } from "vue";
+import * as XLSX from "xlsx";
 import { listInventory } from "../services/inventory";
 import { getRequests } from "../services/requests";
 import { getLogs } from "../services/logs";
 import { requireAdmin } from "../services/session";
+import StockBadge from "../components/StockBadge.vue";
 
 const DAYS_WEEKLY = 7;
 const DAYS_MONTHLY = 30;
@@ -60,8 +62,13 @@ const totalQty = computed(() =>
   items.value.reduce((a, i) => a + (Number(i.qty) || 0), 0),
 );
 
+// Low stock = Critical, Minimum or Out of Stock per each item's own
+// stock levels (roadmap #6).
 const lowStockCount = computed(
-  () => items.value.filter((i) => (Number(i.qty) || 0) <= 5).length,
+  () =>
+    items.value.filter((i) =>
+      ["Out of Stock", "Critical", "Minimum"].includes(i.stockLevel),
+    ).length,
 );
 
 const damagedItems = computed(() =>
@@ -72,6 +79,16 @@ const damagedItems = computed(() =>
 
 const totalDamagedQty = computed(() =>
   damagedItems.value.reduce((a, i) => a + (Number(i.damaged_quantity) || 0), 0),
+);
+
+const maintenanceItems = computed(() =>
+  items.value
+    .filter((i) => Number(i.maintenance_quantity) > 0)
+    .sort((a, b) => Number(b.maintenance_quantity) - Number(a.maintenance_quantity)),
+);
+
+const totalMaintenanceQty = computed(() =>
+  maintenanceItems.value.reduce((a, i) => a + (Number(i.maintenance_quantity) || 0), 0),
 );
 
 const inventoryList = computed(() =>
@@ -186,21 +203,152 @@ function formatLogDate(date) {
   });
 }
 
-/* ===== PRINT BUTTON ===== */
-function printReport() {
-  if (typeof window === "undefined") return;
+/* ===== EXPORT TO EXCEL ===== */
 
-  const originalTitle = document.title;
-  document.title = "CIMS Report";
-
-  const restore = () => {
-    document.title = originalTitle;
-    window.removeEventListener("afterprint", restore);
+// Builds a readable "Item x2, Uniform (Dept) x1" string plus the
+// combined quantity for one request -- same shape of data the
+// Pending Requests page shows, so the export matches what's on screen.
+function describeRequestForExport(r) {
+  const parts = [
+    ...(r.items || []).map((i) => `${i.itemName} x${i.qty}`),
+    ...(r.uniforms || []).map(
+      (u) => `${u.uniformName || "Uniform"} (${u.department || "N/A"}) x${u.quantity}`,
+    ),
+  ];
+  const totalQty =
+    (r.items || []).reduce((sum, i) => sum + Number(i.qty || 0), 0) +
+    (r.uniforms || []).reduce((sum, u) => sum + Number(u.quantity || 0), 0);
+  return {
+    items: parts.length ? parts.join(", ") : "-",
+    totalQty,
   };
+}
 
-  window.addEventListener("afterprint", restore);
+// Sets a sensible column width per column so sheets don't render as a
+// narrow sliver of text in Excel -- this was the main reason the
+// Summary sheet looked "bare": real data, unreadable columns.
+function autoSizeColumns(sheet, rows, minWidth = 12, maxWidth = 50) {
+  if (!rows.length) {
+    sheet["!cols"] = [{ wch: minWidth }, { wch: minWidth }];
+    return;
+  }
+  const keys = Object.keys(rows[0]);
+  sheet["!cols"] = keys.map((key) => {
+    const longest = rows.reduce((max, row) => {
+      const len = String(row[key] ?? "").length;
+      return len > max ? len : max;
+    }, key.length);
+    return { wch: Math.min(Math.max(longest + 2, minWidth), maxWidth) };
+  });
+}
 
-  requestAnimationFrame(() => window.print());
+function exportToExcel() {
+  const rangeLabel = rangeDays.value === DAYS_WEEKLY ? "Weekly" : "Monthly";
+
+  const wb = XLSX.utils.book_new();
+
+  // Summary sheet
+  const summaryRows = [
+    ["Celtech Inventory Management System"],
+    ["Inventory & Activity Report", `${rangeLabel} (${reportRangeLabel.value})`],
+    ["Generated on", formatLogDate(new Date())],
+    [],
+    ["Inventory"],
+    ["Total Quantity", totalQty.value],
+    ["Low Stock Items", lowStockCount.value],
+    ["Categories", new Set(items.value.map((i) => i.category || "Uncategorized")).size],
+    [],
+    [`Requests (${reportRangeLabel.value})`],
+    ["Total Requests", recentRequests.value.length],
+    ["Pending Requests", pendingRequests.value],
+    ["Approved Requests", approvedRequests.value],
+    ["Rejected Requests", rejectedRequests.value],
+    [],
+    [
+      recentRequests.value.length === 0
+        ? "No requests fall inside this date range -- see the \"Requests\" sheet, or widen the range with Weekly/Monthly above, if you expected to see some here."
+        : "See the \"Requests\" sheet for the full per-request breakdown.",
+    ],
+  ];
+  const summarySheet = XLSX.utils.aoa_to_sheet(summaryRows);
+  summarySheet["!cols"] = [{ wch: 34 }, { wch: 34 }];
+  XLSX.utils.book_append_sheet(wb, summarySheet, "Summary");
+
+  // Inventory sheet
+  const inventoryRows = inventoryList.value.map((item) => ({
+    Item: item.name,
+    Category: item.category,
+    "Remaining Qty": item.qty,
+    Status: item.status,
+    "Stock Level": item.stockLevel,
+    "Critical At": item.criticalStock,
+    "Minimum At": item.minimumStock,
+    "Optimal At": item.optimalStock,
+  }));
+  const inventorySheet = XLSX.utils.json_to_sheet(inventoryRows);
+  autoSizeColumns(inventorySheet, inventoryRows);
+  XLSX.utils.book_append_sheet(wb, inventorySheet, "Inventory");
+
+  // Requests sheet -- the actual per-request detail that was missing
+  // before (Summary only ever showed four counts, nothing underneath).
+  const requestRows = recentRequests.value.map((r) => {
+    const { items: itemsText, totalQty: reqQty } = describeRequestForExport(r);
+    return {
+      "Request #": r.id,
+      Requester: r.requester,
+      Role: r.role,
+      Items: itemsText,
+      "Total Qty": reqQty,
+      Status: r.status,
+      Purpose: r.purpose || "-",
+      Location: r.location || "-",
+      Room: r.room || "-",
+      Date: r.request_date || "-",
+    };
+  });
+  const requestsSheet = XLSX.utils.json_to_sheet(
+    requestRows.length
+      ? requestRows
+      : [{ "No requests in this date range": "" }],
+  );
+  autoSizeColumns(requestsSheet, requestRows.length ? requestRows : [{ "No requests in this date range": "" }]);
+  XLSX.utils.book_append_sheet(wb, requestsSheet, "Requests");
+
+  // Maintenance sheet
+  const maintenanceRows = maintenanceItems.value.map((item) => ({
+    Item: item.name,
+    Category: item.category,
+    "Under Maintenance": item.maintenance_quantity,
+    "Still Available": item.qty,
+  }));
+  const maintenanceSheet = XLSX.utils.json_to_sheet(maintenanceRows);
+  autoSizeColumns(maintenanceSheet, maintenanceRows);
+  XLSX.utils.book_append_sheet(wb, maintenanceSheet, "Maintenance Items");
+
+  // Damaged sheet
+  const damagedRows = damagedItems.value.map((item) => ({
+    Item: item.name,
+    Category: item.category,
+    "Damaged Qty": item.damaged_quantity,
+    "Still Available": item.qty,
+  }));
+  const damagedSheet = XLSX.utils.json_to_sheet(damagedRows);
+  autoSizeColumns(damagedSheet, damagedRows);
+  XLSX.utils.book_append_sheet(wb, damagedSheet, "Damaged Items");
+
+  // Activity logs sheet
+  const logRows = activityRows.value.map((row) => ({
+    Action: row.action,
+    "Item(s)": row.item,
+    Requester: row.requester,
+    Date: formatLogDate(row.date),
+  }));
+  const logsSheet = XLSX.utils.json_to_sheet(logRows);
+  autoSizeColumns(logsSheet, logRows);
+  XLSX.utils.book_append_sheet(wb, logsSheet, "Activity Logs");
+
+  const today = new Date().toISOString().slice(0, 10);
+  XLSX.writeFile(wb, `CIMS_Report_${rangeLabel}_${today}.xlsx`);
 }
 </script>
 
@@ -231,8 +379,9 @@ function printReport() {
           Monthly Report
         </button>
 
-        <button type="button" class="btn btn-dark" @click="printReport">
-          Print Report
+        <button type="button" class="btn btn-dark" @click="exportToExcel">
+          <i class="bi bi-file-earmark-excel me-1"></i>
+          Export to Excel
         </button>
       </div>
     </div>
@@ -302,6 +451,7 @@ function printReport() {
                 <th>Category</th>
                 <th>Remaining Qty</th>
                 <th>Status</th>
+                <th>Stock Level</th>
               </tr>
             </thead>
 
@@ -328,11 +478,58 @@ function printReport() {
                     {{ item.status }}
                   </span>
                 </td>
+
+                <td>
+                  <StockBadge :level="item.stockLevel" />
+                </td>
               </tr>
 
               <tr v-if="inventoryList.length === 0">
-                <td colspan="4" class="text-center text-muted py-4">
+                <td colspan="5" class="text-center text-muted py-4">
                   No inventory data
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- MAINTENANCE ITEMS -->
+    <div class="card shadow-sm mb-3">
+      <div class="card-body">
+        <div class="d-flex justify-content-between align-items-center mb-3">
+          <div>
+            <h5 class="mb-0">Maintenance Items</h5>
+            <div class="text-muted small">
+              Items held for repair after failing return inspection
+            </div>
+          </div>
+          <span class="badge bg-warning text-dark">{{ totalMaintenanceQty }} total</span>
+        </div>
+
+        <div class="table-responsive">
+          <table class="table table-striped table-hover align-middle mb-0">
+            <thead class="table-light">
+              <tr>
+                <th>Item</th>
+                <th>Category</th>
+                <th>Under Maintenance</th>
+                <th>Still Available</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="item in maintenanceItems" :key="item.id">
+                <td>{{ item.name }}</td>
+                <td>{{ item.category }}</td>
+                <td>
+                  <span class="badge bg-warning text-dark">{{ item.maintenance_quantity }}</span>
+                </td>
+                <td>{{ item.qty }}</td>
+              </tr>
+              <tr v-if="maintenanceItems.length === 0">
+                <td colspan="4" class="text-center text-muted py-4">
+                  No items currently under maintenance.
                 </td>
               </tr>
             </tbody>

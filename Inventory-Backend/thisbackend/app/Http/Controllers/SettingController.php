@@ -25,6 +25,46 @@ class SettingController extends Controller
         ]);
     }
 
+    const RETURN_DAYS_CATEGORIES = ['Office Supplies', 'School Equipment'];
+
+    // Admin only (route middleware). Default return period per category.
+    public function returnDays()
+    {
+        $out = [];
+        foreach (self::RETURN_DAYS_CATEGORIES as $category) {
+            $s = Setting::where('setting_key', 'return_days:' . $category)->first();
+            $out[$category] = $s ? (int) $s->setting_value : null;
+        }
+
+        return response()->json(['return_days' => $out]);
+    }
+
+    // Admin only (route middleware). Null clears the category default.
+    public function updateReturnDays(Request $request)
+    {
+        $validated = $request->validate([
+            'category' => 'required|in:' . implode(',', self::RETURN_DAYS_CATEGORIES),
+            'return_days' => 'nullable|integer|min:1|max:365',
+        ]);
+
+        $key = 'return_days:' . $validated['category'];
+
+        if (empty($validated['return_days'])) {
+            Setting::where('setting_key', $key)->delete();
+            $msg = "Cleared default return period for {$validated['category']}";
+        } else {
+            Setting::updateOrCreate(
+                ['setting_key' => $key],
+                ['setting_value' => (string) $validated['return_days']]
+            );
+            $msg = "Set default return period for {$validated['category']} to {$validated['return_days']} days";
+        }
+
+        $this->logActivity(request()->user()->idUsers, $msg);
+
+        return $this->returnDays();
+    }
+
     // Admin only (enforced by route middleware).
     public function updateMonthlyRequestLimit(Request $request)
     {

@@ -1,9 +1,14 @@
 <script setup>
 import { ref, watch, computed, onMounted, nextTick } from "vue";
-import { createRequestBatch, getRequests } from "../services/requests";
+import {
+  createRequestBatch,
+  getRequests,
+  getItemUsage,
+} from "../services/requests";
 import { listUniformTypes, listUniformVariants } from "../services/uniforms";
 import { getCurrentUser } from "../services/storage";
 import { getItems } from "../services/items";
+import { TYPE_B, OFFICE_TYPE_OPTIONS } from "../services/itemTypes";
 import { getMonthlyRequestLimit } from "../services/settings";
 
 const user = getCurrentUser();
@@ -29,12 +34,32 @@ const uniformVariants = ref([]);
 const selectedUniformTypeId = ref("");
 const selectedUniformVariantId = ref("");
 const warningModal = ref(false);
+const submitConfirmOpen = ref(false);
+const submitting = ref(false);
 const warningTitle = ref("");
 const warningMessage = ref("");
 
 // LOAD DATA //
 
 const monthlyLimit = ref(null);
+
+// Per-item limits and how much this user already has:
+// { [itemId]: { limit, held, remaining } }. Admins are not capped.
+const itemUsage = ref({});
+
+async function loadItemUsage() {
+  if (userRole === "admin") return;
+  try {
+    const rows = await getItemUsage();
+    const map = {};
+    rows.forEach((r) => {
+      map[r.itemId] = r;
+    });
+    itemUsage.value = map;
+  } catch (err) {
+    console.error("Failed to load item limits:", err);
+  }
+}
 
 const requestsThisMonth = computed(() => {
   const now = new Date();
@@ -50,6 +75,7 @@ onMounted(async () => {
   await loadInventory();
   await loadUniforms();
   await loadMyRequests();
+  await loadItemUsage();
 
   if (user?.role !== "admin") {
     try {
@@ -146,7 +172,7 @@ const itemOptions = computed(() => {
         return (item.subCategory || "") === type;
       }
       if (cat === "School Equipment") {
-        return type === "Non-Consumable";
+        return type === TYPE_B;
       }
       return false;
     })
@@ -201,7 +227,22 @@ const maxQty = computed(() => {
   const stock = Number(selectedItem.value.qty) || 0;
   const reserved = reservedStockMap.value[selectedItem.value.id] || 0;
   const alreadyRequested = totalRequestedMap.value[selectedItem.value.id] || 0;
-  return Math.max(stock - reserved - alreadyRequested, 0);
+  const stockMax = Math.max(stock - reserved - alreadyRequested, 0);
+  return Math.min(stockMax, limitLeft.value);
+});
+
+// How many more of the selected item this user may request under its
+// per-item limit (Infinity when the item has no limit).
+const limitLeft = computed(() => {
+  const info = selectedLimitInfo.value;
+  if (!info) return Infinity;
+  const inList = totalRequestedMap.value[selectedItem.value.id] || 0;
+  return Math.max(info.remaining - inList, 0);
+});
+
+const selectedLimitInfo = computed(() => {
+  if (!selectedItem.value) return null;
+  return itemUsage.value[selectedItem.value.id] || null;
 });
 
 const uniformMaxQty = computed(() => {
@@ -215,6 +256,13 @@ const uniformMaxQty = computed(() => {
 const qtyWarning = computed(() => {
   if (!selectedItem.value) {
     return "";
+  }
+  const info = selectedLimitInfo.value;
+  if (info && limitLeft.value <= 0) {
+    return `You've reached the limit of ${info.limit} for this item (you already have ${info.held}).`;
+  }
+  if (info && Number(qty.value) > limitLeft.value) {
+    return `Limit is ${info.limit} per requester. You can request ${limitLeft.value} more (you already have ${info.held}).`;
   }
   if (maxQty.value <= 0) {
     return "No more stock available for this item.";
@@ -231,7 +279,7 @@ watch(category, async (value) => {
   selectedItemId.value = "";
 
   if (value === "School Equipment") {
-    itemType.value = "Non-Consumable";
+    itemType.value = TYPE_B;
   } else {
     itemType.value = "";
   }
@@ -357,7 +405,7 @@ async function addToList() {
       return;
     }
     if (quantity > maxQty.value) {
-      error.value = "Quantity exceeds available stock.";
+      error.value = qtyWarning.value || "Quantity exceeds available stock.";
       return;
     }
     const existing = requestItems.value.find(
@@ -417,7 +465,9 @@ function showWarning(title, message) {
 
 // SUBMIT REQUEST //
 
-async function submitRequest() {
+// Called with no argument from the button (shows the confirmation first)
+// and with `true` from the confirmation modal (really submits).
+async function submitRequest(confirmed = false) {
   error.value = "";
 
   if (requestItems.value.length === 0 && requestUniforms.value.length === 0) {
@@ -446,6 +496,11 @@ async function submitRequest() {
       "Purpose Required",
       "Please fill out the purpose field before submitting your request.",
     );
+    return;
+  }
+
+  if (confirmed !== true) {
+    submitConfirmOpen.value = true;
     return;
   }
 
@@ -525,11 +580,13 @@ async function submitRequest() {
     })),
   };
 
+  submitting.value = true;
   try {
     const response = await createRequestBatch(payload);
 
     await loadInventory();
     await loadMyRequests();
+    await loadItemUsage();
 
     if (response?.request) {
       lastReceipt.value = myRequests.value.find(
@@ -553,7 +610,14 @@ async function submitRequest() {
       "Request Failed",
       err.response?.data?.message || "Unable to submit request.",
     );
+  } finally {
+    submitting.value = false;
   }
+}
+
+function confirmSubmit() {
+  submitConfirmOpen.value = false;
+  submitRequest(true);
 }
 
 // TAB WATCHER //
@@ -645,8 +709,13 @@ watch(activeTab, async () => {
               :disabled="isItemTypeLocked"
             >
               <option value="">Select item type</option>
-              <option value="Consumable">Consumable</option>
-              <option value="Non-Consumable">Non-Consumable</option>
+              <option
+                v-for="opt in OFFICE_TYPE_OPTIONS"
+                :key="opt.value"
+                :value="opt.value"
+              >
+                {{ opt.label }}
+              </option>
             </select>
           </div>
 
@@ -682,6 +751,11 @@ watch(activeTab, async () => {
             />
             <div v-if="qtyWarning" class="text-danger small mt-1">
               {{ qtyWarning }}
+            </div>
+            <div v-else-if="selectedLimitInfo" class="text-muted small mt-1">
+              Limit: {{ selectedLimitInfo.limit }} per requester · you already
+              have {{ selectedLimitInfo.held }} ·
+              {{ limitLeft }} more allowed
             </div>
           </div>
         </template>
@@ -809,7 +883,7 @@ watch(activeTab, async () => {
 
                   <td>
                     <button
-                      class="btn btn-sm btn-outline-danger"
+                      class="btn btn-sm btn-danger text-white"
                       @click="removeItem(index)"
                     >
                       ✕
@@ -841,7 +915,7 @@ watch(activeTab, async () => {
 
                   <td>
                     <button
-                      class="btn btn-sm btn-outline-danger"
+                      class="btn btn-sm btn-danger text-white"
                       @click="removeUniform(index)"
                     >
                       ✕
@@ -901,9 +975,10 @@ watch(activeTab, async () => {
           <button
             class="btn btn-primary w-100"
             :disabled="
-              requestItems.length === 0 && requestUniforms.length === 0
+              submitting ||
+              (requestItems.length === 0 && requestUniforms.length === 0)
             "
-            @click="submitRequest"
+            @click="submitRequest()"
           >
             Submit All Requests
           </button>
@@ -1036,7 +1111,7 @@ watch(activeTab, async () => {
                     <td>{{ formatDate(r.date) }}</td>
                     <td>
                       <button
-                        class="btn btn-sm btn-outline-secondary"
+                        class="btn btn-sm btn-secondary text-white"
                         @click="selected = r"
                       >
                         View
@@ -1119,6 +1194,44 @@ watch(activeTab, async () => {
       </div>
     </div>
   </div>
+  <div v-if="submitConfirmOpen" class="modal-backdrop-custom">
+    <div class="modal-custom">
+      <div class="modal-header">
+        <h5 class="mb-0">Submit Request</h5>
+        <button class="btn-close" @click="submitConfirmOpen = false"></button>
+      </div>
+
+      <div class="modal-body">
+        <p class="mb-2">
+          Submit this request for
+          <strong>{{ requestItems.length + requestUniforms.length }}</strong>
+          line(s)?
+        </p>
+        <ul class="small mb-2">
+          <li v-for="(it, idx) in requestItems" :key="'i' + idx">
+            {{ it.qty }} x {{ it.itemName }}
+          </li>
+          <li v-for="(u, idx) in requestUniforms" :key="'u' + idx">
+            {{ u.quantity }} x {{ u.uniformName || "Uniform" }}
+            <span v-if="u.size">({{ u.size }})</span>
+          </li>
+        </ul>
+        <p class="text-muted small mb-0">
+          It will count toward your monthly request limit.
+        </p>
+      </div>
+
+      <div class="modal-footer">
+        <button class="btn btn-secondary" @click="submitConfirmOpen = false">
+          Cancel
+        </button>
+        <button class="btn btn-success" @click="confirmSubmit">
+          Confirm
+        </button>
+      </div>
+    </div>
+  </div>
+
   <div v-if="warningModal" class="modal-backdrop-custom">
     <div class="modal-custom">
       <div class="modal-header">
