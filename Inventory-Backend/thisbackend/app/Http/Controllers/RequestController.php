@@ -194,11 +194,28 @@ if (
             'purpose' => $validated['purpose'],
         ]);
 
+$requestedPerItem = [];
+
 foreach ($validated['items'] ?? [] as $item) {
 $itemModel = Item::find($item['iditems']);
 
 if (!$itemModel) {
     throw new \Exception("Item not found.");
+}
+
+// Per-request quantity cap (School Equipment only; NULL = no limit).
+// Lines for the same item in one request are added together.
+$requestedPerItem[$itemModel->iditems] =
+    ($requestedPerItem[$itemModel->iditems] ?? 0) + (int) $item['quantity'];
+
+if (
+    $itemModel->request_limit !== null &&
+    $requestedPerItem[$itemModel->iditems] > $itemModel->request_limit
+) {
+    abort(
+        422,
+        "You can only request up to {$itemModel->request_limit} of {$itemModel->item_name} per request."
+    );
 }
 
 if ($itemModel->quantity < $item['quantity']) {

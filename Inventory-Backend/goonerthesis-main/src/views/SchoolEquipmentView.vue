@@ -7,6 +7,7 @@ import {
   restockItem,
 } from "../services/items";
 import { getRequests, returnEquipment } from "../services/requests";
+import StockAdjustmentModal from "../components/StockAdjustmentModal.vue";
 
 // STATES
 const items = ref([]);
@@ -24,6 +25,10 @@ const editName = ref("");
 const addOpen = ref(false);
 const addName = ref("");
 const addQty = ref(1);
+const addLimited = ref(false);
+const addLimit = ref(1);
+const editLimited = ref(false);
+const editLimit = ref(1);
 const confirmAction = ref(false);
 
 function formatDate(date) {
@@ -40,7 +45,18 @@ function formatDate(date) {
 function openAdd() {
   addName.value = "";
   addQty.value = 1;
+  addLimited.value = false;
+  addLimit.value = 1;
   addOpen.value = true;
+}
+
+// STOCK ADJUSTMENT (missing / lost / stolen)
+const missingOpen = ref(false);
+const missingItem = ref({ id: null, name: "", available: 0 });
+
+function openMissing(id, name, available) {
+  missingItem.value = { id, name, available: Number(available) || 0 };
+  missingOpen.value = true;
 }
 
 function closeAdd() {
@@ -60,6 +76,11 @@ async function confirmAdd() {
     addError.value = "Quantity must be at least 1.";
     return;
   }
+  const limit = Number(addLimit.value) || 0;
+  if (addLimited.value && (!Number.isInteger(limit) || limit < 1)) {
+    addError.value = "Request limit must be a whole number of at least 1.";
+    return;
+  }
 
   try {
     await createItem({
@@ -68,6 +89,7 @@ async function confirmAdd() {
       item_type: "Equipment",
       quantity: qty,
       status: "Available",
+      request_limit: addLimited.value ? limit : null,
     });
 
     await load();
@@ -143,6 +165,8 @@ function openModal(mode, item) {
   currentItem.value = item;
   modalQty.value = 1;
   editName.value = item.name;
+  editLimited.value = item.requestLimit != null;
+  editLimit.value = item.requestLimit ?? 1;
   modalError.value = "";
   confirmAction.value = false;
   modalOpen.value = true;
@@ -180,6 +204,14 @@ async function confirmModal() {
       }
       await restockItem(currentItem.value.id, qty);
     } else if (modalMode.value === "edit") {
+      if (
+        editLimited.value &&
+        (!Number.isInteger(Number(editLimit.value)) || Number(editLimit.value) < 1)
+      ) {
+        modalError.value = "Request limit must be a whole number of at least 1.";
+        confirmAction.value = false;
+        return;
+      }
       if (!editName.value.trim()) {
         modalError.value = "Equipment name cannot be empty.";
         return;
@@ -192,6 +224,7 @@ async function confirmModal() {
         item_type: currentItem.value.item_type,
         quantity: currentItem.value.qty,
         status: currentItem.value.status,
+        request_limit: editLimited.value ? Number(editLimit.value) : null,
       });
     }
     await load();
@@ -247,9 +280,10 @@ async function confirmModal() {
             <tr>
               <th>Name</th>
               <th>Status</th>
+              <th style="width: 150px">Request Limit</th>
               <th style="width: 120px">Available</th>
               <th style="width: 120px">Borrowed</th>
-              <th style="width: 220px; text-align: center">Actions</th>
+              <th style="width: 280px; text-align: center">Actions</th>
             </tr>
           </thead>
 
@@ -257,6 +291,12 @@ async function confirmModal() {
             <tr v-for="e in equipments" :key="e.iditems">
               <td>{{ e.name }}</td>
               <td>{{ e.status }}</td>
+              <td>
+                <span v-if="e.requestLimit != null" class="badge text-bg-warning">
+                  Max {{ e.requestLimit }} / request
+                </span>
+                <span v-else class="text-muted">No limit</span>
+              </td>
               <td>{{ e.qty }}</td>
               <td>{{ Number(e.borrowedQty) || 0 }}</td>
               <td class="text-center">
@@ -273,12 +313,18 @@ async function confirmModal() {
                   >
                     Edit
                   </button>
+                  <button
+                    class="btn btn-danger btn-sm"
+                    @click="openMissing(e.id, e.name, e.qty)"
+                  >
+                    Missing
+                  </button>
                 </div>
               </td>
             </tr>
 
             <tr v-if="!equipments.length">
-              <td colspan="5" class="text-center text-muted">
+              <td colspan="6" class="text-center text-muted">
                 No school equipment found.
               </td>
             </tr>
@@ -405,6 +451,27 @@ async function confirmModal() {
             <label class="form-label"> Equipment Name </label>
 
             <input class="form-control" v-model="editName" />
+
+            <div class="form-check mt-3">
+              <input
+                id="editLimited"
+                type="checkbox"
+                class="form-check-input"
+                v-model="editLimited"
+              />
+              <label class="form-check-label" for="editLimited">
+                Limit quantity per request (for high-value equipment)
+              </label>
+            </div>
+            <div v-if="editLimited" class="mt-2">
+              <label class="form-label">Max quantity per request</label>
+              <input
+                type="number"
+                min="1"
+                class="form-control"
+                v-model="editLimit"
+              />
+            </div>
           </template>
 
           <!-- RESTOCK / RETURN -->
@@ -457,6 +524,12 @@ async function confirmModal() {
               to
               <strong class="highlight">{{ editName }}</strong
               >?
+              <div class="mt-2">
+                Request limit:
+                <strong class="highlight">{{
+                  editLimited ? `${editLimit} per request` : "No limit"
+                }}</strong>
+              </div>
             </div>
             <div v-if="modalMode === 'return'">
               Return
@@ -485,6 +558,7 @@ async function confirmModal() {
           class="btn btn-primary"
           :disabled="
             (modalMode === 'edit' && !editName.trim()) ||
+            (modalMode === 'edit' && editLimited && !(Number(editLimit) >= 1)) ||
             (modalMode !== 'edit' && modalQty <= 0)
           "
           @click="confirmAction = true"
@@ -518,6 +592,25 @@ async function confirmModal() {
 
         <label class="form-label">Quantity</label>
         <input type="number" min="1" class="form-control" v-model="addQty" />
+
+        <div class="form-check mt-3">
+          <input
+            id="addLimited"
+            type="checkbox"
+            class="form-check-input"
+            v-model="addLimited"
+          />
+          <label class="form-check-label" for="addLimited">
+            Limit quantity per request (for high-value equipment)
+          </label>
+        </div>
+        <div v-if="addLimited" class="mt-2">
+          <label class="form-label">Max quantity per request</label>
+          <input type="number" min="1" class="form-control" v-model="addLimit" />
+          <small class="text-muted">
+            Leave the box unchecked for low-value items (e.g. monoblock chairs).
+          </small>
+        </div>
       </div>
       <div v-if="addError" class="alert alert-danger py-3 mb-3">
         <strong>Error:</strong> {{ addError }}
@@ -528,6 +621,15 @@ async function confirmModal() {
       </div>
     </div>
   </div>
+
+  <StockAdjustmentModal
+    :show="missingOpen"
+    :item-id="missingItem.id"
+    :item-name="missingItem.name"
+    :available="missingItem.available"
+    @close="missingOpen = false"
+    @done="load"
+  />
 </template>
 
 <style scoped>

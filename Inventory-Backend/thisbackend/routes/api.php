@@ -200,6 +200,7 @@ Route::middleware('role:admin,dean,cashier')->group(function () {
         Route::put('/items/{id}/release', [ItemController::class, 'release']);
         Route::put('/items/{id}/borrow', [ItemController::class, 'borrow']);
         Route::put('/items/{id}/return', [ItemController::class, 'returnItem']);
+        Route::post('/items/{id}/adjust-stock', [ItemController::class, 'adjustStock']);
 
 
         /*
