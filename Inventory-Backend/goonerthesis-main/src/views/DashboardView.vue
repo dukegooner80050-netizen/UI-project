@@ -5,6 +5,7 @@ import { getItems } from "../services/items";
 import { getRequests } from "../services/requests";
 import { getLogs } from "../services/logs";
 import { getCurrentUser } from "../services/storage";
+import LowStockRestockPanel from "../components/LowStockRestockPanel.vue";
 
 // Chart.js
 import Chart from "chart.js/auto";
@@ -496,6 +497,9 @@ eventContent(arg) {
         </div>
       </template>
     </div>
+
+    <!-- LOW STOCK / RESTOCK (admin) -->
+    <LowStockRestockPanel v-if="isAdmin" />
 
     <!-- CHARTS (SIDE BY SIDE) -->
     <div v-if="isAdmin" class="row">

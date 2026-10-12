@@ -18,6 +18,7 @@ use App\Http\Controllers\RoomController;
 use App\Http\Controllers\RoomEquipmentController;
 use App\Http\Controllers\SettingController;
 use App\Http\Controllers\InspectionController;
+use App\Http\Controllers\RestockRequestController;
 
 
 /*
@@ -200,6 +201,15 @@ Route::middleware('role:admin,dean,cashier')->group(function () {
         Route::put('/items/{id}/release', [ItemController::class, 'release']);
         Route::put('/items/{id}/borrow', [ItemController::class, 'borrow']);
         Route::put('/items/{id}/return', [ItemController::class, 'returnItem']);
+
+        /*
+        | Low-stock restock workflow (admin only)
+        */
+
+        Route::get('/restock/low-stock', [RestockRequestController::class, 'lowStock']);
+        Route::get('/restock-requests', [RestockRequestController::class, 'index']);
+        Route::post('/restock-requests', [RestockRequestController::class, 'store']);
+        Route::put('/restock-requests/{id}/status', [RestockRequestController::class, 'updateStatus']);
 
 
         /*
