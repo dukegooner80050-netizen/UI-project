@@ -539,7 +539,7 @@ eventContent(arg) {
 
       <!-- Restock panel + Recent Activity Logs (stacked in the narrow column) -->
       <div class="col-lg-4 col-md-12">
-        <LowStockRestockPanel />
+        <LowStockRestockPanel v-if="isAdmin" />
 
         <div class="card shadow-sm">
           <div class="card-body">

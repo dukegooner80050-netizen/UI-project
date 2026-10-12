@@ -74,6 +74,7 @@ async function loadInventory() {
       subCategory: item.subCategory,
       qty: Number(item.qty) || 0,
       status: item.status,
+      requestLimit: item.requestLimit ?? null,
     }));
   } catch (err) {
     console.error("Failed to load inventory:", err);
@@ -201,7 +202,13 @@ const maxQty = computed(() => {
   const stock = Number(selectedItem.value.qty) || 0;
   const reserved = reservedStockMap.value[selectedItem.value.id] || 0;
   const alreadyRequested = totalRequestedMap.value[selectedItem.value.id] || 0;
-  return Math.max(stock - reserved - alreadyRequested, 0);
+  const available = Math.max(stock - reserved - alreadyRequested, 0);
+  // Per-request cap (School Equipment); null = no limit.
+  const limit = selectedItem.value.requestLimit;
+  if (limit !== null && limit !== undefined) {
+    return Math.min(available, Math.max(Number(limit) - alreadyRequested, 0));
+  }
+  return available;
 });
 
 const uniformMaxQty = computed(() => {
@@ -216,11 +223,17 @@ const qtyWarning = computed(() => {
   if (!selectedItem.value) {
     return "";
   }
+  const limit = selectedItem.value.requestLimit;
+  const hasLimit = limit !== null && limit !== undefined;
   if (maxQty.value <= 0) {
-    return "No more stock available for this item.";
+    return hasLimit
+      ? `Request limit of ${limit} per request reached for this item.`
+      : "No more stock available for this item.";
   }
   if (Number(qty.value) > maxQty.value) {
-    return `Only ${maxQty.value} item(s) available.`;
+    return hasLimit
+      ? `Limited item: you can request up to ${limit} per request (${maxQty.value} more allowed).`
+      : `Only ${maxQty.value} item(s) available.`;
   }
   return "";
 });
@@ -664,7 +677,9 @@ watch(activeTab, async () => {
                 :key="i.id"
                 :value="String(i.id)"
               >
-                {{ i.name }} (Qty: {{ Number(i.qty) || 0 }})
+                {{ i.name }} (Qty: {{ Number(i.qty) || 0 }}){{
+                  i.requestLimit ? ` – limit ${i.requestLimit}/request` : ""
+                }}
               </option>
             </select>
           </div>

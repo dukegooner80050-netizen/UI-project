@@ -13,8 +13,8 @@ const tab = ref("low");
 const loading = ref(false);
 const loadError = ref("");
 
-// Dialog (create request / mark received)
-const dialog = ref({ open: false, mode: "", target: null });
+// Dialog (create request / mark received / confirm a status change)
+const dialog = ref({ open: false, mode: "", target: null, status: "" });
 const dialogQty = ref(1);
 const dialogNotes = ref("");
 const dialogError = ref("");
@@ -58,6 +58,23 @@ function closeDialog() {
 }
 
 async function submitDialog() {
+  // Confirming "Mark ordered" / "Cancel" needs no quantity.
+  if (dialog.value.mode === "status") {
+    saving.value = true;
+    dialogError.value = "";
+    try {
+      await updateRestockStatus(dialog.value.target.id, dialog.value.status);
+      closeDialog();
+      await load();
+    } catch (e) {
+      dialogError.value =
+        e.response?.data?.message || e.message || "Something went wrong.";
+    } finally {
+      saving.value = false;
+    }
+    return;
+  }
+
   const qty = Number(dialogQty.value);
   if (!Number.isInteger(qty) || qty < 1) {
     dialogError.value = "Quantity must be a whole number of at least 1.";
@@ -85,16 +102,10 @@ async function submitDialog() {
   }
 }
 
-async function setStatus(req, status) {
-  const label = status === "Cancelled" ? "cancel" : "mark as ordered";
-  if (!confirm(`Do you want to ${label} the restock request for ${req.item_name}?`))
-    return;
-  try {
-    await updateRestockStatus(req.id, status);
-    await load();
-  } catch (e) {
-    alert(e.response?.data?.message || e.message);
-  }
+// Asks first (in the dialog below), then changes the status.
+function setStatus(req, status) {
+  dialog.value = { open: true, mode: "status", target: req, status };
+  dialogError.value = "";
 }
 
 onMounted(load);
@@ -207,22 +218,40 @@ onMounted(load);
           {{
             dialog.mode === "create"
               ? `Request restock: ${dialog.target.item_name}`
-              : `Receive stock: ${dialog.target.item_name}`
+              : dialog.mode === "status"
+                ? dialog.status === "Cancelled"
+                  ? "Cancel restock request"
+                  : "Mark as ordered"
+                : `Receive stock: ${dialog.target.item_name}`
           }}
         </h5>
         <button class="btn-close" @click="closeDialog"></button>
       </div>
       <div class="rs-body">
+        <p v-if="dialog.mode === 'status'" class="mb-0">
+          {{
+            dialog.status === "Cancelled"
+              ? "Do you want to cancel the restock request for"
+              : "Do you want to mark the restock request as ordered for"
+          }}
+          <strong>{{ dialog.target.item_name }}</strong>?
+        </p>
         <template v-if="dialog.mode === 'create'">
           <div class="small text-muted mb-3">
             Current stock {{ dialog.target.quantity }}, optimal level
             {{ dialog.target.optimal_stock }}.
           </div>
         </template>
-        <label class="form-label">
+        <label v-if="dialog.mode !== 'status'" class="form-label">
           {{ dialog.mode === "create" ? "Quantity needed" : "Quantity received" }}
         </label>
-        <input type="number" min="1" class="form-control" v-model="dialogQty" />
+        <input
+          v-if="dialog.mode !== 'status'"
+          type="number"
+          min="1"
+          class="form-control"
+          v-model="dialogQty"
+        />
         <div v-if="dialog.mode === 'receive'" class="small text-muted mt-2">
           This quantity is added to the item's stock and the request is closed.
         </div>
@@ -246,7 +275,15 @@ onMounted(load);
           Cancel
         </button>
         <button class="btn btn-primary" :disabled="saving" @click="submitDialog">
-          {{ saving ? "Saving..." : dialog.mode === "create" ? "Create request" : "Confirm receipt" }}
+          {{
+            saving
+              ? "Saving..."
+              : dialog.mode === "create"
+                ? "Create request"
+                : dialog.mode === "status"
+                  ? "Confirm"
+                  : "Confirm receipt"
+          }}
         </button>
       </div>
     </div>
@@ -270,7 +307,8 @@ onMounted(load);
   z-index: 2100;
 }
 .rs-modal {
-  background: #fff;
+  background: var(--bs-body-bg, #fff);
+  color: var(--bs-body-color, inherit);
   width: 100%;
   max-width: 460px;
   border-radius: 12px;

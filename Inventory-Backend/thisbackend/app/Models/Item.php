@@ -18,6 +18,7 @@ class Item extends Model
         'item_type',
         'quantity',
         'damaged_quantity',
+        'request_limit',
         'status',
     ];
 
