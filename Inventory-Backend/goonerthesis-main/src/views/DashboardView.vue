@@ -498,9 +498,6 @@ eventContent(arg) {
       </template>
     </div>
 
-    <!-- LOW STOCK / RESTOCK (admin) -->
-    <LowStockRestockPanel v-if="isAdmin" />
-
     <!-- CHARTS (SIDE BY SIDE) -->
     <div v-if="isAdmin" class="row">
       <!-- Chart 1 -->
@@ -540,9 +537,11 @@ eventContent(arg) {
         </div>
       </div>
 
-      <!-- Recent Activity Logs -->
+      <!-- Restock panel + Recent Activity Logs (stacked in the narrow column) -->
       <div class="col-lg-4 col-md-12">
-        <div class="card shadow-sm h-100">
+        <LowStockRestockPanel />
+
+        <div class="card shadow-sm">
           <div class="card-body">
             <h6 class="mb-3">Recent Activity Logs</h6>
             <ul class="list-group list-group-flush">

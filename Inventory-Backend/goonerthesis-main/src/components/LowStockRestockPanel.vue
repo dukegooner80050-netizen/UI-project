@@ -101,8 +101,8 @@ onMounted(load);
 </script>
 
 <template>
-  <div class="card shadow-sm mb-4">
-    <div class="card-header d-flex justify-content-between align-items-center">
+  <div class="card shadow-sm mb-3">
+    <div class="card-header d-flex flex-wrap justify-content-between align-items-center gap-2">
       <h6 class="mb-0">Needs Restocking</h6>
       <div class="btn-group btn-group-sm">
         <button
@@ -117,7 +117,7 @@ onMounted(load);
           :class="tab === 'requests' ? 'btn-primary' : 'btn-outline-primary'"
           @click="tab = 'requests'"
         >
-          Restock requests ({{ requests.length }})
+          Requests ({{ requests.length }})
         </button>
       </div>
     </div>
@@ -127,102 +127,75 @@ onMounted(load);
       <div v-else-if="loading" class="text-muted p-3">Loading...</div>
 
       <!-- LOW STOCK -->
-      <div v-else-if="tab === 'low'" class="table-responsive panel-scroll">
-        <table class="table table-hover align-middle mb-0">
-          <thead class="table-light">
-            <tr>
-              <th>Item</th>
-              <th>Category</th>
-              <th style="width: 80px">Qty</th>
-              <th style="width: 110px">Level</th>
-              <th style="width: 170px; text-align: center">Action</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr v-for="i in needsAction" :key="i.iditems">
-              <td>{{ i.item_name }}</td>
-              <td>{{ i.category }}</td>
-              <td>{{ i.quantity }}</td>
-              <td>
-                <span
-                  class="badge"
-                  :class="i.level === 'Critical' ? 'text-bg-danger' : 'text-bg-warning'"
-                >
-                  {{ i.level }}
-                </span>
-              </td>
-              <td class="text-center">
-                <button class="btn btn-primary btn-sm" @click="openCreate(i)">
-                  Request restock
-                </button>
-              </td>
-            </tr>
-            <tr v-if="!needsAction.length">
-              <td colspan="5" class="text-center text-muted">
-                Nothing needs restocking right now.
-              </td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
+      <ul v-else-if="tab === 'low'" class="list-group list-group-flush panel-scroll">
+        <li v-for="i in needsAction" :key="i.iditems" class="list-group-item">
+          <div class="d-flex justify-content-between align-items-start gap-2">
+            <div class="rs-name">
+              <div class="fw-semibold text-truncate" :title="i.item_name">
+                {{ i.item_name }}
+              </div>
+              <div class="small text-muted">
+                {{ i.category }} · Qty {{ i.quantity }}
+              </div>
+            </div>
+            <span
+              class="badge flex-shrink-0"
+              :class="i.level === 'Critical' ? 'text-bg-danger' : 'text-bg-warning'"
+            >
+              {{ i.level }}
+            </span>
+          </div>
+          <button class="btn btn-primary btn-sm w-100 mt-2" @click="openCreate(i)">
+            Request restock
+          </button>
+        </li>
+        <li v-if="!needsAction.length" class="list-group-item text-center text-muted">
+          Nothing needs restocking right now.
+        </li>
+      </ul>
 
       <!-- REQUESTS -->
-      <div v-else class="table-responsive panel-scroll">
-        <table class="table table-hover align-middle mb-0">
-          <thead class="table-light">
-            <tr>
-              <th>Item</th>
-              <th style="width: 90px">Needed</th>
-              <th style="width: 110px">Status</th>
-              <th>Requested by</th>
-              <th style="width: 250px; text-align: center">Action</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr v-for="r in requests" :key="r.id">
-              <td>
+      <ul v-else class="list-group list-group-flush panel-scroll">
+        <li v-for="r in requests" :key="r.id" class="list-group-item">
+          <div class="d-flex justify-content-between align-items-start gap-2">
+            <div class="rs-name">
+              <div class="fw-semibold text-truncate" :title="r.item_name">
                 {{ r.item_name }}
-                <div class="small text-muted">Now: {{ r.current_quantity }}</div>
-              </td>
-              <td>{{ r.quantity_needed }}</td>
-              <td>
-                <span
-                  class="badge"
-                  :class="r.status === 'Ordered' ? 'text-bg-info' : 'text-bg-secondary'"
-                >
-                  {{ r.status }}
-                </span>
-              </td>
-              <td>{{ r.requested_by || "-" }}</td>
-              <td class="text-center">
-                <div class="d-flex justify-content-center gap-2">
-                  <button
-                    v-if="r.status === 'Open'"
-                    class="btn btn-outline-primary btn-sm"
-                    @click="setStatus(r, 'Ordered')"
-                  >
-                    Mark ordered
-                  </button>
-                  <button class="btn btn-success btn-sm" @click="openReceive(r)">
-                    Receive
-                  </button>
-                  <button
-                    class="btn btn-outline-danger btn-sm"
-                    @click="setStatus(r, 'Cancelled')"
-                  >
-                    Cancel
-                  </button>
-                </div>
-              </td>
-            </tr>
-            <tr v-if="!requests.length">
-              <td colspan="5" class="text-center text-muted">
-                No active restock requests.
-              </td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
+              </div>
+              <div class="small text-muted">
+                Needed {{ r.quantity_needed }} · Now {{ r.current_quantity }}
+              </div>
+              <div v-if="r.requested_by" class="small text-muted">
+                By {{ r.requested_by }}
+              </div>
+            </div>
+            <span
+              class="badge flex-shrink-0"
+              :class="r.status === 'Ordered' ? 'text-bg-info' : 'text-bg-secondary'"
+            >
+              {{ r.status }}
+            </span>
+          </div>
+          <div class="d-flex flex-wrap gap-2 mt-2">
+            <button
+              v-if="r.status === 'Open'"
+              class="btn btn-outline-primary btn-sm"
+              @click="setStatus(r, 'Ordered')"
+            >
+              Mark ordered
+            </button>
+            <button class="btn btn-success btn-sm" @click="openReceive(r)">
+              Receive
+            </button>
+            <button class="btn btn-outline-danger btn-sm" @click="setStatus(r, 'Cancelled')">
+              Cancel
+            </button>
+          </div>
+        </li>
+        <li v-if="!requests.length" class="list-group-item text-center text-muted">
+          No active restock requests.
+        </li>
+      </ul>
     </div>
   </div>
 
@@ -284,6 +257,9 @@ onMounted(load);
 .panel-scroll {
   max-height: 320px;
   overflow-y: auto;
+}
+.rs-name {
+  min-width: 0;
 }
 .rs-backdrop {
   position: fixed;
