@@ -5,6 +5,7 @@ import { getItems } from "../services/items";
 import { getRequests } from "../services/requests";
 import { getLogs } from "../services/logs";
 import { getCurrentUser } from "../services/storage";
+import LowStockRestockPanel from "../components/LowStockRestockPanel.vue";
 
 // Chart.js
 import Chart from "chart.js/auto";
@@ -536,9 +537,11 @@ eventContent(arg) {
         </div>
       </div>
 
-      <!-- Recent Activity Logs -->
+      <!-- Restock panel + Recent Activity Logs (stacked in the narrow column) -->
       <div class="col-lg-4 col-md-12">
-        <div class="card shadow-sm h-100">
+        <LowStockRestockPanel />
+
+        <div class="card shadow-sm">
           <div class="card-body">
             <h6 class="mb-3">Recent Activity Logs</h6>
             <ul class="list-group list-group-flush">

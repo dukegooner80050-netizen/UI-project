@@ -40,7 +40,7 @@ class ItemController extends Controller
             'item_name' => 'required|string|max:255|unique:items,item_name',
             'description' => 'nullable|string|max:255',
             'category'  => 'required|string|max:255',
-            'price' => 'required|numeric|min:0',
+            'price' => 'nullable|numeric|min:0',
             'item_type' => 'required|string|max:255',
             'quantity'  => 'required|integer|min:0',
         ]);
