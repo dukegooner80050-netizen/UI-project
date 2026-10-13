@@ -2,9 +2,12 @@
 import { ref, computed, onMounted, watch, onBeforeUnmount } from "vue";
 import { useRouter } from "vue-router";
 import { getItems } from "../services/items";
+import StockBadge from "../components/StockBadge.vue";
+import DueBadge from "../components/DueBadge.vue";
 import { getRequests } from "../services/requests";
 import { getLogs } from "../services/logs";
 import { getCurrentUser } from "../services/storage";
+import LowStockRestockPanel from "../components/LowStockRestockPanel.vue";
 
 // Chart.js
 import Chart from "chart.js/auto";
@@ -31,6 +34,7 @@ const selectedDayRequests = ref([]);
 const selectedDay = ref("");
 const showDayModal = ref(false);
 const lowStockModal = ref(false);
+const overdueModal = ref(false);
 const showPendingRequestsModal = ref(false);
 /*  CLOCK  */
 const now = ref(null); // Date object (PH time from API)
@@ -111,9 +115,34 @@ const totalItems = computed(() =>
   items.value.reduce((a, i) => a + (Number(i.qty) || 0), 0),
 );
 
+// Low stock = at or below the item's own Minimum level (Critical, Minimum
+// or Out of Stock) -- see roadmap #6.
+const LOW_LEVELS = ["Out of Stock", "Critical", "Minimum"];
 const lowStockCount = computed(
-  () => items.value.filter((i) => (Number(i.qty) || 0) <= 5).length,
+  () => items.value.filter((i) => LOW_LEVELS.includes(i.stockLevel)).length,
 );
+
+// Borrowed lines still out past their due date (roadmap #8). The server
+// works out due/overdue per line; this just flattens them for the list.
+const overdueLines = computed(() => {
+  const lines = [];
+  requests.value.forEach((r) => {
+    if ((r.status || "").toLowerCase() !== "approved") return;
+    (r.items || []).forEach((it) => {
+      if (!it.overdue) return;
+      lines.push({
+        key: `${r.id}-${it.requestItemId}`,
+        requestId: r.id,
+        requester: r.requester,
+        itemName: it.itemName,
+        borrowedQty: it.borrowedQty,
+        dueDate: it.dueDate,
+        daysOverdue: it.daysOverdue,
+      });
+    });
+  });
+  return lines.sort((a, b) => b.daysOverdue - a.daysOverdue);
+});
 
 const pendingRequests = computed(
   () =>
@@ -152,7 +181,7 @@ const myRejectedCount = computed(
 
 /*  LISTS (CARDS)  */
 const lowStockItems = computed(() =>
-  items.value.filter((i) => (Number(i.qty) || 0) <= 5).slice(0, 20),
+  items.value.filter((i) => LOW_LEVELS.includes(i.stockLevel)).slice(0, 20),
 );
 
 const recentRequestsList = computed(() => {
@@ -432,7 +461,7 @@ eventContent(arg) {
     <div class="row mb-4">
       <!-- Admin cards -->
       <template v-if="isAdmin">
-        <div class="col-md-4 mb-3 mb-md-0">
+        <div class="col-md-3 mb-3 mb-md-0">
           <div class="card shadow-sm">
             <div class="card-body">
               <h6 class="text-muted">Total Inventory Quantity</h6>
@@ -441,7 +470,7 @@ eventContent(arg) {
           </div>
         </div>
 
-        <div class="col-md-4 mb-3 mb-md-0">
+        <div class="col-md-3 mb-3 mb-md-0">
           <div class="card shadow-sm cursor-pointer" @click="openLowStockModal">
             <div class="card-body d-flex justify-content-between align-items-center">
               <div>
@@ -453,7 +482,7 @@ eventContent(arg) {
           </div>
         </div>
 
-        <div class="col-md-4">
+        <div class="col-md-3 mb-3 mb-md-0">
           <div class="card shadow-sm cursor-pointer" @click="showPendingRequestsModal = true">
             <div class="card-body d-flex justify-content-between align-items-center">
               <div>
@@ -464,7 +493,26 @@ eventContent(arg) {
             </div>
           </div>
         </div>
-      </template>
+        <div class="col-md-3">
+          <div class="card shadow-sm cursor-pointer" @click="overdueModal = true">
+            <div class="card-body d-flex justify-content-between align-items-center">
+              <div>
+                <h6 class="text-muted mb-1">Overdue Returns</h6>
+                <h3
+                  class="mb-0"
+                  :class="overdueLines.length ? 'text-danger' : 'text-success'"
+                >
+                  {{ overdueLines.length }}
+                </h3>
+              </div>
+              <i
+                class="bi bi-clock-history fs-2"
+                :class="overdueLines.length ? 'text-danger' : 'text-success'"
+              ></i>
+            </div>
+          </div>
+        </div>
+            </template>
 
       <!-- User cards -->
       <template v-else>
@@ -536,9 +584,11 @@ eventContent(arg) {
         </div>
       </div>
 
-      <!-- Recent Activity Logs -->
+      <!-- Restock panel + Recent Activity Logs (stacked in the narrow column) -->
       <div class="col-lg-4 col-md-12">
-        <div class="card shadow-sm h-100">
+        <LowStockRestockPanel v-if="isAdmin" />
+
+        <div class="card shadow-sm">
           <div class="card-body">
             <h6 class="mb-3">Recent Activity Logs</h6>
             <ul class="list-group list-group-flush">
@@ -672,12 +722,54 @@ eventContent(arg) {
               <strong>{{ item.name }}</strong><br />
               <small class="text-muted">{{ item.category }}</small>
             </div>
-            <span class="badge bg-danger rounded-pill">{{ item.qty }}</span>
+            <span class="d-flex align-items-center gap-2">
+              <StockBadge :level="item.stockLevel" />
+              <span class="badge bg-secondary rounded-pill">{{ item.qty }}</span>
+            </span>
           </li>
 
           <!-- Empty state -->
           <li v-if="!lowStockItems.length" class="list-group-item text-center text-muted">
             No low stock items 🎉
+          </li>
+        </ul>
+      </div>
+    </div>
+  </div>
+
+  <!-- OVERDUE RETURNS MODAL -->
+  <div v-if="overdueModal" class="modal-backdrop-custom">
+    <div class="modal-custom">
+      <div class="modal-header">
+        <h5 class="mb-0">Overdue Returns</h5>
+        <button class="btn-close" @click="overdueModal = false"></button>
+      </div>
+
+      <div class="modal-body modal-scroll">
+        <ul class="list-group">
+          <li
+            v-for="line in overdueLines"
+            :key="line.key"
+            class="list-group-item d-flex justify-content-between align-items-start"
+          >
+            <div>
+              <strong>{{ line.itemName }}</strong> × {{ line.borrowedQty }}<br />
+              <small class="text-muted">
+                {{ line.requester }} · Request #{{ line.requestId }}
+              </small>
+            </div>
+            <DueBadge
+              :due-date="line.dueDate"
+              :overdue="true"
+              :days-overdue="line.daysOverdue"
+            />
+          </li>
+
+          <li
+            v-if="!overdueLines.length"
+            class="list-group-item text-center text-muted"
+          >
+            Nothing is overdue 🎉
           </li>
         </ul>
       </div>

@@ -7,6 +7,7 @@ use App\Models\RequestItem;
 use App\Models\RequestUniform;
 use App\Models\Item;
 use App\Models\UniformVariant;
+use App\Support\ReturnPolicy;
 use Illuminate\Http\Request as HttpRequest;
 use Illuminate\Support\Facades\DB;
 use App\Traits\ActivityLogger;
@@ -42,7 +43,7 @@ return response()->json(
             'status' => $request->status,
             'request_date' => $request->request_date,
             'borrowedAt' => $request->borrowed_at,
-            'items' => $request->items->map(function ($item) {
+            'items' => $request->items->map(function ($item) use ($request) {
 
                 return [
                     'requestItemId' => $item->idrequestItem,
@@ -53,6 +54,7 @@ return response()->json(
                     'qty' => $item->quantity,
                     'returnedQty' => $item->returned_quantity,
                     'borrowedQty' => $item->quantity - $item->returned_quantity,
+                    ...ReturnPolicy::dueInfo($request, $item),
                 ];
 
             }),
@@ -91,6 +93,17 @@ public function show($id)
         ], 404);
     }
 
+    $currentUser = request()->user();
+
+    if (
+        strtolower((string) $currentUser->role) !== 'admin' &&
+        (int) $request->idUsers !== (int) $currentUser->idUsers
+    ) {
+        return response()->json([
+            'message' => 'You are not allowed to view this request.'
+        ], 403);
+    }
+
     return response()->json([
         'idUsers' => $request->idUsers,
         'id' => $request->idrequest,
@@ -106,7 +119,7 @@ public function show($id)
         'status' => $request->status,
         'request_date' => $request->request_date,
         'borrowedAt' => $request->borrowed_at,
-        'items' => $request->items->map(function ($item) {
+        'items' => $request->items->map(function ($item) use ($request) {
 
             return [
                 'requestItemId' => $item->idrequestItem,
@@ -117,6 +130,7 @@ public function show($id)
                 'qty' => $item->quantity,
                 'returnedQty' => $item->returned_quantity,
                 'borrowedQty' => $item->quantity - $item->returned_quantity,
+                ...ReturnPolicy::dueInfo($request, $item),
             ];
 
         }),
@@ -194,11 +208,28 @@ if (
             'purpose' => $validated['purpose'],
         ]);
 
+$requestedPerItem = [];
+
 foreach ($validated['items'] ?? [] as $item) {
 $itemModel = Item::find($item['iditems']);
 
 if (!$itemModel) {
     throw new \Exception("Item not found.");
+}
+
+// Per-request quantity cap (School Equipment only; NULL = no limit).
+// Lines for the same item in one request are added together.
+$requestedPerItem[$itemModel->iditems] =
+    ($requestedPerItem[$itemModel->iditems] ?? 0) + (int) $item['quantity'];
+
+if (
+    $itemModel->request_limit !== null &&
+    $requestedPerItem[$itemModel->iditems] > $itemModel->request_limit
+) {
+    abort(
+        422,
+        "You can only request up to {$itemModel->request_limit} of {$itemModel->item_name} per request."
+    );
 }
 
 if ($itemModel->quantity < $item['quantity']) {
@@ -251,7 +282,7 @@ return response()->json([
         'room' => $newRequest->room,
         'purpose' => $newRequest->purpose,
         'rejectReason' => null,
-        'items' => $newRequest->items->map(function ($item) {
+        'items' => $newRequest->items->map(function ($item) use ($newRequest) {
             return [
                 'requestItemId' => $item->idrequestItem,
                 'itemId' => $item->iditems,
@@ -259,6 +290,7 @@ return response()->json([
                 'qty' => $item->quantity,
                 'returnedQty' => $item->returned_quantity,
                 'borrowedQty' => $item->quantity - $item->returned_quantity,
+                ...ReturnPolicy::dueInfo($newRequest, $item),
             ];
         }),
         'uniforms' => $newRequest->uniforms->map(function ($uniform) {
@@ -329,7 +361,7 @@ public function approve($id)
             $item = Item::find($requestedItem->iditems);
 
             $item->quantity -= $requestedItem->quantity;
-            $this->updateItemStatus($item);
+            $item->refreshStatus();
 
             $item->save();
         }
@@ -373,7 +405,7 @@ public function approve($id)
         'room' => $request->room,
         'purpose' => $request->purpose,
         'rejectReason' => $request->rejectReason,
-        'items' => $request->items->map(function ($item) {
+        'items' => $request->items->map(function ($item) use ($request) {
             return [
                 'requestItemId' => $item->idrequestItem,
                 'itemId' => $item->iditems,
@@ -381,6 +413,7 @@ public function approve($id)
                 'qty' => $item->quantity,
                 'returnedQty' => $item->returned_quantity,
                 'borrowedQty' => $item->quantity - $item->returned_quantity,
+                ...ReturnPolicy::dueInfo($request, $item),
             ];
         }),
         'uniforms' => $request->uniforms->map(function ($uniform) {
@@ -398,34 +431,6 @@ public function approve($id)
     ]
 ]);
     });
-}
-
-private function updateItemStatus(Item $item)
-{
-    if (
-        $item->category === "Office Supplies" &&
-        $item->item_type === "Consumable"
-    ) {
-
-        if ($item->quantity <= 0) {
-            $item->status = "Out of Stock";
-        }
-        elseif ($item->quantity <= 5) {
-            $item->status = "Low Stock";
-        }
-        else {
-            $item->status = "Available";
-        }
-
-        return;
-    }
-
-    if ($item->quantity <= 0) {
-        $item->status = "Borrowed";
-    }
-    else {
-        $item->status = "Available";
-    }
 }
 
 public function reject(HttpRequest $httpRequest, $id)
@@ -479,7 +484,7 @@ return response()->json([
         'room' => $request->room,
         'purpose' => $request->purpose,
         'rejectReason' => $request->rejectReason,
-        'items' => $request->items->map(function ($item) {
+        'items' => $request->items->map(function ($item) use ($request) {
             return [
                 'requestItemId' => $item->idrequestItem,
                 'itemId' => $item->iditems,
@@ -487,6 +492,7 @@ return response()->json([
                 'qty' => $item->quantity,
                 'returnedQty' => $item->returned_quantity,
                 'borrowedQty' => $item->quantity - $item->returned_quantity,
+                ...ReturnPolicy::dueInfo($request, $item),
             ];
         }),
     ]
@@ -503,7 +509,13 @@ public function returnEquipment(HttpRequest $request, $id)
     return DB::transaction(function () use ($id, $validated) {
 
         $requestItem = RequestItem::findOrFail($id);
-        $requestItem->load('request');
+        $requestItem->load('request', 'item');
+
+        if ($requestItem->item && !$requestItem->item->isReturnable()) {
+            return response()->json([
+                'message' => 'This item was issued and does not need to be returned.'
+            ], 400);
+        }
 if ($requestItem->request->status !== 'Approved') {
     return response()->json([
         'message' => 'Only approved requests can be returned.'
@@ -526,8 +538,13 @@ $requestItem->save();
 
 $request = $requestItem->request;
 
+// Only tracked items count: issued ones (Consumable / Type A) are never
+// returned and must not keep the request open forever.
 $allReturned = $request->items()
     ->whereColumn('returned_quantity', '<', 'quantity')
+    ->whereHas('item', function ($query) {
+        $query->whereNotIn('item_type', Item::nonReturnableTypes());
+    })
     ->doesntExist();
 
 if ($allReturned) {
@@ -560,6 +577,7 @@ if ($allReturned) {
 'status' => $requestItem->request->status,
             'returnedQty' => $requestItem->returned_quantity,
             'borrowedQty' => $requestItem->quantity - $requestItem->returned_quantity,
+            ...ReturnPolicy::dueInfo($requestItem->request, $requestItem),
             'availableQty' => $item->quantity,
         ]);
     });

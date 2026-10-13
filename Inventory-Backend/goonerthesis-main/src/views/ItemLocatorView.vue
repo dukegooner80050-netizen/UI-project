@@ -2,6 +2,8 @@
 import { ref, computed, onMounted } from "vue";
 import { listInventory } from "../services/inventory";
 import { getRequests } from "../services/requests";
+import { isReturnableType } from "../services/itemTypes";
+import DueBadge from "../components/DueBadge.vue";
 
 const loading = ref(true);
 const searchText = ref("");
@@ -43,7 +45,7 @@ async function load() {
     // (Uniforms are handled separately and are excluded here.)
     const locatableItems = inventory.filter(
       (i) =>
-        i.item_type !== "Consumable" &&
+        isReturnableType(i.item_type) &&
         (i.category === "Office Supplies" || i.category === "School Equipment"),
     );
     const locatableIds = new Set(locatableItems.map((i) => i.iditems));
@@ -69,6 +71,9 @@ async function load() {
           room: request.room,
           purpose: request.purpose,
           borrowedAt: request.borrowedAt,
+          dueDate: reqItem.dueDate || "",
+          overdue: !!reqItem.overdue,
+          daysOverdue: reqItem.daysOverdue || 0,
         });
       });
     });
@@ -165,6 +170,7 @@ function clearFilters() {
                 <th>Room</th>
                 <th>Purpose</th>
                 <th>Borrowed On</th>
+                <th>Return By</th>
               </tr>
             </thead>
             <tbody>
@@ -178,9 +184,16 @@ function clearFilters() {
                 <td>{{ r.room }}</td>
                 <td>{{ r.purpose }}</td>
                 <td>{{ formatDate(r.borrowedAt) }}</td>
+                <td>
+                  <DueBadge
+                    :due-date="r.dueDate"
+                    :overdue="r.overdue"
+                    :days-overdue="r.daysOverdue"
+                  />
+                </td>
               </tr>
               <tr v-if="filteredRecords.length === 0">
-                <td colspan="9" class="text-center text-muted py-4">
+                <td colspan="10" class="text-center text-muted py-4">
                   No matching borrowed items found.
                 </td>
               </tr>
