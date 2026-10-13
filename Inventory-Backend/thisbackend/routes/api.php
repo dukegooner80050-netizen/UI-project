@@ -98,6 +98,7 @@ Route::middleware([AdminSessionTimeoutMiddleware::class, 'auth:sanctum'])->group
 
 
         Route::get('/requests', [RequestController::class, 'index']);
+        Route::get('/requests/overdue/mine', [RequestController::class, 'myOverdue']);
         Route::get('/requests/{id}', [RequestController::class, 'show']);
 
 

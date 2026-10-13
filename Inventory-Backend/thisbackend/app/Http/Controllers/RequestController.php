@@ -78,6 +78,51 @@ return response()->json(
 );
 }
 
+// Borrowed lines the signed-in user still has out past their due date
+// (roadmap #8). Only ever the caller's own requests, so borrowers can be
+// told what they have to return without seeing anybody else's. Overdue is
+// decided by ReturnPolicy::dueInfo(), the same rule the admin's Overdue
+// Returns card and every due badge use.
+public function myOverdue()
+{
+    $requests = Request::where('idUsers', request()->user()->idUsers)
+        ->where('status', 'Approved')
+        ->with('items.item')
+        ->get();
+
+    $lines = [];
+
+    foreach ($requests as $request) {
+        foreach ($request->items as $line) {
+
+            $due = ReturnPolicy::dueInfo($request, $line);
+
+            if (!$due['overdue']) {
+                continue;
+            }
+
+            $lines[] = [
+                'key' => $request->idrequest . '-' . $line->idrequestItem,
+                'requestId' => $request->idrequest,
+                'requestItemId' => $line->idrequestItem,
+                'itemName' => optional($line->item)->item_name,
+                'category' => optional($line->item)->category,
+                'borrowedQty' => $line->quantity - $line->returned_quantity,
+                'dueDate' => $due['dueDate'],
+                'daysOverdue' => $due['daysOverdue'],
+                'location' => $request->location,
+                'room' => $request->room,
+            ];
+        }
+    }
+
+    usort($lines, function ($a, $b) {
+        return $b['daysOverdue'] <=> $a['daysOverdue'];
+    });
+
+    return response()->json($lines);
+}
+
 public function show($id)
 {
     $request = Request::with([

@@ -4,7 +4,7 @@ import { useRouter } from "vue-router";
 import { getItems } from "../services/items";
 import StockBadge from "../components/StockBadge.vue";
 import DueBadge from "../components/DueBadge.vue";
-import { getRequests } from "../services/requests";
+import { getRequests, getMyOverdue } from "../services/requests";
 import { getLogs } from "../services/logs";
 import { getCurrentUser } from "../services/storage";
 import LowStockRestockPanel from "../components/LowStockRestockPanel.vue";
@@ -35,6 +35,10 @@ const selectedDay = ref("");
 const showDayModal = ref(false);
 const lowStockModal = ref(false);
 const overdueModal = ref(false);
+
+// The signed-in user's own overdue lines (borrowers). Admins use the list
+// built from every request instead.
+const myOverdue = ref([]);
 const showPendingRequestsModal = ref(false);
 /*  CLOCK  */
 const now = ref(null); // Date object (PH time from API)
@@ -81,8 +85,15 @@ async function loadAll() {
   requests.value = await getRequests();
   if (isAdmin.value) {
     logs.value = await getLogs();
+    myOverdue.value = [];
   } else {
     logs.value = [];
+    try {
+      myOverdue.value = await getMyOverdue();
+    } catch (e) {
+      console.error("Failed to load overdue items:", e);
+      myOverdue.value = [];
+    }
   }
 
   lastUpdated.value = new Date().toLocaleString();
@@ -125,6 +136,19 @@ const lowStockCount = computed(
 // Borrowed lines still out past their due date (roadmap #8). The server
 // works out due/overdue per line; this just flattens them for the list.
 const overdueLines = computed(() => {
+  // Borrowers see only their own overdue items.
+  if (!isAdmin.value) {
+    return myOverdue.value.map((l) => ({
+      key: l.key,
+      requestId: l.requestId,
+      requester: user.value?.username || "You",
+      itemName: l.itemName,
+      borrowedQty: l.borrowedQty,
+      dueDate: l.dueDate,
+      daysOverdue: l.daysOverdue,
+    }));
+  }
+
   const lines = [];
   requests.value.forEach((r) => {
     if ((r.status || "").toLowerCase() !== "approved") return;
@@ -516,7 +540,7 @@ eventContent(arg) {
 
       <!-- User cards -->
       <template v-else>
-        <div class="col-md-4 mb-3 mb-md-0">
+        <div class="col-md-3 mb-3 mb-md-0">
           <div class="card shadow-sm">
             <div class="card-body">
               <h6 class="text-muted">My Pending Requests</h6>
@@ -525,7 +549,7 @@ eventContent(arg) {
           </div>
         </div>
 
-        <div class="col-md-4 mb-3 mb-md-0">
+        <div class="col-md-3 mb-3 mb-md-0">
           <div class="card shadow-sm">
             <div class="card-body">
               <h6 class="text-muted">My Approved Requests</h6>
@@ -534,11 +558,31 @@ eventContent(arg) {
           </div>
         </div>
 
-        <div class="col-md-4">
+        <div class="col-md-3 mb-3 mb-md-0">
           <div class="card shadow-sm">
             <div class="card-body">
               <h6 class="text-muted">My Rejected Requests</h6>
               <h3 class="mb-0 text-danger">{{ myRejectedCount }}</h3>
+            </div>
+          </div>
+        </div>
+
+        <div class="col-md-3">
+          <div class="card shadow-sm cursor-pointer" @click="overdueModal = true">
+            <div class="card-body d-flex justify-content-between align-items-center">
+              <div>
+                <h6 class="text-muted mb-1">My Overdue Returns</h6>
+                <h3
+                  class="mb-0"
+                  :class="overdueLines.length ? 'text-danger' : 'text-success'"
+                >
+                  {{ overdueLines.length }}
+                </h3>
+              </div>
+              <i
+                class="bi bi-clock-history fs-2"
+                :class="overdueLines.length ? 'text-danger' : 'text-success'"
+              ></i>
             </div>
           </div>
         </div>

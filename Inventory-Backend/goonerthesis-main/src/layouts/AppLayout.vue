@@ -2,6 +2,7 @@
 import { ref, onMounted, onBeforeUnmount } from "vue";
 import Sidebar from "../components/Sidebar.vue";
 import CriticalStockAlert from "../components/CriticalStockAlert.vue";
+import OverdueAlert from "../components/OverdueAlert.vue";
 
 const sidebarCollapsed = ref(false);
 const mobileOpen = ref(false);
@@ -50,6 +51,7 @@ onBeforeUnmount(() => window.removeEventListener("resize", onResize));
 
     <main class="main-content">
       <CriticalStockAlert />
+      <OverdueAlert />
       <RouterView />
     </main>
   </div>

@@ -484,7 +484,7 @@ async function proceedAction() {
                         Edit
                       </button>
                       <button
-                        class="btn btn-outline-danger btn-sm"
+                        class="btn btn-danger btn-sm"
                         title="Record missing, lost or stolen stock"
                         @click="openAdjust(i)"
                       >
@@ -565,7 +565,7 @@ async function proceedAction() {
                         Edit
                       </button>
                       <button
-                        class="btn btn-outline-danger btn-sm"
+                        class="btn btn-danger btn-sm"
                         title="Record missing, lost or stolen stock"
                         @click="openAdjust(i)"
                       >

@@ -19,6 +19,12 @@ export async function createRequest(requestData) {
     return response.data;
 }
 
+// The signed-in user's own borrowed lines that are past their due date.
+export async function getMyOverdue() {
+    const response = await axios.get("/requests/overdue/mine");
+    return response.data;
+}
+
 // Alias used by RequestView.vue
 export async function getRequests() {
     return await listRequests();
