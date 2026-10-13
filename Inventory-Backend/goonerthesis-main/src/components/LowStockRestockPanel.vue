@@ -66,6 +66,7 @@ async function submitDialog() {
       await updateRestockStatus(dialog.value.target.id, dialog.value.status);
       closeDialog();
       await load();
+      window.dispatchEvent(new Event("cims:restock-changed"));
     } catch (e) {
       dialogError.value =
         e.response?.data?.message || e.message || "Something went wrong.";
@@ -94,6 +95,7 @@ async function submitDialog() {
     }
     closeDialog();
     await load();
+    window.dispatchEvent(new Event("cims:restock-changed"));
   } catch (e) {
     dialogError.value =
       e.response?.data?.message || e.message || "Something went wrong.";
