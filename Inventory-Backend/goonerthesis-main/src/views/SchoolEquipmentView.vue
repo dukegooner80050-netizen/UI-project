@@ -54,6 +54,38 @@ function returnDaysProblem(value) {
   }
   return "";
 }
+
+// Per-head limit (roadmap #9): max of this item one requester may hold
+// at once, counting what they already have pending/approved. Blank = no
+// limit.
+const addPerHeadLimit = ref("");
+const editPerHeadLimit = ref("");
+
+function perHeadLimitProblem(value) {
+  if (value === "" || value === null || value === undefined) return "";
+  const n = Number(value);
+  if (!Number.isInteger(n) || n < 1) {
+    return "Per-head limit must be a whole number of 1 or more, or left blank.";
+  }
+  return "";
+}
+
+// Fixed asset split (roadmap #10): a fixed asset (e.g. a room's one
+// projector or aircon) can't carry a per-head limit at all - there's
+// nothing to "limit" about a single unique unit. Defaults to limitable
+// (true) for ordinary, stockable School Equipment.
+const addIsLimitable = ref(true);
+const editIsLimitable = ref(true);
+
+// Keep the UI consistent with the backend rule: a fixed asset can't have
+// a per-head limit, so clear it the moment the box is unchecked instead
+// of letting the admin hit the server error.
+function onAddLimitableChange() {
+  if (!addIsLimitable.value) addPerHeadLimit.value = "";
+}
+function onEditLimitableChange() {
+  if (!editIsLimitable.value) editPerHeadLimit.value = "";
+}
 const editCritical = ref(2);
 const editMinimum = ref(5);
 const editOptimal = ref(20);
@@ -89,6 +121,8 @@ function openAdd() {
   addMinimum.value = 5;
   addOptimal.value = 20;
   addReturnDays.value = "";
+  addPerHeadLimit.value = "";
+  addIsLimitable.value = true;
   addError.value = "";
   addOpen.value = true;
 }
@@ -124,6 +158,15 @@ async function confirmAdd() {
     addError.value = daysProblem;
     return;
   }
+  const limitProblem = perHeadLimitProblem(addPerHeadLimit.value);
+  if (limitProblem) {
+    addError.value = limitProblem;
+    return;
+  }
+  if (!addIsLimitable.value && addPerHeadLimit.value !== "") {
+    addError.value = "Fixed-asset items cannot have a per-head limit.";
+    return;
+  }
 
   try {
     await createItem({
@@ -135,6 +178,8 @@ async function confirmAdd() {
       minimum_stock: Number(addMinimum.value),
       optimal_stock: Number(addOptimal.value),
       return_days: addReturnDays.value !== "" ? Number(addReturnDays.value) : null,
+      per_head_limit: addPerHeadLimit.value !== "" ? Number(addPerHeadLimit.value) : null,
+      is_limitable: addIsLimitable.value,
     });
 
     await load();
@@ -248,6 +293,8 @@ function openModal(mode, item) {
   editMinimum.value = item.minimum_stock ?? 5;
   editOptimal.value = item.optimal_stock ?? 20;
   editReturnDays.value = item.return_days ?? "";
+  editPerHeadLimit.value = item.per_head_limit ?? "";
+  editIsLimitable.value = item.is_limitable ?? true;
   modalError.value = "";
   confirmAction.value = false;
   modalOpen.value = true;
@@ -305,6 +352,17 @@ async function confirmModal() {
         confirmAction.value = false;
         return;
       }
+      const limitProblem = perHeadLimitProblem(editPerHeadLimit.value);
+      if (limitProblem) {
+        modalError.value = limitProblem;
+        confirmAction.value = false;
+        return;
+      }
+      if (!editIsLimitable.value && editPerHeadLimit.value !== "") {
+        modalError.value = "Fixed-asset items cannot have a per-head limit.";
+        confirmAction.value = false;
+        return;
+      }
       await updateItem(currentItem.value.id, {
         item_name: editName.value,
         description: currentItem.value.description,
@@ -315,6 +373,8 @@ async function confirmModal() {
         minimum_stock: Number(editMinimum.value),
         optimal_stock: Number(editOptimal.value),
         return_days: editReturnDays.value !== "" ? Number(editReturnDays.value) : null,
+        per_head_limit: editPerHeadLimit.value !== "" ? Number(editPerHeadLimit.value) : null,
+        is_limitable: editIsLimitable.value,
       });
     }
     await load();
@@ -375,6 +435,8 @@ async function confirmModal() {
               <th style="width: 120px">Available</th>
               <th style="width: 120px">Borrowed</th>
               <th>Return Period</th>
+              <th style="width: 110px">Per-Head Limit</th>
+              <th style="width: 110px">Type</th>
               <th style="width: 290px; text-align: center">Actions</th>
             </tr>
           </thead>
@@ -397,6 +459,18 @@ async function confirmModal() {
                   {{ e.effective_return_days }} days (default)
                 </span>
                 <span v-else class="text-muted">None</span>
+              </td>
+              <td>
+                <span v-if="e.is_limitable === false" class="text-muted">—</span>
+                <span v-else>{{ e.per_head_limit ?? "No limit" }}</span>
+              </td>
+              <td>
+                <span v-if="e.is_limitable === false" class="badge bg-secondary">
+                  Fixed Asset
+                </span>
+                <span v-else class="badge bg-light text-dark border">
+                  Limitable
+                </span>
               </td>
               <td class="text-center">
                 <div class="d-flex justify-content-center gap-2">
@@ -424,7 +498,7 @@ async function confirmModal() {
             </tr>
 
             <tr v-if="!equipments.length">
-              <td colspan="7" class="text-center text-muted">
+              <td colspan="9" class="text-center text-muted">
                 No school equipment found.
               </td>
             </tr>
@@ -598,6 +672,36 @@ async function confirmModal() {
         <small class="text-muted d-block">
           How long a borrower may keep this equipment before it is overdue.
         </small>
+
+        <div class="form-check mt-3">
+          <input
+            type="checkbox"
+            class="form-check-input"
+            id="editIsLimitable"
+            v-model="editIsLimitable"
+            @change="onEditLimitableChange"
+          />
+          <label class="form-check-label" for="editIsLimitable">
+            Limitable (ordinary, stockable equipment)
+          </label>
+        </div>
+        <small class="text-muted d-block mb-2">
+          Uncheck this for a fixed asset (e.g. a room's one projector or
+          aircon) - unique equipment like that can't carry a per-head limit.
+        </small>
+
+        <label class="form-label mt-2">Per-Head Limit</label>
+        <input
+          type="number"
+          min="1"
+          class="form-control"
+          v-model="editPerHeadLimit"
+          placeholder="Blank = no limit"
+          :disabled="!editIsLimitable"
+        />
+        <small class="text-muted d-block">
+          Max a single requester may hold/have pending of this item at once.
+        </small>
           </template>
 
           <!-- RESTOCK / RETURN -->
@@ -649,7 +753,12 @@ async function confirmModal() {
               <strong class="highlight">{{ currentItem.name }}</strong>
               (name: <strong class="highlight">{{ editName }}</strong>, Critical
               ≤ {{ editCritical }}, Minimum ≤ {{ editMinimum }}, Optimal ≥
-              {{ editOptimal }})?
+              {{ editOptimal }}, Per-Head Limit:
+              {{
+                editIsLimitable
+                  ? (editPerHeadLimit === "" ? "No limit" : editPerHeadLimit)
+                  : "Fixed Asset (not limitable)"
+              }})?
             </div>
             <div v-if="modalMode === 'return'">
               Return
@@ -738,6 +847,36 @@ async function confirmModal() {
         />
         <small class="text-muted d-block">
           How long a borrower may keep this equipment before it is overdue.
+        </small>
+
+        <div class="form-check mt-3">
+          <input
+            type="checkbox"
+            class="form-check-input"
+            id="addIsLimitable"
+            v-model="addIsLimitable"
+            @change="onAddLimitableChange"
+          />
+          <label class="form-check-label" for="addIsLimitable">
+            Limitable (ordinary, stockable equipment)
+          </label>
+        </div>
+        <small class="text-muted d-block mb-2">
+          Uncheck this for a fixed asset (e.g. a room's one projector or
+          aircon) - unique equipment like that can't carry a per-head limit.
+        </small>
+
+        <label class="form-label mt-2">Per-Head Limit</label>
+        <input
+          type="number"
+          min="1"
+          class="form-control"
+          v-model="addPerHeadLimit"
+          placeholder="Blank = no limit"
+          :disabled="!addIsLimitable"
+        />
+        <small class="text-muted d-block">
+          Max a single requester may hold/have pending of this item at once.
         </small>
       </div>
       <div v-if="addError" class="alert alert-danger py-3 mb-3">

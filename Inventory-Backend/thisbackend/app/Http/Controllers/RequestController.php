@@ -217,19 +217,27 @@ if (!$itemModel) {
     throw new \Exception("Item not found.");
 }
 
-// Per-request quantity cap (School Equipment only; NULL = no limit).
-// Lines for the same item in one request are added together.
+// Per-head limit (roadmap #9, revised): how much of this item the
+// requester may hold/have pending at once, counting everything they've
+// already requested - not just the lines in this submission. NULL = no
+// limit. Lines for the same item within this submission are added
+// together first (requestedPerItem), then on top of what they already
+// have outstanding (perHeadUsage).
 $requestedPerItem[$itemModel->iditems] =
     ($requestedPerItem[$itemModel->iditems] ?? 0) + (int) $item['quantity'];
 
-if (
-    $itemModel->request_limit !== null &&
-    $requestedPerItem[$itemModel->iditems] > $itemModel->request_limit
-) {
-    abort(
-        422,
-        "You can only request up to {$itemModel->request_limit} of {$itemModel->item_name} per request."
-    );
+if ($itemModel->per_head_limit !== null) {
+    $already = $this->perHeadUsage($idUsers, $itemModel);
+    $afterThis = $already + $requestedPerItem[$itemModel->iditems];
+
+    if ($afterThis > $itemModel->per_head_limit) {
+        abort(
+            422,
+            "You've already requested {$already} of {$itemModel->item_name} "
+                . "(limit is {$itemModel->per_head_limit} per person). "
+                . "This request would bring your total to {$afterThis}."
+        );
+    }
 }
 
 if ($itemModel->quantity < $item['quantity']) {
@@ -595,6 +603,38 @@ if ($allReturned) {
             ...ReturnPolicy::dueInfo($requestItem->request, $requestItem),
             'availableQty' => $item->quantity,
         ]);
+    });
+}
+
+/**
+ * How much of $item the given requester currently has against their
+ * per-head limit (roadmap #9).
+ *
+ *   - Non-returnable items (Consumable, Non-Consumable Type A): handed
+ *     out for good, so every non-Rejected request ever made counts
+ *     forever - it never frees back up.
+ *   - Returnable items (Non-Consumable Type B, School Equipment):
+ *     only what's currently outstanding counts - Pending or Approved
+ *     requests, minus whatever's already been returned. Returning it
+ *     frees up the allowance again.
+ */
+private function perHeadUsage(int $userId, Item $item): int
+{
+    $query = RequestItem::where('iditems', $item->iditems)
+        ->whereHas('request', function ($q) use ($userId) {
+            $q->where('idUsers', $userId);
+        });
+
+    if (!$item->isReturnable()) {
+        return (int) $query->whereHas('request', function ($q) {
+            $q->where('status', '!=', 'Rejected');
+        })->sum('quantity');
+    }
+
+    return (int) $query->whereHas('request', function ($q) {
+        $q->whereIn('status', ['Pending', 'Approved']);
+    })->get()->sum(function ($requestItem) {
+        return $requestItem->quantity - $requestItem->returned_quantity;
     });
 }
 }

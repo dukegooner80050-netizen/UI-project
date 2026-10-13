@@ -66,6 +66,21 @@ function returnDaysProblem(value) {
   }
   return "";
 }
+
+// Per-head limit (roadmap #9): max of this item one requester may hold
+// at once, counting what they already have pending/approved. Blank = no
+// limit.
+const addPerHeadLimit = ref("");
+const editPerHeadLimit = ref("");
+
+function perHeadLimitProblem(value) {
+  if (value === "" || value === null || value === undefined) return "";
+  const n = Number(value);
+  if (!Number.isInteger(n) || n < 1) {
+    return "Per-head limit must be a whole number of 1 or more, or left blank.";
+  }
+  return "";
+}
 const editCritical = ref(2);
 const editMinimum = ref(5);
 const editOptimal = ref(20);
@@ -86,6 +101,7 @@ const confirmAction = ref(false);
 function openAdd() {
   addSubCategory.value = TYPE_CONSUMABLE;
   addReturnDays.value = "";
+  addPerHeadLimit.value = "";
   addName.value = "";
   addQty.value = 1;
   addCritical.value = 2;
@@ -127,6 +143,11 @@ async function confirmAdd() {
     addError.value = daysProblem;
     return;
   }
+  const limitProblem = perHeadLimitProblem(addPerHeadLimit.value);
+  if (limitProblem) {
+    addError.value = limitProblem;
+    return;
+  }
 
   try {
     await addItem({
@@ -141,6 +162,7 @@ async function confirmAdd() {
         addSubCategory.value === TYPE_B && addReturnDays.value !== ""
           ? Number(addReturnDays.value)
           : null,
+      per_head_limit: addPerHeadLimit.value !== "" ? Number(addPerHeadLimit.value) : null,
     });
 
     await refresh();
@@ -284,6 +306,7 @@ function openQtyModal(mode, item) {
   editName.value = item.item_name;
   editType.value = item.item_type;
   editReturnDays.value = item.return_days ?? "";
+  editPerHeadLimit.value = item.per_head_limit ?? "";
   editCritical.value = item.critical_stock ?? 2;
   editMinimum.value = item.minimum_stock ?? 5;
   editOptimal.value = item.optimal_stock ?? 20;
@@ -335,6 +358,12 @@ async function proceedAction() {
         confirmAction.value = false;
         return;
       }
+      const limitProblem = perHeadLimitProblem(editPerHeadLimit.value);
+      if (limitProblem) {
+        modalError.value = limitProblem;
+        confirmAction.value = false;
+        return;
+      }
 
       await updateItem(currentItem.value.iditems, {
         item_name: editName.value.trim(),
@@ -349,6 +378,7 @@ async function proceedAction() {
           editType.value === TYPE_B && editReturnDays.value !== ""
             ? Number(editReturnDays.value)
             : null,
+        per_head_limit: editPerHeadLimit.value !== "" ? Number(editPerHeadLimit.value) : null,
       });
     } else if (modalMode.value === "return") {
       await returnEquipment(
@@ -423,6 +453,7 @@ async function proceedAction() {
                   <th>Name</th>
                   <th>Stock Level</th>
                   <th style="width: 120px">Qty</th>
+                  <th style="width: 110px">Per-Head Limit</th>
                   <th style="width: 260px; text-align: center">Acton</th>
                 </tr>
               </thead>
@@ -437,6 +468,7 @@ async function proceedAction() {
                     />
                   </td>
                   <td>{{ i.quantity }}</td>
+                  <td>{{ i.per_head_limit ?? "No limit" }}</td>
                   <td class="text-center">
                     <div class="d-flex justify-content-center gap-2">
                       <button
@@ -463,7 +495,7 @@ async function proceedAction() {
                 </tr>
 
                 <tr v-if="section.items.length === 0">
-                  <td colspan="4" class="text-center text-muted">
+                  <td colspan="5" class="text-center text-muted">
                     No items found.
                   </td>
                 </tr>
@@ -493,6 +525,7 @@ async function proceedAction() {
                   <th style="width: 120px">Qty</th>
                   <th style="width: 120px">Borrowed</th>
                   <th>Return Period</th>
+                  <th style="width: 110px">Per-Head Limit</th>
                   <th style="width: 260px; text-align: center">Acton</th>
                 </tr>
               </thead>
@@ -516,6 +549,7 @@ async function proceedAction() {
                     </span>
                     <span v-else class="text-muted">None</span>
                   </td>
+                  <td>{{ i.per_head_limit ?? "No limit" }}</td>
                   <td class="text-center">
                     <div class="d-flex justify-content-center gap-2">
                       <button
@@ -542,7 +576,7 @@ async function proceedAction() {
                 </tr>
 
                 <tr v-if="typeBItems.length === 0">
-                  <td colspan="7" class="text-center text-muted">
+                  <td colspan="8" class="text-center text-muted">
                     No Type B items found.
                   </td>
                 </tr>
@@ -758,6 +792,18 @@ async function proceedAction() {
                 <input type="number" min="0" class="form-control" v-model="editOptimal" />
               </div>
             </div>
+
+            <label class="form-label mt-3">Per-Head Limit</label>
+            <input
+              type="number"
+              min="1"
+              class="form-control"
+              v-model="editPerHeadLimit"
+              placeholder="Blank = no limit"
+            />
+            <small class="text-muted d-block">
+              Max a single requester may hold/have pending of this item at once.
+            </small>
           </template>
           <template v-else>
             <label class="form-label">Quantity</label>
@@ -852,6 +898,19 @@ async function proceedAction() {
             <input type="number" min="0" class="form-control" v-model="addOptimal" />
           </div>
         </div>
+
+        <label class="form-label mt-3">Per-Head Limit</label>
+        <input
+          type="number"
+          min="1"
+          class="form-control"
+          v-model="addPerHeadLimit"
+          placeholder="Blank = no limit"
+        />
+        <small class="text-muted d-block">
+          Max a single requester may hold/have pending of this item at once.
+        </small>
+
         <div class="small text-muted mt-2">
           The stock level badge updates automatically from the quantity.
         </div>
@@ -888,7 +947,8 @@ async function proceedAction() {
               <strong class="highlight">{{ currentItem.item_name }}</strong>
               (name: <strong class="highlight">{{ editName }}</strong>, Critical
               ≤ {{ editCritical }}, Minimum ≤ {{ editMinimum }}, Optimal ≥
-              {{ editOptimal }})?
+              {{ editOptimal }}, Per-Head Limit:
+              {{ editPerHeadLimit === "" ? "No limit" : editPerHeadLimit }})?
             </div>
             <div v-else-if="modalMode === 'return'">
               Return

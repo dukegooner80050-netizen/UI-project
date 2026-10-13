@@ -49,9 +49,19 @@ class ItemController extends Controller
             'minimum_stock'  => 'nullable|integer|min:0',
             'optimal_stock'  => 'nullable|integer|min:0',
             'return_days'    => 'nullable|integer|min:1|max:3650',
+            'per_head_limit' => 'nullable|integer|min:1',
+            // Roadmap #10: fixed assets (a room's one projector, an aircon)
+            // opt out of having a per-head limit at all. Defaults to true.
+            'is_limitable'   => 'sometimes|boolean',
         ]);
 
         if ($error = $this->itemTypeError($validated['category'], $validated['item_type'])) {
+            return $error;
+        }
+
+        $validated['is_limitable'] = $validated['is_limitable'] ?? true;
+
+        if ($error = $this->perHeadLimitError($validated)) {
             return $error;
         }
 
@@ -103,6 +113,12 @@ class ItemController extends Controller
             // Sent as null to clear the item's own period (falls back to the
             // category default); left out entirely to keep it unchanged.
             'return_days'    => 'nullable|integer|min:1|max:3650',
+            // Sent as null to clear the limit (no cap); left out entirely to
+            // keep it unchanged. Unlike the thresholds below, a null here is
+            // meaningful on purpose, so it's not folded back to the old value.
+            'per_head_limit' => 'nullable|integer|min:1',
+            // Roadmap #10: not sent keeps the item's current value.
+            'is_limitable'   => 'sometimes|boolean',
         ]);
 
         if (!array_key_exists('price', $validated) || $validated['price'] === null) {
@@ -116,11 +132,19 @@ class ItemController extends Controller
             }
         }
 
+        if (!array_key_exists('is_limitable', $validated)) {
+            $validated['is_limitable'] = $item->is_limitable;
+        }
+
         if ($error = $this->thresholdError($validated)) {
             return $error;
         }
 
         if ($error = $this->itemTypeError($validated['category'], $validated['item_type'])) {
+            return $error;
+        }
+
+        if ($error = $this->perHeadLimitError($validated, $item)) {
             return $error;
         }
 
@@ -374,6 +398,28 @@ private function itemTypeError($category, $type)
     ) {
         return response()->json([
             'message' => 'Office supplies must be Consumable, Non-Consumable Type A or Non-Consumable Type B.'
+        ], 422);
+    }
+
+    return null;
+}
+
+// Roadmap #10: a fixed-asset item (is_limitable = false) can't carry a
+// per-head limit at all. $item is passed on update() so an unsent
+// per_head_limit still falls back to whatever the item currently has.
+private function perHeadLimitError(array $data, ?Item $item = null)
+{
+    if (!empty($data['is_limitable'])) {
+        return null;
+    }
+
+    $limit = array_key_exists('per_head_limit', $data)
+        ? $data['per_head_limit']
+        : optional($item)->per_head_limit;
+
+    if ($limit !== null) {
+        return response()->json([
+            'message' => 'Fixed-asset items cannot have a per-head limit. Mark it limitable first, or clear the limit.'
         ], 422);
     }
 

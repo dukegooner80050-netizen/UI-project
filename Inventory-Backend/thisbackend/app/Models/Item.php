@@ -43,7 +43,13 @@ class Item extends Model
         'minimum_stock',
         'optimal_stock',
         'return_days',
+        'per_head_limit',
+        'is_limitable',
         'status',
+    ];
+
+    protected $casts = [
+        'is_limitable' => 'boolean',
     ];
 
     // Computed from quantity + thresholds, so it can never go stale when an
@@ -97,6 +103,17 @@ class Item extends Model
     public function isReturnable(): bool
     {
         return !in_array($this->item_type, self::nonReturnableTypes(), true);
+    }
+
+    /**
+     * False for "fixed asset" equipment (roadmap #10) - unique/large-ticket
+     * School Equipment like a room's projector or aircon, where a per-head
+     * limit (roadmap #9) doesn't make sense. Defaults to true for every
+     * other item.
+     */
+    public function canHaveLimit(): bool
+    {
+        return (bool) $this->is_limitable;
     }
 
     /**
