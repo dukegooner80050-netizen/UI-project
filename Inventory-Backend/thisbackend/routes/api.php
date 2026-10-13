@@ -118,6 +118,7 @@ Route::middleware([AdminSessionTimeoutMiddleware::class, 'auth:sanctum'])->group
 
         // Anyone who submits requests needs to see their own limit.
         Route::get('/settings/monthly-request-limit', [SettingController::class, 'monthlyRequestLimit']);
+        Route::get('/settings/return-periods', [SettingController::class, 'returnPeriods']);
 
     });
 
@@ -267,6 +268,7 @@ Route::middleware('role:admin,dean,cashier')->group(function () {
         */
 
         Route::put('/settings/monthly-request-limit', [SettingController::class, 'updateMonthlyRequestLimit']);
+        Route::put('/settings/return-periods', [SettingController::class, 'updateReturnPeriods']);
 
 
         /*

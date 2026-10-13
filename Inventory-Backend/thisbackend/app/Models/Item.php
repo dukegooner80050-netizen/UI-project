@@ -42,12 +42,13 @@ class Item extends Model
         'critical_stock',
         'minimum_stock',
         'optimal_stock',
+        'return_days',
         'status',
     ];
 
     // Computed from quantity + thresholds, so it can never go stale when an
     // admin edits the levels. Included in every JSON response.
-    protected $appends = ['stock_level'];
+    protected $appends = ['stock_level', 'effective_return_days'];
 
     public $timestamps = false;
 
@@ -74,6 +75,16 @@ class Item extends Model
         }
 
         return self::LEVEL_ADEQUATE;
+    }
+
+    /**
+     * Days a borrower may keep this item before it is overdue: the item's own
+     * return_days, else its category default, else null (no due date).
+     * Always null for issued (never-returned) types. Roadmap #8.
+     */
+    public function getEffectiveReturnDaysAttribute(): ?int
+    {
+        return \App\Support\ReturnPolicy::daysFor($this);
     }
 
     /** Types that are handed over for good and never come back. */

@@ -9,6 +9,7 @@ import {
 import { getRequests, returnEquipment } from "../services/requests";
 import AlertMessage from "../components/AlertMessage.vue";
 import StockBadge from "../components/StockBadge.vue";
+import DueBadge from "../components/DueBadge.vue";
 import { getErrorMessage } from "../services/errors";
 
 const showAlert = ref(false);
@@ -40,6 +41,18 @@ const addQty = ref(1);
 const addCritical = ref(2);
 const addMinimum = ref(5);
 const addOptimal = ref(20);
+// Return period in days; blank = category default (Settings page).
+const addReturnDays = ref("");
+const editReturnDays = ref("");
+
+function returnDaysProblem(value) {
+  if (value === "" || value === null || value === undefined) return "";
+  const n = Number(value);
+  if (!Number.isInteger(n) || n < 1 || n > 3650) {
+    return "Return period must be a whole number of days (1 to 3650), or left blank.";
+  }
+  return "";
+}
 const editCritical = ref(2);
 const editMinimum = ref(5);
 const editOptimal = ref(20);
@@ -74,6 +87,7 @@ function openAdd() {
   addCritical.value = 2;
   addMinimum.value = 5;
   addOptimal.value = 20;
+  addReturnDays.value = "";
   addError.value = "";
   addOpen.value = true;
 }
@@ -104,6 +118,11 @@ async function confirmAdd() {
     addError.value = problem;
     return;
   }
+  const daysProblem = returnDaysProblem(addReturnDays.value);
+  if (daysProblem) {
+    addError.value = daysProblem;
+    return;
+  }
 
   try {
     await createItem({
@@ -114,6 +133,7 @@ async function confirmAdd() {
       critical_stock: Number(addCritical.value),
       minimum_stock: Number(addMinimum.value),
       optimal_stock: Number(addOptimal.value),
+      return_days: addReturnDays.value !== "" ? Number(addReturnDays.value) : null,
     });
 
     await load();
@@ -167,6 +187,9 @@ async function load() {
         returnedQty: reqItem.returnedQty,
         qty: reqItem.qty,
         borrowedAt: request.borrowedAt,
+        dueDate: reqItem.dueDate,
+        overdue: !!reqItem.overdue,
+        daysOverdue: reqItem.daysOverdue || 0,
       });
     });
   });
@@ -209,6 +232,7 @@ function openModal(mode, item) {
   editCritical.value = item.critical_stock ?? 2;
   editMinimum.value = item.minimum_stock ?? 5;
   editOptimal.value = item.optimal_stock ?? 20;
+  editReturnDays.value = item.return_days ?? "";
   modalError.value = "";
   confirmAction.value = false;
   modalOpen.value = true;
@@ -260,6 +284,12 @@ async function confirmModal() {
         confirmAction.value = false;
         return;
       }
+      const daysProblem = returnDaysProblem(editReturnDays.value);
+      if (daysProblem) {
+        modalError.value = daysProblem;
+        confirmAction.value = false;
+        return;
+      }
       await updateItem(currentItem.value.id, {
         item_name: editName.value,
         description: currentItem.value.description,
@@ -269,6 +299,7 @@ async function confirmModal() {
         critical_stock: Number(editCritical.value),
         minimum_stock: Number(editMinimum.value),
         optimal_stock: Number(editOptimal.value),
+        return_days: editReturnDays.value !== "" ? Number(editReturnDays.value) : null,
       });
     }
     await load();
@@ -328,6 +359,7 @@ async function confirmModal() {
               <th>Stock Level</th>
               <th style="width: 120px">Available</th>
               <th style="width: 120px">Borrowed</th>
+              <th>Return Period</th>
               <th style="width: 220px; text-align: center">Actions</th>
             </tr>
           </thead>
@@ -344,6 +376,13 @@ async function confirmModal() {
               </td>
               <td>{{ e.qty }}</td>
               <td>{{ Number(e.borrowedQty) || 0 }}</td>
+              <td>
+                <span v-if="e.return_days">{{ e.return_days }} days</span>
+                <span v-else-if="e.effective_return_days" class="text-muted">
+                  {{ e.effective_return_days }} days (default)
+                </span>
+                <span v-else class="text-muted">None</span>
+              </td>
               <td class="text-center">
                 <div class="d-flex justify-content-center gap-2">
                   <button
@@ -363,7 +402,7 @@ async function confirmModal() {
             </tr>
 
             <tr v-if="!equipments.length">
-              <td colspan="6" class="text-center text-muted">
+              <td colspan="7" class="text-center text-muted">
                 No school equipment found.
               </td>
             </tr>
@@ -382,6 +421,7 @@ async function confirmModal() {
               <th>Equipment</th>
               <th>Status</th>
               <th>Borrowed</th>
+              <th>Overdue</th>
               <th style="width: 160px">Action</th>
             </tr>
           </thead>
@@ -390,6 +430,15 @@ async function confirmModal() {
               <td>{{ equipment.name }}</td>
               <td>{{ equipment.status }}</td>
               <td>{{ equipment.borrowedQty }}</td>
+              <td>
+                <span
+                  v-if="equipment.requestItems.some((r) => r.overdue)"
+                  class="badge bg-danger"
+                >
+                  {{ equipment.requestItems.filter((r) => r.overdue).length }} overdue
+                </span>
+                <span v-else class="text-muted">-</span>
+              </td>
               <td>
                 <button
                   class="btn btn-sm"
@@ -401,7 +450,7 @@ async function confirmModal() {
               </td>
             </tr>
             <tr v-if="borrowedEquipments.length === 0">
-              <td colspan="4" class="text-center text-muted py-4">
+              <td colspan="5" class="text-center text-muted py-4">
                 No borrowed equipment.
               </td>
             </tr>
@@ -442,6 +491,14 @@ async function confirmModal() {
             <div>
               <strong>Borrowed:</strong>
               {{ borrower.borrowedQty }}
+            </div>
+            <div>
+              <strong>Return by:</strong>
+              <DueBadge
+                :due-date="borrower.dueDate || ''"
+                :overdue="borrower.overdue"
+                :days-overdue="borrower.daysOverdue"
+              />
             </div>
             <div>
               <strong>Returned:</strong>
@@ -507,6 +564,18 @@ async function confirmModal() {
             <input type="number" min="0" class="form-control" v-model="editOptimal" />
           </div>
         </div>
+
+        <label class="form-label mt-3">Return Period (days)</label>
+        <input
+          type="number"
+          min="1"
+          class="form-control"
+          v-model="editReturnDays"
+          placeholder="Blank = category default"
+        />
+        <small class="text-muted d-block">
+          How long a borrower may keep this equipment before it is overdue.
+        </small>
           </template>
 
           <!-- RESTOCK / RETURN -->
@@ -636,6 +705,18 @@ async function confirmModal() {
             <input type="number" min="0" class="form-control" v-model="addOptimal" />
           </div>
         </div>
+
+        <label class="form-label mt-3">Return Period (days)</label>
+        <input
+          type="number"
+          min="1"
+          class="form-control"
+          v-model="addReturnDays"
+          placeholder="Blank = category default"
+        />
+        <small class="text-muted d-block">
+          How long a borrower may keep this equipment before it is overdue.
+        </small>
       </div>
       <div v-if="addError" class="alert alert-danger py-3 mb-3">
         <strong>Error:</strong> {{ addError }}

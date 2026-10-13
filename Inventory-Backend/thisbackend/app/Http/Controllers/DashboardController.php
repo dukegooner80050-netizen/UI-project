@@ -9,6 +9,7 @@ use App\Models\UniformType;
 use App\Models\UniformVariant;
 use App\Models\Request;
 use App\Models\Log;
+use App\Support\ReturnPolicy;
 
 class DashboardController extends Controller
 {
@@ -17,6 +18,14 @@ class DashboardController extends Controller
         // Stock levels are derived from each item's own thresholds
         // (Item::stock_level), so they can't be counted with a SQL where().
         $levels = Item::all()->countBy('stock_level');
+
+        // Borrowed lines still out past their due date (roadmap #8).
+        $overdue = Request::where('status', 'Approved')
+            ->with('items.item')
+            ->get()
+            ->sum(fn ($request) => $request->items
+                ->filter(fn ($line) => ReturnPolicy::dueInfo($request, $line)['overdue'])
+                ->count());
 
         return response()->json([
 
@@ -38,6 +47,8 @@ class DashboardController extends Controller
                 "pending" => Request::where("status", "Pending")->count(),
 
                 "approved" => Request::where("status", "Approved")->count(),
+
+                "overdue_returns" => $overdue,
 
                 "rejected" => Request::where("status", "Rejected")->count(),
             ],

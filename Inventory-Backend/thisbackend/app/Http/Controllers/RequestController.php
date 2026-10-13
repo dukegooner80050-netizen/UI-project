@@ -7,6 +7,7 @@ use App\Models\RequestItem;
 use App\Models\RequestUniform;
 use App\Models\Item;
 use App\Models\UniformVariant;
+use App\Support\ReturnPolicy;
 use Illuminate\Http\Request as HttpRequest;
 use Illuminate\Support\Facades\DB;
 use App\Traits\ActivityLogger;
@@ -42,7 +43,7 @@ return response()->json(
             'status' => $request->status,
             'request_date' => $request->request_date,
             'borrowedAt' => $request->borrowed_at,
-            'items' => $request->items->map(function ($item) {
+            'items' => $request->items->map(function ($item) use ($request) {
 
                 return [
                     'requestItemId' => $item->idrequestItem,
@@ -53,6 +54,7 @@ return response()->json(
                     'qty' => $item->quantity,
                     'returnedQty' => $item->returned_quantity,
                     'borrowedQty' => $item->quantity - $item->returned_quantity,
+                    ...ReturnPolicy::dueInfo($request, $item),
                 ];
 
             }),
@@ -117,7 +119,7 @@ public function show($id)
         'status' => $request->status,
         'request_date' => $request->request_date,
         'borrowedAt' => $request->borrowed_at,
-        'items' => $request->items->map(function ($item) {
+        'items' => $request->items->map(function ($item) use ($request) {
 
             return [
                 'requestItemId' => $item->idrequestItem,
@@ -128,6 +130,7 @@ public function show($id)
                 'qty' => $item->quantity,
                 'returnedQty' => $item->returned_quantity,
                 'borrowedQty' => $item->quantity - $item->returned_quantity,
+                ...ReturnPolicy::dueInfo($request, $item),
             ];
 
         }),
@@ -279,7 +282,7 @@ return response()->json([
         'room' => $newRequest->room,
         'purpose' => $newRequest->purpose,
         'rejectReason' => null,
-        'items' => $newRequest->items->map(function ($item) {
+        'items' => $newRequest->items->map(function ($item) use ($newRequest) {
             return [
                 'requestItemId' => $item->idrequestItem,
                 'itemId' => $item->iditems,
@@ -287,6 +290,7 @@ return response()->json([
                 'qty' => $item->quantity,
                 'returnedQty' => $item->returned_quantity,
                 'borrowedQty' => $item->quantity - $item->returned_quantity,
+                ...ReturnPolicy::dueInfo($newRequest, $item),
             ];
         }),
         'uniforms' => $newRequest->uniforms->map(function ($uniform) {
@@ -401,7 +405,7 @@ public function approve($id)
         'room' => $request->room,
         'purpose' => $request->purpose,
         'rejectReason' => $request->rejectReason,
-        'items' => $request->items->map(function ($item) {
+        'items' => $request->items->map(function ($item) use ($request) {
             return [
                 'requestItemId' => $item->idrequestItem,
                 'itemId' => $item->iditems,
@@ -409,6 +413,7 @@ public function approve($id)
                 'qty' => $item->quantity,
                 'returnedQty' => $item->returned_quantity,
                 'borrowedQty' => $item->quantity - $item->returned_quantity,
+                ...ReturnPolicy::dueInfo($request, $item),
             ];
         }),
         'uniforms' => $request->uniforms->map(function ($uniform) {
@@ -479,7 +484,7 @@ return response()->json([
         'room' => $request->room,
         'purpose' => $request->purpose,
         'rejectReason' => $request->rejectReason,
-        'items' => $request->items->map(function ($item) {
+        'items' => $request->items->map(function ($item) use ($request) {
             return [
                 'requestItemId' => $item->idrequestItem,
                 'itemId' => $item->iditems,
@@ -487,6 +492,7 @@ return response()->json([
                 'qty' => $item->quantity,
                 'returnedQty' => $item->returned_quantity,
                 'borrowedQty' => $item->quantity - $item->returned_quantity,
+                ...ReturnPolicy::dueInfo($request, $item),
             ];
         }),
     ]
@@ -571,6 +577,7 @@ if ($allReturned) {
 'status' => $requestItem->request->status,
             'returnedQty' => $requestItem->returned_quantity,
             'borrowedQty' => $requestItem->quantity - $requestItem->returned_quantity,
+            ...ReturnPolicy::dueInfo($requestItem->request, $requestItem),
             'availableQty' => $item->quantity,
         ]);
     });

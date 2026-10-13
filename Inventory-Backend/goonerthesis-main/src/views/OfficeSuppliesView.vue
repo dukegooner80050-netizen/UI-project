@@ -16,6 +16,7 @@ import {
 import { getRequests, returnEquipment } from "../services/requests";
 import AlertMessage from "../components/AlertMessage.vue";
 import StockBadge from "../components/StockBadge.vue";
+import DueBadge from "../components/DueBadge.vue";
 import {
   OFFICE_TYPE_OPTIONS,
   TYPE_CONSUMABLE,
@@ -52,6 +53,18 @@ const addMinimum = ref(5);
 const addOptimal = ref(20);
 const editName = ref("");
 const editType = ref(TYPE_CONSUMABLE);
+// Return period in days for Type B items; blank = category default.
+const addReturnDays = ref("");
+const editReturnDays = ref("");
+
+function returnDaysProblem(value) {
+  if (value === "" || value === null || value === undefined) return "";
+  const n = Number(value);
+  if (!Number.isInteger(n) || n < 1 || n > 3650) {
+    return "Return period must be a whole number of days (1 to 3650), or left blank.";
+  }
+  return "";
+}
 const editCritical = ref(2);
 const editMinimum = ref(5);
 const editOptimal = ref(20);
@@ -71,6 +84,7 @@ const confirmAction = ref(false);
 
 function openAdd() {
   addSubCategory.value = TYPE_CONSUMABLE;
+  addReturnDays.value = "";
   addName.value = "";
   addQty.value = 1;
   addCritical.value = 2;
@@ -106,6 +120,12 @@ async function confirmAdd() {
     addError.value = problem;
     return;
   }
+  const daysProblem =
+    addSubCategory.value === TYPE_B ? returnDaysProblem(addReturnDays.value) : "";
+  if (daysProblem) {
+    addError.value = daysProblem;
+    return;
+  }
 
   try {
     await addItem({
@@ -116,6 +136,10 @@ async function confirmAdd() {
       critical_stock: Number(addCritical.value),
       minimum_stock: Number(addMinimum.value),
       optimal_stock: Number(addOptimal.value),
+      return_days:
+        addSubCategory.value === TYPE_B && addReturnDays.value !== ""
+          ? Number(addReturnDays.value)
+          : null,
     });
 
     await refresh();
@@ -169,6 +193,9 @@ async function refresh() {
         returnedQty: reqItem.returnedQty,
         qty: reqItem.qty,
         borrowedAt: request.borrowedAt,
+        dueDate: reqItem.dueDate,
+        overdue: !!reqItem.overdue,
+        daysOverdue: reqItem.daysOverdue || 0,
       });
     });
   });
@@ -241,6 +268,7 @@ function openQtyModal(mode, item) {
   modalQty.value = 1;
   editName.value = item.item_name;
   editType.value = item.item_type;
+  editReturnDays.value = item.return_days ?? "";
   editCritical.value = item.critical_stock ?? 2;
   editMinimum.value = item.minimum_stock ?? 5;
   editOptimal.value = item.optimal_stock ?? 20;
@@ -285,6 +313,13 @@ async function proceedAction() {
         confirmAction.value = false;
         return;
       }
+      const daysProblem =
+        editType.value === TYPE_B ? returnDaysProblem(editReturnDays.value) : "";
+      if (daysProblem) {
+        modalError.value = daysProblem;
+        confirmAction.value = false;
+        return;
+      }
 
       await updateItem(currentItem.value.iditems, {
         item_name: editName.value.trim(),
@@ -295,6 +330,10 @@ async function proceedAction() {
         critical_stock: Number(editCritical.value),
         minimum_stock: Number(editMinimum.value),
         optimal_stock: Number(editOptimal.value),
+        return_days:
+          editType.value === TYPE_B && editReturnDays.value !== ""
+            ? Number(editReturnDays.value)
+            : null,
       });
     } else if (modalMode.value === "return") {
       await returnEquipment(
@@ -431,6 +470,7 @@ async function proceedAction() {
                   <th>Stock Level</th>
                   <th style="width: 120px">Qty</th>
                   <th style="width: 120px">Borrowed</th>
+                  <th>Return Period</th>
                   <th style="width: 180px; text-align: center">Acton</th>
                 </tr>
               </thead>
@@ -447,6 +487,13 @@ async function proceedAction() {
                   </td>
                   <td>{{ i.quantity }}</td>
                   <td>{{ Number(i.borrowedQty) || 0 }}</td>
+                  <td>
+                    <span v-if="i.return_days">{{ i.return_days }} days</span>
+                    <span v-else-if="i.effective_return_days" class="text-muted">
+                      {{ i.effective_return_days }} days (default)
+                    </span>
+                    <span v-else class="text-muted">None</span>
+                  </td>
                   <td class="text-center">
                     <div class="d-flex justify-content-center gap-2">
                       <button
@@ -466,7 +513,7 @@ async function proceedAction() {
                 </tr>
 
                 <tr v-if="typeBItems.length === 0">
-                  <td colspan="6" class="text-center text-muted">
+                  <td colspan="7" class="text-center text-muted">
                     No Type B items found.
                   </td>
                 </tr>
@@ -486,6 +533,7 @@ async function proceedAction() {
                 <th>Name</th>
                 <th>Status</th>
                 <th>Borrowed</th>
+                <th>Overdue</th>
                 <th>Action</th>
               </tr>
             </thead>
@@ -494,6 +542,15 @@ async function proceedAction() {
                 <td>{{ item.item_name }}</td>
                 <td>{{ item.status }}</td>
                 <td>{{ item.borrowedQty }}</td>
+                <td>
+                  <span
+                    v-if="item.requestItems.some((r) => r.overdue)"
+                    class="badge bg-danger"
+                  >
+                    {{ item.requestItems.filter((r) => r.overdue).length }} overdue
+                  </span>
+                  <span v-else class="text-muted">-</span>
+                </td>
                 <td>
                   <button
                     class="btn btn-sm"
@@ -505,7 +562,7 @@ async function proceedAction() {
                 </td>
               </tr>
               <tr v-if="borrowedSupplies.length === 0">
-                <td colspan="4" class="text-center text-muted">
+                <td colspan="5" class="text-center text-muted">
                   No borrowed office supplies.
                 </td>
               </tr>
@@ -570,6 +627,17 @@ async function proceedAction() {
                 </span>
               </div>
 
+              <div class="borrower-detail">
+                <strong>Return by:</strong>
+                <span class="borrower-value">
+                  <DueBadge
+                    :due-date="borrower.dueDate || ''"
+                    :overdue="borrower.overdue"
+                    :days-overdue="borrower.daysOverdue"
+                  />
+                </span>
+              </div>
+
               <button
                 class="btn btn-success mt-3"
                 @click="
@@ -631,6 +699,20 @@ async function proceedAction() {
                 {{ opt.label }}
               </option>
             </select>
+
+            <template v-if="editType === TYPE_B">
+              <label class="form-label">Return Period (days)</label>
+              <input
+                type="number"
+                min="1"
+                class="form-control"
+                v-model="editReturnDays"
+                placeholder="Blank = category default"
+              />
+              <small class="text-muted d-block mb-3">
+                How long a borrower may keep this item before it is overdue.
+              </small>
+            </template>
 
             <label class="form-label">Stock Levels</label>
             <div class="row g-2 mb-1">
@@ -711,6 +793,21 @@ async function proceedAction() {
 
         <label class="form-label">Quantity</label>
         <input type="number" min="1" class="form-control" v-model="addQty" />
+
+        <template v-if="addSubCategory === TYPE_B">
+          <label class="form-label mt-3">Return Period (days)</label>
+          <input
+            type="number"
+            min="1"
+            class="form-control"
+            v-model="addReturnDays"
+            placeholder="Blank = category default"
+          />
+          <small class="text-muted d-block">
+            How long a borrower may keep this item before it is overdue.
+          </small>
+        </template>
+
         <label class="form-label mt-3">Stock Levels</label>
         <div class="row g-2">
           <div class="col">

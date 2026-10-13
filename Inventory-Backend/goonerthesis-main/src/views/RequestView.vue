@@ -6,6 +6,7 @@ import { getCurrentUser } from "../services/storage";
 import { getItems } from "../services/items";
 import { TYPE_B, OFFICE_TYPE_OPTIONS } from "../services/itemTypes";
 import { getMonthlyRequestLimit } from "../services/settings";
+import DueBadge from "../components/DueBadge.vue";
 
 const user = getCurrentUser();
 const userRole = String(user?.role || "").toLowerCase();
@@ -303,6 +304,9 @@ async function loadMyRequests() {
           qty: Number(item.qty) || 0,
           returnedQty: Number(item.returnedQty) || 0,
           borrowedQty: Number(item.borrowedQty) || 0,
+          dueDate: item.dueDate || "",
+          overdue: !!item.overdue,
+          daysOverdue: Number(item.daysOverdue) || 0,
         })),
         uniforms: request.uniforms || [],
       }))
@@ -1106,6 +1110,13 @@ watch(activeTab, async () => {
               <ul>
                 <li v-for="(item, i) in selected.items" :key="'item-' + i">
                   {{ item.itemName }} (Qty: {{ item.qty }})
+                  <DueBadge
+                    v-if="item.dueDate && item.borrowedQty > 0"
+                    class="ms-1"
+                    :due-date="item.dueDate"
+                    :overdue="item.overdue"
+                    :days-overdue="item.daysOverdue"
+                  />
                 </li>
                 <li
                   v-for="(uniform, i) in selected.uniforms"

@@ -3,6 +3,8 @@ import { ref, reactive, computed, onMounted } from "vue";
 import {
   getMonthlyRequestLimit,
   updateMonthlyRequestLimit,
+  getReturnPeriods,
+  updateReturnPeriods,
 } from "../services/settings";
 import { getTheme, setTheme } from "../services/theme";
 import { getCurrentUser } from "../services/storage";
@@ -56,6 +58,40 @@ const currentLimit = ref(null);
 const newLimit = ref(5);
 const showConfirm = ref(false);
 
+// Default return periods (days) for borrowed items; blank = no default.
+const rpOffice = ref("");
+const rpEquipment = ref("");
+const rpSaving = ref(false);
+
+function validDays(value) {
+  if (value === "" || value === null) return true;
+  const n = Number(value);
+  return Number.isInteger(n) && n >= 1 && n <= 3650;
+}
+
+async function saveReturnPeriods() {
+  if (!validDays(rpOffice.value) || !validDays(rpEquipment.value)) {
+    notify("warning", "Return periods must be whole days (1 to 3650), or left blank.");
+    return;
+  }
+
+  rpSaving.value = true;
+
+  try {
+    const res = await updateReturnPeriods({
+      office_supplies: rpOffice.value === "" ? null : Number(rpOffice.value),
+      school_equipment: rpEquipment.value === "" ? null : Number(rpEquipment.value),
+    });
+    rpOffice.value = res.office_supplies ?? "";
+    rpEquipment.value = res.school_equipment ?? "";
+    notify("success", "Default return periods updated successfully.");
+  } catch (e) {
+    notify("danger", getErrorMessage(e));
+  } finally {
+    rpSaving.value = false;
+  }
+}
+
 async function loadGeneral() {
   if (!canEditLimit.value) {
     loading.value = false;
@@ -69,6 +105,10 @@ async function loadGeneral() {
 
     currentLimit.value = res.monthly_request_limit;
     newLimit.value = res.monthly_request_limit;
+
+    const periods = await getReturnPeriods();
+    rpOffice.value = periods.office_supplies ?? "";
+    rpEquipment.value = periods.school_equipment ?? "";
   } catch (e) {
     notify("danger", getErrorMessage(e));
   } finally {
@@ -430,6 +470,53 @@ onMounted(async () => {
               Save
             </button>
           </div>
+
+        </div>
+      </div>
+
+      <div
+        v-if="canEditLimit && !loading"
+        class="card shadow-sm mt-3"
+        style="max-width: 480px"
+      >
+        <div class="card-body">
+
+          <h6 class="mb-2">Default Return Periods</h6>
+
+          <p class="text-muted small">
+            How many days a borrower may keep a borrowed item before it is
+            overdue. Applies to items that have no return period of their
+            own (set per item from its Edit dialog). Leave blank for no
+            default.
+          </p>
+
+          <label class="form-label">Office Supplies (Type B), days</label>
+          <input
+            type="number"
+            min="1"
+            class="form-control mb-3"
+            v-model="rpOffice"
+            :disabled="rpSaving"
+            placeholder="No default"
+          />
+
+          <label class="form-label">School Equipment, days</label>
+          <input
+            type="number"
+            min="1"
+            class="form-control mb-3"
+            v-model="rpEquipment"
+            :disabled="rpSaving"
+            placeholder="No default"
+          />
+
+          <button
+            class="btn btn-primary"
+            :disabled="rpSaving"
+            @click="saveReturnPeriods"
+          >
+            Save
+          </button>
 
         </div>
       </div>

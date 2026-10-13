@@ -46,6 +46,7 @@ class ItemController extends Controller
             'critical_stock' => 'nullable|integer|min:0',
             'minimum_stock'  => 'nullable|integer|min:0',
             'optimal_stock'  => 'nullable|integer|min:0',
+            'return_days'    => 'nullable|integer|min:1|max:3650',
         ]);
 
         if ($error = $this->itemTypeError($validated['category'], $validated['item_type'])) {
@@ -97,6 +98,9 @@ class ItemController extends Controller
             'critical_stock' => 'nullable|integer|min:0',
             'minimum_stock'  => 'nullable|integer|min:0',
             'optimal_stock'  => 'nullable|integer|min:0',
+            // Sent as null to clear the item's own period (falls back to the
+            // category default); left out entirely to keep it unchanged.
+            'return_days'    => 'nullable|integer|min:1|max:3650',
         ]);
 
         if (!array_key_exists('price', $validated) || $validated['price'] === null) {

@@ -5,6 +5,7 @@ import { getRequests } from "../services/requests";
 import { returnToService } from "../services/inspections";
 import AlertMessage from "../components/AlertMessage.vue";
 import StockBadge from "../components/StockBadge.vue";
+import DueBadge from "../components/DueBadge.vue";
 import { isIssuedType, isReturnableType } from "../services/itemTypes";
 
 const search = ref("");
@@ -183,6 +184,9 @@ const borrowedRows = computed(() => {
         date:
           request.borrowedAt ||
           request.request_date,
+        dueDate: item.dueDate || "",
+        overdue: !!item.overdue,
+        daysOverdue: item.daysOverdue || 0,
       });
     }
   }
@@ -612,7 +616,7 @@ function formatDate(date) {
               <!-- ITEM LOCATOR VIEW -->
               <template v-if="isLocationView">
                 <th>Category</th><th>Qty Out</th><th>Requester</th><th>Request #</th>
-                <th>Location</th><th>Room</th><th>Purpose</th><th>Borrowed On</th>
+                <th>Location</th><th>Room</th><th>Purpose</th><th>Borrowed On</th><th>Return By</th>
               </template>
 
             </tr>
@@ -777,9 +781,16 @@ function formatDate(date) {
                 <td>{{ row.borrower }}</td><td>{{ row.requestId }}</td>
                 <td>{{ row.location }}</td><td>{{ row.room }}</td><td>{{ row.purpose }}</td>
                 <td>{{ formatDate(row.date) }}</td>
+                <td>
+                  <DueBadge
+                    :due-date="row.dueDate"
+                    :overdue="row.overdue"
+                    :days-overdue="row.daysOverdue"
+                  />
+                </td>
               </tr>
               <tr v-if="filteredBorrowedRows.length === 0">
-                <td colspan="9" class="text-center text-muted py-4">No matching borrowed items found.</td>
+                <td colspan="10" class="text-center text-muted py-4">No matching borrowed items found.</td>
               </tr>
             </template>
 
