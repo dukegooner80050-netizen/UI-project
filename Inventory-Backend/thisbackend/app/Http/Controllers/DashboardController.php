@@ -14,6 +14,10 @@ class DashboardController extends Controller
 {
     public function index()
     {
+        // Stock levels are derived from each item's own thresholds
+        // (Item::stock_level), so they can't be counted with a SQL where().
+        $levels = Item::all()->countBy('stock_level');
+
         return response()->json([
 
             "cards" => [
@@ -42,9 +46,15 @@ class DashboardController extends Controller
 
                 "available" => Item::where("status", "Available")->count(),
 
-                "low_stock" => Item::where("status", "Low Stock")->count(),
+                "critical_stock" => $levels->get(Item::LEVEL_CRITICAL, 0),
 
-                "out_of_stock" => Item::where("status", "Out of Stock")->count(),
+                "minimum_stock" => $levels->get(Item::LEVEL_MINIMUM, 0),
+
+                // Critical + Minimum, same meaning the old key always had.
+                "low_stock" => $levels->get(Item::LEVEL_CRITICAL, 0)
+                    + $levels->get(Item::LEVEL_MINIMUM, 0),
+
+                "out_of_stock" => $levels->get(Item::LEVEL_OUT, 0),
             ],
 
             "recent_requests" => Request::with('user')

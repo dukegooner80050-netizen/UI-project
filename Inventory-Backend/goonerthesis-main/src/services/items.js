@@ -10,6 +10,10 @@ function normalize(item) {
     price: Number(item.price),
     qty: Number(item.quantity),
     subCategory: item.item_type,
+    stockLevel: item.stock_level,
+    criticalStock: Number(item.critical_stock),
+    minimumStock: Number(item.minimum_stock),
+    optimalStock: Number(item.optimal_stock),
   };
 }
 

@@ -40,13 +40,29 @@ class ItemController extends Controller
             'item_name' => 'required|string|max:255|unique:items,item_name',
             'description' => 'nullable|string|max:255',
             'category'  => 'required|string|max:255',
-            'price' => 'required|numeric|min:0',
+            'price' => 'required_if:category,Uniforms|nullable|numeric|min:0',
             'item_type' => 'required|string|max:255',
             'quantity'  => 'required|integer|min:0',
+            'critical_stock' => 'nullable|integer|min:0',
+            'minimum_stock'  => 'nullable|integer|min:0',
+            'optimal_stock'  => 'nullable|integer|min:0',
         ]);
 
+        if ($error = $this->itemTypeError($validated['category'], $validated['item_type'])) {
+            return $error;
+        }
+
+        $validated['price'] = $validated['price'] ?? 0;
+        $validated['critical_stock'] = $validated['critical_stock'] ?? Item::DEFAULT_CRITICAL;
+        $validated['minimum_stock']  = $validated['minimum_stock']  ?? Item::DEFAULT_MINIMUM;
+        $validated['optimal_stock']  = $validated['optimal_stock']  ?? Item::DEFAULT_OPTIMAL;
+
+        if ($error = $this->thresholdError($validated)) {
+            return $error;
+        }
+
         $item = new Item($validated);
-        $this->updateItemStatus($item);
+        $item->refreshStatus();
         $item->save();
         $this->logActivity(
     request()->user()->idUsers,
@@ -69,17 +85,65 @@ class ItemController extends Controller
             ], 404);
         }
 
+        // 'status' is no longer accepted from the client: it is always
+        // recomputed from quantity, item type and the stock thresholds.
         $validated = $request->validate([
             'item_name' => 'required|string|max:255|unique:items,item_name,' . $id . ',iditems',
             'description' => 'nullable|string|max:255',
             'category'  => 'required|string|max:255',
-            'price' => 'required|numeric|min:0',
+            'price' => 'required_if:category,Uniforms|nullable|numeric|min:0',
             'item_type' => 'required|string|max:255',
             'quantity'  => 'required|integer|min:0',
-            'status'    => 'required|string|max:255',
+            'critical_stock' => 'nullable|integer|min:0',
+            'minimum_stock'  => 'nullable|integer|min:0',
+            'optimal_stock'  => 'nullable|integer|min:0',
         ]);
 
-        $item->update($validated);
+        if (!array_key_exists('price', $validated) || $validated['price'] === null) {
+            unset($validated['price']);
+        }
+
+        // A threshold that was not sent keeps its current value.
+        foreach (['critical_stock', 'minimum_stock', 'optimal_stock'] as $field) {
+            if (!array_key_exists($field, $validated) || $validated[$field] === null) {
+                $validated[$field] = $item->$field;
+            }
+        }
+
+        if ($error = $this->thresholdError($validated)) {
+            return $error;
+        }
+
+        if ($error = $this->itemTypeError($validated['category'], $validated['item_type'])) {
+            return $error;
+        }
+
+        if ($validated['item_type'] !== $item->item_type) {
+            $wasReturnable = $item->isReturnable();
+            $willBeReturnable = !in_array($validated['item_type'], Item::nonReturnableTypes(), true);
+
+            // Becoming tracked: every past issuance would suddenly look like
+            // an unreturned loan, so only allow it for items never requested.
+            if (
+                $willBeReturnable && !$wasReturnable &&
+                RequestItem::where('iditems', $item->iditems)->exists()
+            ) {
+                return response()->json([
+                    'message' => 'This item has already been requested as an issued item, so it cannot be switched to a tracked (must-return) type.'
+                ], 422);
+            }
+
+            // Becoming issued: units still out on loan would have no way back.
+            if (!$willBeReturnable && $wasReturnable && $this->getBorrowedQuantity($item->iditems) > 0) {
+                return response()->json([
+                    'message' => 'Cannot switch to an issued type while units are still borrowed. Have them returned first.'
+                ], 422);
+            }
+        }
+
+        $item->fill($validated);
+        $item->refreshStatus();
+        $item->save();
         $this->logActivity(
     request()->user()->idUsers,
     "Updated Item '{$item->item_name}'"
@@ -107,7 +171,7 @@ public function restock(Request $request, $id)
 
     $item->quantity += $validated['quantity'];
 
-$this->updateItemStatus($item);
+$item->refreshStatus();
 
 $item->save();
 
@@ -141,7 +205,7 @@ public function release(Request $request, $id)
 
 $item->quantity -= $validated['quantity'];
 
-$this->updateItemStatus($item);
+$item->refreshStatus();
 
 $item->save();
 
@@ -175,7 +239,7 @@ public function borrow(Request $request, $id)
 
 $item->quantity -= $validated['quantity'];
 
-$this->updateItemStatus($item);
+$item->refreshStatus();
 
 $item->save();
 
@@ -203,7 +267,7 @@ public function returnItem(Request $request, $id)
 
 $item->quantity += $validated['quantity'];
 
-$this->updateItemStatus($item);
+$item->refreshStatus();
 
 $item->save();
 
@@ -217,6 +281,13 @@ $item->save();
 
 private function getBorrowedQuantity($itemId)
 {
+    // Issued items (Consumable / Type A) are never returned, so they are
+    // never "borrowed".
+    $item = Item::find($itemId);
+    if ($item && !$item->isReturnable()) {
+        return 0;
+    }
+
     return RequestItem::where('iditems', $itemId)
         ->whereHas('request', function ($query) {
             $query->where('status', 'Approved');
@@ -227,29 +298,33 @@ private function getBorrowedQuantity($itemId)
         });
 }
 
-private function updateItemStatus(Item $item)
+private function itemTypeError($category, $type)
 {
     if (
-        $item->category === "Office Supplies" &&
-        $item->item_type === "Consumable"
+        $category === 'Office Supplies' &&
+        !in_array($type, [Item::TYPE_CONSUMABLE, Item::TYPE_A, Item::TYPE_B], true)
     ) {
-
-        if ($item->quantity <= 0) {
-            $item->status = "Out of Stock";
-        } elseif ($item->quantity <= 5) {
-            $item->status = "Low Stock";
-        } else {
-            $item->status = "Available";
-        }
-
-        return;
+        return response()->json([
+            'message' => 'Office supplies must be Consumable, Non-Consumable Type A or Non-Consumable Type B.'
+        ], 422);
     }
 
-    if ($item->quantity <= 0) {
-        $item->status = "Borrowed";
-    } else {
-        $item->status = "Available";
+    return null;
+}
+
+private function thresholdError(array $data)
+{
+    $critical = (int) $data['critical_stock'];
+    $minimum  = (int) $data['minimum_stock'];
+    $optimal  = (int) $data['optimal_stock'];
+
+    if ($critical > $minimum || $minimum > $optimal) {
+        return response()->json([
+            'message' => 'Stock levels must satisfy: Critical <= Minimum <= Optimal.'
+        ], 422);
     }
+
+    return null;
 }
 
     public function destroy($id)
