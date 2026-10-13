@@ -4,6 +4,8 @@ namespace App\Http\Controllers;
 
 use App\Models\Item;
 use App\Models\RequestItem;
+use App\Models\StockAdjustment;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Http\Request;
 use App\Traits\ActivityLogger;
 
@@ -219,6 +221,68 @@ $item->save();
     );
 
     return response()->json($item);
+}
+
+// Roadmap #11: write off stock that went missing / lost / stolen. Admin
+// only and applied immediately; every adjustment is stored in
+// stock_adjustments (status 'Applied', so an approval step can be added
+// later) and written to the Activity Logs.
+public function adjustStock(Request $request, $id)
+{
+    $validated = $request->validate([
+        'quantity' => 'required|integer|min:1',
+        'reason' => 'required|in:Missing,Lost,Stolen,Other',
+        'notes' => 'nullable|string|max:255|required_if:reason,Other',
+    ]);
+
+    $userId = $request->user()->idUsers;
+
+    return DB::transaction(function () use ($id, $validated, $userId) {
+        // Lock the row so two admins can't write off the same stock at once.
+        $item = Item::lockForUpdate()->find($id);
+
+        if (!$item) {
+            return response()->json(['message' => 'Item not found.'], 404);
+        }
+
+        $available = (int) $item->quantity;
+
+        if ($validated['quantity'] > $available) {
+            return response()->json([
+                'message' => "Only {$available} available. You can't write off more than the available stock."
+            ], 422);
+        }
+
+        $newQuantity = $available - $validated['quantity'];
+
+        StockAdjustment::create([
+            'iditems' => $item->iditems,
+            'idUsers' => $userId,
+            'quantity' => $validated['quantity'],
+            'previous_quantity' => $available,
+            'new_quantity' => $newQuantity,
+            'reason' => $validated['reason'],
+            'notes' => $validated['notes'] ?? null,
+            'status' => 'Applied',
+        ]);
+
+        $item->quantity = $newQuantity;
+        $item->refreshStatus();
+        $item->save();
+
+        $description = "Stock adjustment: removed {$validated['quantity']} of '{$item->item_name}' as {$validated['reason']} ({$available} -> {$newQuantity})";
+
+        if (!empty($validated['notes'])) {
+            $description .= " - {$validated['notes']}";
+        }
+
+        $this->logActivity($userId, $description);
+
+        return response()->json([
+            'message' => 'Stock adjusted.',
+            'item' => $item,
+        ]);
+    });
 }
 
 public function borrow(Request $request, $id)

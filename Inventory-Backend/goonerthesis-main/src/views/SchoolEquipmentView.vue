@@ -10,6 +10,7 @@ import { getRequests, returnEquipment } from "../services/requests";
 import AlertMessage from "../components/AlertMessage.vue";
 import StockBadge from "../components/StockBadge.vue";
 import DueBadge from "../components/DueBadge.vue";
+import StockAdjustmentModal from "../components/StockAdjustmentModal.vue";
 import { getErrorMessage } from "../services/errors";
 
 const showAlert = ref(false);
@@ -158,6 +159,20 @@ const modalMax = computed(() => {
 
   return 0;
 });
+
+// Report Missing (roadmap #11)
+const adjustOpen = ref(false);
+const adjustItem = ref(null);
+
+function openAdjust(item) {
+  adjustItem.value = item;
+  adjustOpen.value = true;
+}
+
+async function onAdjusted() {
+  notify("success", `Stock adjusted for ${adjustItem.value?.name}.`);
+  await load();
+}
 
 async function load() {
   const [inventory, requests] = await Promise.all([getItems(), getRequests()]);
@@ -360,7 +375,7 @@ async function confirmModal() {
               <th style="width: 120px">Available</th>
               <th style="width: 120px">Borrowed</th>
               <th>Return Period</th>
-              <th style="width: 220px; text-align: center">Actions</th>
+              <th style="width: 290px; text-align: center">Actions</th>
             </tr>
           </thead>
 
@@ -396,6 +411,13 @@ async function confirmModal() {
                     @click="openModal('edit', e)"
                   >
                     Edit
+                  </button>
+                  <button
+                    class="btn btn-outline-danger btn-sm"
+                    title="Record missing, lost or stolen stock"
+                    @click="openAdjust(e)"
+                  >
+                    Missing
                   </button>
                 </div>
               </td>
@@ -727,6 +749,16 @@ async function confirmModal() {
       </div>
     </div>
   </div>
+
+  <!-- REPORT MISSING (roadmap #11) -->
+  <StockAdjustmentModal
+    :show="adjustOpen"
+    :item-id="adjustItem?.iditems"
+    :item-name="adjustItem?.name"
+    :available="Number(adjustItem?.qty) || 0"
+    @close="adjustOpen = false"
+    @done="onAdjusted"
+  />
 </template>
 
 <style scoped>

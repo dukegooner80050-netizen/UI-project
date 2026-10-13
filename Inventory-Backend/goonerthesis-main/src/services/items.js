@@ -73,3 +73,14 @@ export async function returnItem(id, quantity) {
     })
   ).data;
 }
+
+// Roadmap #11: write off stock that went missing / lost / stolen.
+export async function adjustStock(id, quantity, reason, notes = "") {
+  return (
+    await axios.post(`/items/${id}/adjust-stock`, {
+      quantity,
+      reason,
+      notes: notes || null,
+    })
+  ).data;
+}

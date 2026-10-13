@@ -167,10 +167,12 @@ async function submit() {
   z-index: 2100;
 }
 .adj-modal {
-  background: #fff;
+  background: var(--bs-body-bg, #fff);
+  color: var(--bs-body-color, inherit);
   width: 100%;
   max-width: 480px;
   border-radius: 12px;
+  box-shadow: 0 18px 50px rgba(0, 0, 0, 0.25);
   overflow: hidden;
 }
 .adj-header,

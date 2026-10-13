@@ -213,6 +213,7 @@ Route::middleware('role:admin,dean,cashier')->group(function () {
         Route::delete('/items/{id}', [ItemController::class, 'destroy']);
 
         Route::put('/items/{id}/restock', [ItemController::class, 'restock']);
+        Route::post('/items/{id}/adjust-stock', [ItemController::class, 'adjustStock']);
 
         /*
         | Low-stock restock workflow (roadmap #12)

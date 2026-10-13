@@ -17,6 +17,7 @@ import { getRequests, returnEquipment } from "../services/requests";
 import AlertMessage from "../components/AlertMessage.vue";
 import StockBadge from "../components/StockBadge.vue";
 import DueBadge from "../components/DueBadge.vue";
+import StockAdjustmentModal from "../components/StockAdjustmentModal.vue";
 import {
   OFFICE_TYPE_OPTIONS,
   TYPE_CONSUMABLE,
@@ -162,6 +163,20 @@ const modalMax = computed(() => {
 
   return 0; // restock has no limit
 });
+
+// Report Missing (roadmap #11)
+const adjustOpen = ref(false);
+const adjustItem = ref(null);
+
+function openAdjust(item) {
+  adjustItem.value = item;
+  adjustOpen.value = true;
+}
+
+async function onAdjusted() {
+  notify("success", `Stock adjusted for ${adjustItem.value?.item_name}.`);
+  await refresh();
+}
 
 async function refresh() {
   const [inventory, requests] = await Promise.all([
@@ -408,7 +423,7 @@ async function proceedAction() {
                   <th>Name</th>
                   <th>Stock Level</th>
                   <th style="width: 120px">Qty</th>
-                  <th style="width: 180px; text-align: center">Acton</th>
+                  <th style="width: 260px; text-align: center">Acton</th>
                 </tr>
               </thead>
 
@@ -435,6 +450,13 @@ async function proceedAction() {
                         @click="openQtyModal('edit', i)"
                       >
                         Edit
+                      </button>
+                      <button
+                        class="btn btn-outline-danger btn-sm"
+                        title="Record missing, lost or stolen stock"
+                        @click="openAdjust(i)"
+                      >
+                        Missing
                       </button>
                     </div>
                   </td>
@@ -471,7 +493,7 @@ async function proceedAction() {
                   <th style="width: 120px">Qty</th>
                   <th style="width: 120px">Borrowed</th>
                   <th>Return Period</th>
-                  <th style="width: 180px; text-align: center">Acton</th>
+                  <th style="width: 260px; text-align: center">Acton</th>
                 </tr>
               </thead>
 
@@ -507,6 +529,13 @@ async function proceedAction() {
                         @click="openQtyModal('edit', i)"
                       >
                         Edit
+                      </button>
+                      <button
+                        class="btn btn-outline-danger btn-sm"
+                        title="Record missing, lost or stolen stock"
+                        @click="openAdjust(i)"
+                      >
+                        Missing
                       </button>
                     </div>
                   </td>
@@ -879,6 +908,16 @@ async function proceedAction() {
       </div>
     </div>
   </template>
+
+  <!-- REPORT MISSING (roadmap #11) -->
+  <StockAdjustmentModal
+    :show="adjustOpen"
+    :item-id="adjustItem?.iditems"
+    :item-name="adjustItem?.item_name"
+    :available="Number(adjustItem?.quantity) || 0"
+    @close="adjustOpen = false"
+    @done="onAdjusted"
+  />
 </template>
 
 <style scoped>
