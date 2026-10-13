@@ -17,6 +17,7 @@ use App\Http\Controllers\BuildingController;
 use App\Http\Controllers\RoomController;
 use App\Http\Controllers\RoomEquipmentController;
 use App\Http\Controllers\SettingController;
+use App\Http\Controllers\RestockRequestController;
 use App\Http\Controllers\InspectionController;
 use App\Http\Controllers\AccountRequestController;
 use App\Http\Middleware\AdminSessionTimeoutMiddleware;
@@ -212,6 +213,16 @@ Route::middleware('role:admin,dean,cashier')->group(function () {
         Route::delete('/items/{id}', [ItemController::class, 'destroy']);
 
         Route::put('/items/{id}/restock', [ItemController::class, 'restock']);
+
+        /*
+        | Low-stock restock workflow (roadmap #12)
+        */
+
+        Route::get('/restock/low-stock', [RestockRequestController::class, 'lowStock']);
+        Route::get('/restock-requests', [RestockRequestController::class, 'index']);
+        Route::post('/restock-requests', [RestockRequestController::class, 'store']);
+        Route::put('/restock-requests/{id}/status', [RestockRequestController::class, 'updateStatus']);
+
         Route::put('/items/{id}/release', [ItemController::class, 'release']);
         Route::put('/items/{id}/borrow', [ItemController::class, 'borrow']);
         Route::put('/items/{id}/return', [ItemController::class, 'returnItem']);
