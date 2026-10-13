@@ -67,6 +67,8 @@ class ReturnPolicy
     /**
      * Fields merged into every request-item payload.
      *
+     *   defaultReturnDays - the item's own / category default period, so the
+     *                       approval screen can prefill a due date (null = none)
      *   returnDays   - allowed days (null = no due date)
      *   dueDate      - Y-m-d, or null
      *   overdue      - still has units out past the due date
@@ -74,20 +76,37 @@ class ReturnPolicy
      */
     public static function dueInfo(Request $request, RequestItem $requestItem): array
     {
-        $none = ['returnDays' => null, 'dueDate' => null, 'overdue' => false, 'daysOverdue' => 0];
+        $default = self::daysFor($requestItem->item);
+        $none = [
+            'defaultReturnDays' => $default,
+            'returnDays' => null,
+            'dueDate' => null,
+            'overdue' => false,
+            'daysOverdue' => 0,
+        ];
 
-        $days = self::daysFor($requestItem->item);
-
-        if ($days === null || !$request->borrowed_at || $request->status === 'Pending' || $request->status === 'Rejected') {
+        if (!$request->borrowed_at || $request->status === 'Pending' || $request->status === 'Rejected') {
             return $none;
         }
 
-        $due = Carbon::parse($request->borrowed_at)->startOfDay()->addDays($days);
+        // A due date picked by the admin at approval wins over the default
+        // period. Only tracked (returnable) items ever get one.
+        $borrowed = Carbon::parse($request->borrowed_at)->startOfDay();
+        if ($requestItem->due_date && $requestItem->item && $requestItem->item->isReturnable()) {
+            $due = Carbon::parse($requestItem->due_date)->startOfDay();
+            $days = (int) abs($borrowed->diffInDays($due));
+        } elseif ($default !== null) {
+            $days = $default;
+            $due = $borrowed->copy()->addDays($days);
+        } else {
+            return $none;
+        }
         $today = Carbon::today();
         $stillOut = ($requestItem->quantity - $requestItem->returned_quantity) > 0;
         $overdue = $stillOut && $request->status === 'Approved' && $today->gt($due);
 
         return [
+            'defaultReturnDays' => $default,
             'returnDays' => $days,
             'dueDate' => $due->toDateString(),
             'overdue' => $overdue,

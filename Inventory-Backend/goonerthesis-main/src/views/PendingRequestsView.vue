@@ -4,7 +4,9 @@ import { getRequests, approveRequest, rejectRequest,} from "../services/requests
 import { getCurrentUser } from "../services/storage";
 import { requireAdmin } from "../services/session";
 import AlertMessage from "../components/AlertMessage.vue";
+import DueBadge from "../components/DueBadge.vue";
 import { getErrorMessage } from "../services/errors";
+import { isReturnableType } from "../services/itemTypes";
 
 const showAlert = ref(false);
 const alertType = ref("success");
@@ -21,6 +23,38 @@ const showAll = ref(false);
 const admin = getCurrentUser();
 const userFilter = ref("");
 const expandedId = ref(null);
+
+// Due dates the admin picks per borrowed line before approving
+// (roadmap #8). Keyed "requestId:requestItemId". Blank = item default.
+const dueDates = ref({});
+
+function dueKey(r, item) {
+  return `${r.id}:${item.requestItemId}`;
+}
+
+function ymd(date) {
+  const p = (n) => String(n).padStart(2, "0");
+  return `${date.getFullYear()}-${p(date.getMonth() + 1)}-${p(date.getDate())}`;
+}
+
+const todayYmd = computed(() => ymd(new Date()));
+
+// Prefill with today + the item's default return period, when it has one.
+function defaultDue(item) {
+  if (!item.defaultReturnDays) return "";
+  const d = new Date();
+  d.setDate(d.getDate() + Number(item.defaultReturnDays));
+  return ymd(d);
+}
+
+function dueValue(r, item) {
+  const key = dueKey(r, item);
+  return key in dueDates.value ? dueDates.value[key] : defaultDue(item);
+}
+
+function setDue(r, item, value) {
+  dueDates.value = { ...dueDates.value, [dueKey(r, item)]: value };
+}
 const rejectModal = ref(false);
 const rejectReason = ref("");
 const rejectTargetId = ref(null);
@@ -106,8 +140,21 @@ async function approve(id) {
   confirmButton.value = "Approve";
   confirmButtonClass.value = "btn-success";
 
+  const target = requests.value.find((r) => r.id === id);
+  const chosen = {};
+  for (const item of target?.items || []) {
+    if (!isReturnableType(item.itemType)) continue;
+    const value = dueValue(target, item);
+    if (!value) continue;
+    if (value < todayYmd.value) {
+      notify("warning", `Due date for ${item.itemName} cannot be in the past.`);
+      return;
+    }
+    chosen[item.requestItemId] = value;
+  }
+
   confirmAction.value = async () => {
-    await approveRequest(id);
+    await approveRequest(id, chosen);
     await refresh();
   };
 
@@ -280,6 +327,7 @@ function statusBadgeClass(status) {
                               <th>Category</th>
                               <th>Type</th>
                               <th style="width: 70px">Qty</th>
+                              <th style="width: 170px">Due Date</th>
                             </tr>
                           </thead>
                           <tbody>
@@ -288,6 +336,23 @@ function statusBadgeClass(status) {
                               <td>{{ item.category }}</td>
                               <td>{{ item.itemType }}</td>
                               <td>{{ item.qty }}</td>
+                              <td>
+                                <input
+                                  v-if="isReturnableType(item.itemType) && r.status === 'Pending'"
+                                  type="date"
+                                  class="form-control form-control-sm"
+                                  :min="todayYmd"
+                                  :value="dueValue(r, item)"
+                                  @input="setDue(r, item, $event.target.value)"
+                                />
+                                <DueBadge
+                                  v-else-if="isReturnableType(item.itemType) && item.dueDate"
+                                  :due-date="item.dueDate"
+                                  :overdue="item.overdue"
+                                  :days-overdue="item.daysOverdue"
+                                />
+                                <span v-else class="text-muted">—</span>
+                              </td>
                             </tr>
                             <tr
                               v-for="uniform in r.uniforms || []"
@@ -303,9 +368,10 @@ function statusBadgeClass(status) {
                               <td>Uniforms</td>
                               <td>Uniform</td>
                               <td>{{ uniform.quantity }}</td>
+                              <td class="text-muted">—</td>
                             </tr>
                             <tr v-if="(r.items || []).length === 0 && (r.uniforms || []).length === 0">
-                              <td colspan="4" class="text-muted">No items listed.</td>
+                              <td colspan="5" class="text-muted">No items listed.</td>
                             </tr>
                           </tbody>
                         </table>

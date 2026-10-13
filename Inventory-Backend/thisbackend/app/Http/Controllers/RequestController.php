@@ -310,9 +310,17 @@ return response()->json([
 ], 201);
 }
 
-public function approve($id)
+public function approve(HttpRequest $httpRequest, $id)
 {
-    return DB::transaction(function () use ($id) {
+    // Optional due dates chosen per borrowed line: { requestItemId: "Y-m-d" }.
+    // A line left out (or blank) uses the item's default return period.
+    $validated = $httpRequest->validate([
+        'due_dates' => 'nullable|array',
+        'due_dates.*' => 'nullable|date_format:Y-m-d|after_or_equal:today',
+    ]);
+    $dueDates = $validated['due_dates'] ?? [];
+
+    return DB::transaction(function () use ($id, $dueDates) {
 
         $request = Request::with([
             'items',
@@ -364,6 +372,13 @@ public function approve($id)
             $item->refreshStatus();
 
             $item->save();
+
+            // Due date only applies to items that must come back.
+            $chosenDue = $dueDates[$requestedItem->idrequestItem] ?? null;
+            if ($chosenDue && $item->isReturnable()) {
+                $requestedItem->due_date = $chosenDue;
+                $requestedItem->save();
+            }
         }
 
         // Deduct uniforms

@@ -29,9 +29,11 @@ export async function createRequestBatch(requestData) {
     return await createRequest(requestData);
 }
 
-export async function approveRequest(id) {
+// dueDates: { [requestItemId]: "YYYY-MM-DD" } for borrowed lines (optional).
+export async function approveRequest(id, dueDates = {}) {
     const response = await axios.put(
-        `/requests/${id}/approve`
+        `/requests/${id}/approve`,
+        { due_dates: dueDates }
     );
 
     return response.data;
