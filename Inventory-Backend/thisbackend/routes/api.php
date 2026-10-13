@@ -18,6 +18,7 @@ use App\Http\Controllers\RoomController;
 use App\Http\Controllers\RoomEquipmentController;
 use App\Http\Controllers\SettingController;
 use App\Http\Controllers\RestockRequestController;
+use App\Http\Controllers\EquipmentReportController;
 use App\Http\Controllers\InspectionController;
 use App\Http\Controllers\AccountRequestController;
 use App\Http\Middleware\AdminSessionTimeoutMiddleware;
@@ -121,6 +122,12 @@ Route::middleware([AdminSessionTimeoutMiddleware::class, 'auth:sanctum'])->group
         Route::get('/settings/monthly-request-limit', [SettingController::class, 'monthlyRequestLimit']);
         Route::get('/settings/return-periods', [SettingController::class, 'returnPeriods']);
 
+        // Roadmap #13: anyone can report equipment that needs maintenance or
+        // disposal and follow up on their own reports.
+        Route::get('/equipment-reports/locations', [EquipmentReportController::class, 'locations']);
+        Route::get('/equipment-reports', [EquipmentReportController::class, 'index']);
+        Route::post('/equipment-reports', [EquipmentReportController::class, 'store']);
+
     });
 
 /*
@@ -223,6 +230,10 @@ Route::middleware('role:admin,dean,cashier')->group(function () {
         Route::get('/restock-requests', [RestockRequestController::class, 'index']);
         Route::post('/restock-requests', [RestockRequestController::class, 'store']);
         Route::put('/restock-requests/{id}/status', [RestockRequestController::class, 'updateStatus']);
+
+        // Roadmap #13: admin handling of equipment reports
+        Route::put('/equipment-reports/{id}/send-to-inspection', [EquipmentReportController::class, 'sendToInspection']);
+        Route::put('/equipment-reports/{id}/dismiss', [EquipmentReportController::class, 'dismiss']);
 
         Route::put('/items/{id}/release', [ItemController::class, 'release']);
         Route::put('/items/{id}/borrow', [ItemController::class, 'borrow']);

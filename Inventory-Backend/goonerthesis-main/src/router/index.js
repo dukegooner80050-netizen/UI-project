@@ -15,6 +15,7 @@ import ActiveLogsView from "../views/ActiveLogsView.vue";
 import ConsumptionReportView from "../views/ConsumptionReportView.vue";
 import EquipmentDistributionView from "../views/EquipmentDistributionView.vue";
 import PendingInspectionView from "../views/PendingInspectionView.vue";
+import EquipmentReportsView from "../views/EquipmentReportsView.vue";
 import SettingsView from "../views/SettingsView.vue";
 import LoginView from "../views/LoginView.vue";
 import SignupView from "../views/SignupView.vue";
@@ -154,6 +155,15 @@ const routes = [
         meta: {
           requiresAuth: true,
           roles: ["admin"],
+        },
+      },
+
+      {
+        path: "equipment-reports",
+        component: EquipmentReportsView,
+        meta: {
+          requiresAuth: true,
+          roles: ["admin", "dean", "cashier"],
         },
       },
 

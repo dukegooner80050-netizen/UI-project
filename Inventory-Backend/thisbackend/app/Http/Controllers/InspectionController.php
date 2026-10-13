@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\PendingInspection;
+use App\Models\EquipmentReport;
 use App\Models\Item;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -14,15 +15,24 @@ class InspectionController extends Controller
 
     public function index()
     {
-        $inspections = PendingInspection::with([
+        $pending = PendingInspection::with([
             'item',
             'requestItem.request',
         ])
             ->where('status', 'Pending')
             ->orderBy('returned_at', 'asc')
+            ->get();
+
+        // Equipment reports that sent these units here (roadmap #13).
+        $reports = EquipmentReport::with('reporter')
+            ->whereIn('idinspection', $pending->pluck('idinspection'))
             ->get()
-            ->map(function ($i) {
+            ->keyBy('idinspection');
+
+        $inspections = $pending
+            ->map(function ($i) use ($reports) {
                 $request = optional($i->requestItem)->request;
+                $report = $reports->get($i->idinspection);
 
                 // Returned from a borrow request, or taken out of a room?
                 $fromRoom = $i->idrequestItem === null;
@@ -36,6 +46,11 @@ class InspectionController extends Controller
                     'requestId' => optional($request)->idrequest,
                     'location' => $fromRoom ? $i->source_building : optional($request)->location,
                     'room' => $fromRoom ? $i->source_room : optional($request)->room,
+                    'report' => $report ? [
+                        'type' => $report->report_type,
+                        'description' => $report->description,
+                        'reported_by' => optional($report->reporter)->full_name,
+                    ] : null,
                 ];
             });
 

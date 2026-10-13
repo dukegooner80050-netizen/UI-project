@@ -23,6 +23,7 @@ const emit = defineEmits(["toggle", "closeMobile"])
 const pendingCount = ref(0)
 const pendingInspectionCount = ref(0)
 const accountRequestCount = ref(0)
+const equipmentReportCount = ref(0)
 
 const router = useRouter()
 const route = useRoute()
@@ -101,6 +102,26 @@ async function refreshAccountRequestCount() {
   }
 }
 
+/* OPEN EQUIPMENT REPORTS (maintenance / disposal reports waiting for review) */
+
+async function refreshEquipmentReportCount() {
+  if (!isAdmin.value) {
+    equipmentReportCount.value = 0
+    return
+  }
+
+  try {
+    const response = await axios.get("/equipment-reports")
+
+    equipmentReportCount.value = Array.isArray(response.data)
+      ? response.data.filter(r => r.status === "Open").length
+      : 0
+
+  } catch (error) {
+    console.error("Failed to load equipment report count:", error)
+  }
+}
+
 /*  LOGOUT */
 
 function logout() {
@@ -122,6 +143,10 @@ onMounted(async () => {
   await refreshPendingCount()
   await refreshPendingInspectionCount()
   await refreshAccountRequestCount()
+  await refreshEquipmentReportCount()
+
+  // The equipment report page tells us right away when something changes
+  window.addEventListener("cims:equipment-reports-changed", refreshEquipmentReportCount)
 
   // Check the backend every 5 seconds
   pendingRefreshTimer = setInterval(() => {
@@ -130,10 +155,15 @@ onMounted(async () => {
   }, 2000)
 
   // New sign-ups are rare, so this one checks far less often
-  accountRequestTimer = setInterval(refreshAccountRequestCount, 15000)
+  accountRequestTimer = setInterval(() => {
+    refreshAccountRequestCount()
+    refreshEquipmentReportCount()
+  }, 15000)
 })
 
 onBeforeUnmount(() => {
+  window.removeEventListener("cims:equipment-reports-changed", refreshEquipmentReportCount)
+
   if (pendingRefreshTimer) {
     clearInterval(pendingRefreshTimer)
   }
@@ -287,6 +317,22 @@ onBeforeUnmount(() => {
     <RouterLink class="sidebar-link" :class="{ active: active('/request') }" to="/request">
       <span class="icon">📝</span>
       <span class="label" v-if="!props.collapsed">Request Item</span>
+    </RouterLink>
+
+    <RouterLink
+      class="sidebar-link d-flex justify-content-between align-items-center"
+      :class="{ active: active('/equipment-reports') }"
+      to="/equipment-reports"
+    >
+      <span class="d-flex align-items-center gap-2">
+        <span class="icon">🛠️</span>
+        <span class="label" v-if="!props.collapsed">Report Equipment</span>
+      </span>
+
+      <span
+        v-if="isAdmin && !props.collapsed && equipmentReportCount > 0"
+        class="badge bg-danger"
+      >{{ equipmentReportCount }}</span>
     </RouterLink>
 
     <RouterLink

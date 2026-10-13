@@ -150,7 +150,22 @@ async function confirmInspection() {
             </thead>
             <tbody>
               <tr v-for="i in inspections" :key="i.idinspection">
-                <td>{{ i.item_name }}</td>
+                <td>
+                  {{ i.item_name }}
+                  <div v-if="i.report" class="small mt-1">
+                    <span
+                      class="badge me-1"
+                      :class="i.report.type === 'Disposal' ? 'bg-danger' : 'bg-primary'"
+                    >
+                      Reported:
+                      {{ i.report.type === "Disposal" ? "For Disposal" : "Needs Maintenance" }}
+                    </span>
+                    <span class="text-muted text-break">{{ i.report.description }}</span>
+                    <span v-if="i.report.reported_by" class="text-muted">
+                      (by {{ i.report.reported_by }})
+                    </span>
+                  </div>
+                </td>
                 <td>{{ i.quantity }}</td>
                 <td>{{ i.requestId ?? "-" }}</td>
                 <td>
