@@ -1,5 +1,6 @@
 <script setup>
 import { ref, watch, computed, onMounted, nextTick } from "vue";
+import axios from "../axios";
 import { createRequestBatch, getRequests } from "../services/requests";
 import { listUniformTypes, listUniformVariants } from "../services/uniforms";
 import { getCurrentUser } from "../services/storage";
@@ -14,6 +15,7 @@ const listContainer = ref(null);
 const activeTab = ref("create");
 const lastReceipt = ref(null);
 const myRequests = ref([]);
+const myNotifications = ref([]);
 const selected = ref(null);
 const category = ref("");
 const itemType = ref("");
@@ -54,6 +56,7 @@ onMounted(async () => {
   await loadInventory();
   await loadUniforms();
   await loadMyRequests();
+  await loadMyNotifications();
 
   if (user?.role !== "admin") {
     try {
@@ -64,6 +67,37 @@ onMounted(async () => {
     }
   }
 });
+
+// Latest few updates on the user's own requests (newest first from the API).
+const recentNotifications = computed(() => myNotifications.value.slice(0, 5));
+
+function notificationLabel(n) {
+  if (n.event_type === "forwarded") return "Forwarded";
+  if (/rejected/i.test(n.message || "")) return "Rejected";
+  if (/approved/i.test(n.message || "")) return "Approved";
+  return "Update";
+}
+
+function notificationBadge(n) {
+  const label = notificationLabel(n);
+  if (label === "Approved") return "bg-success";
+  if (label === "Rejected") return "bg-danger";
+  return "bg-info text-dark";
+}
+
+function formatNotificationDate(value) {
+  if (!value) return "";
+  return new Date(String(value).replace(" ", "T")).toLocaleString("en-PH");
+}
+
+async function loadMyNotifications() {
+  try {
+    const { data } = await axios.get('/request-notifications');
+    myNotifications.value = Array.isArray(data) ? data : [];
+  } catch (err) {
+    console.error('Failed to load request notifications:', err);
+  }
+}
 
 // INVENTORY //
 
@@ -106,7 +140,7 @@ async function loadUniforms() {
 const reservedStockMap = computed(() => {
   const map = {};
   for (const request of myRequests.value) {
-    if (String(request.status || "").toLowerCase() !== "pending") {
+    if (!["pending", "with coordinator", "with inventory"].includes(String(request.status || "").toLowerCase())) {
       continue;
     }
     for (const item of request.items || []) {
@@ -639,6 +673,29 @@ watch(activeTab, async () => {
       </span>
     </div>
 
+    <!-- REQUEST UPDATES (forwarded / approved / rejected) -->
+    <div v-if="recentNotifications.length" class="card shadow-sm mb-3">
+      <div class="card-body py-2 px-3">
+        <div class="fw-semibold small text-muted mb-1">Request updates</div>
+        <ul class="list-unstyled mb-0">
+          <li
+            v-for="n in recentNotifications"
+            :key="n.id"
+            class="d-flex justify-content-between gap-3 py-1 small"
+          >
+            <span>
+              <span
+                class="badge me-2"
+                :class="notificationBadge(n)"
+              >{{ notificationLabel(n) }}</span>
+              {{ n.message }}
+            </span>
+            <span class="text-muted text-nowrap">{{ formatNotificationDate(n.created_at) }}</span>
+          </li>
+        </ul>
+      </div>
+    </div>
+
     <!-- CREATE REQUEST TAB -->
     <div
       v-if="activeTab === 'create'"
@@ -1070,7 +1127,7 @@ watch(activeTab, async () => {
                           'bg-primary':
                             (r.status || '').toLowerCase() === 'returned',
                           'bg-warning text-dark':
-                            (r.status || '').toLowerCase() === 'pending',
+                            ['pending', 'with coordinator', 'with inventory'].includes((r.status || '').toLowerCase()),
                         }"
                       >
                         {{ r.status }}

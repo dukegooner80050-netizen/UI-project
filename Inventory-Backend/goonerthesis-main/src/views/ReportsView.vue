@@ -121,7 +121,10 @@ const recentRequests = computed(() =>
 const pendingRequests = computed(
   () =>
     recentRequests.value.filter(
-      (r) => (r.status || "").toLowerCase() === "pending",
+      (r) =>
+        ["pending", "with coordinator", "with inventory"].includes(
+          (r.status || "").toLowerCase(),
+        ),
     ).length,
 );
 

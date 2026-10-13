@@ -10,6 +10,7 @@ import OfficeSuppliesView from "../views/OfficeSuppliesView.vue";
 import SchoolEquipmentView from "../views/SchoolEquipmentView.vue";
 import RequestView from "../views/RequestView.vue";
 import PendingRequestsView from "../views/PendingRequestsView.vue";
+import CoordinatorRequestsView from "../views/CoordinatorRequestsView.vue";
 import ReportsView from "../views/ReportsView.vue";
 import ActiveLogsView from "../views/ActiveLogsView.vue";
 import ConsumptionReportView from "../views/ConsumptionReportView.vue";
@@ -110,6 +111,15 @@ const routes = [
         meta: {
           requiresAuth: true,
           roles: ["admin"],
+        },
+      },
+
+      {
+        path: "coordinator-requests",
+        component: CoordinatorRequestsView,
+        meta: {
+          requiresAuth: true,
+          roles: ["dean"],
         },
       },
 

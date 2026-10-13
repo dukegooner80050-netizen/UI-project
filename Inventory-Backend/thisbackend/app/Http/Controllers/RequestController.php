@@ -41,6 +41,8 @@ return response()->json(
             'location' => $request->location,
             'room' => $request->room,
             'status' => $request->status,
+            'coordinatorForwardedAt' => $request->coordinator_forwarded_at,
+            'notifiedAt' => $request->notified_at,
             'request_date' => $request->request_date,
             'borrowedAt' => $request->borrowed_at,
             'items' => $request->items->map(function ($item) use ($request) {
@@ -247,7 +249,7 @@ if (
             'idUsers' => $idUsers,
             'approved_by' => null,
             'request_date' => $validated['request_date'],
-            'status' => 'Pending',
+            'status' => in_array(strtolower((string) request()->user()->role), ['admin', 'dean'], true) ? 'With Inventory' : 'With Coordinator',
             'location' => $validated['location'],
             'room' => $validated['room'],
             'purpose' => $validated['purpose'],
@@ -323,6 +325,12 @@ $this->logActivity(
     $newRequest->idUsers,
     "Created Request #{$newRequest->idrequest}"
 );
+if ($newRequest->status === 'With Coordinator') {
+    $coordinators = \App\Models\User::whereRaw('LOWER(role) = ?', ['dean'])->pluck('idUsers');
+    foreach ($coordinators as $coordinatorId) {
+        $this->createRequestNotification($newRequest, (int) $coordinatorId, 'coordinator_review', 'Request #' . $newRequest->idrequest . ' is waiting for coordinator review.', (int) $idUsers);
+    }
+}
 
 return response()->json([
     'message' => 'Request created successfully.',
@@ -330,6 +338,8 @@ return response()->json([
         'id' => $newRequest->idrequest,
         'idUsers' => $newRequest->idUsers,
         'status' => $newRequest->status,
+        'coordinatorForwardedAt' => $newRequest->coordinator_forwarded_at,
+        'notifiedAt' => $newRequest->notified_at,
         'request_date' => $newRequest->request_date,
         'location' => $newRequest->location,
         'room' => $newRequest->room,
@@ -386,9 +396,9 @@ public function approve(HttpRequest $httpRequest, $id)
             ], 404);
         }
 
-        if ($request->status !== 'Pending') {
+        if (!in_array($request->status, ['With Inventory', 'Pending'], true)) {
             return response()->json([
-                'message' => 'Only pending requests can be approved.'
+                'message' => 'Only requests forwarded to Inventory can be approved.'
             ], 400);
         }
 
@@ -448,7 +458,10 @@ public function approve(HttpRequest $httpRequest, $id)
             'status' => 'Approved',
             'approved_by' => request()->user()->idUsers,
             'borrowed_at' => now(),
+            'notified_at' => now(),
+            'notified_by' => request()->user()->idUsers,
         ]);
+        $this->createRequestNotification($request, (int) $request->idUsers, 'decision', 'Your request #' . $request->idrequest . ' was approved.');
 
         $this->logActivity(
             request()->user()->idUsers,
@@ -517,9 +530,9 @@ $validated = $httpRequest->validate([
     'rejectReason' => 'required|string|max:500',
 ]);
 
-        if ($request->status !== 'Pending') {
+        if (!in_array($request->status, ['With Inventory', 'Pending'], true)) {
             return response()->json([
-                'message' => 'Only pending requests can be rejected.'
+                'message' => 'Only requests forwarded to Inventory can be rejected.'
             ], 400);
         }
 
@@ -527,7 +540,10 @@ $request->update([
     'status' => 'Rejected',
     'approved_by' => request()->user()->idUsers,
     'rejectReason' => $validated['rejectReason'],
+    'notified_at' => now(),
+    'notified_by' => request()->user()->idUsers,
 ]);
+$this->createRequestNotification($request, (int) $request->idUsers, 'decision', 'Your request #' . $request->idrequest . ' was rejected. Reason: ' . $validated['rejectReason']);
 
         $this->logActivity(
             request()->user()->idUsers,
@@ -566,6 +582,80 @@ return response()->json([
     ]
 ]);
     });
+}
+
+public function coordinatorQueue()
+{
+    $user = request()->user();
+    if (strtolower((string) $user->role) !== 'dean') {
+        return response()->json(['message' => 'Only the Dean/Academic Coordinator can forward requests.'], 403);
+    }
+    return response()->json(Request::with(['user', 'items.item', 'uniforms.uniformVariant.type', 'uniforms.uniformVariant.department'])
+        ->where('status', 'With Coordinator')->orderBy('request_date')->get()->map(fn ($r) => $this->formatWorkflowRequest($r)));
+}
+
+public function forwardToInventory($id)
+{
+    $actor = request()->user();
+    if (strtolower((string) $actor->role) !== 'dean') {
+        return response()->json(['message' => 'Only the Dean/Academic Coordinator can forward requests.'], 403);
+    }
+    return DB::transaction(function () use ($id, $actor) {
+        $r = Request::where('idrequest', $id)->lockForUpdate()->first();
+        if (!$r) return response()->json(['message' => 'Request not found.'], 404);
+        if ($r->status !== 'With Coordinator') return response()->json(['message' => 'Only requests awaiting coordinator review can be forwarded.'], 422);
+        $r->update(['status' => 'With Inventory', 'coordinator_forwarded_by' => $actor->idUsers, 'coordinator_forwarded_at' => now()]);
+        $r->load('user');
+        $this->createRequestNotification($r, (int) $r->idUsers, 'forwarded', 'Your request #' . $r->idrequest . ' was forwarded to Inventory Management.');
+        $r->update(['notified_at' => now(), 'notified_by' => $actor->idUsers]);
+        $this->logActivity($actor->idUsers, 'Forwarded Request #' . $r->idrequest . ' to Inventory Management');
+        return response()->json(['message' => 'Request forwarded to Inventory Management.', 'status' => $r->status]);
+    });
+}
+
+public function notifications()
+{
+    $userId = (int) request()->user()->idUsers;
+    return response()->json(DB::table('request_notifications')->where('recipient_idUsers', $userId)->orderByDesc('created_at')->limit(100)->get());
+}
+
+public function resendNotification($id)
+{
+    $actor = request()->user();
+    if (strtolower((string) $actor->role) !== 'admin') return response()->json(['message' => 'Only Inventory Management can resend request notifications.'], 403);
+    $r = Request::find($id);
+    if (!$r) return response()->json(['message' => 'Request not found.'], 404);
+    if (!in_array($r->status, ['Approved', 'Rejected'], true)) return response()->json(['message' => 'A notification can be resent after a final decision.'], 422);
+    $message = $r->status === 'Approved' ? 'Your request #' . $r->idrequest . ' was approved.' : 'Your request #' . $r->idrequest . ' was rejected. Reason: ' . ($r->rejectReason ?: 'No reason provided.');
+    $this->createRequestNotification($r, (int) $r->idUsers, 'decision_resend', $message, (int) $actor->idUsers);
+    $r->update(['notified_at' => now(), 'notified_by' => $actor->idUsers]);
+    $this->logActivity($actor->idUsers, 'Resent in-app notification for Request #' . $r->idrequest);
+    return response()->json(['message' => 'In-app notification recorded and made available to the requester.', 'notified_at' => $r->notified_at]);
+}
+
+private function createRequestNotification($request, int $recipientId, string $type, string $message, ?int $actorId = null): void
+{
+    DB::table('request_notifications')->insert([
+        'idrequest' => $request->idrequest,
+        'recipient_idUsers' => $recipientId,
+        'created_by' => $actorId ?? (request()->user()->idUsers ?? null),
+        'event_type' => $type,
+        'message' => mb_substr($message, 0, 500),
+        'created_at' => now(),
+    ]);
+}
+
+private function formatWorkflowRequest($r): array
+{
+    return [
+        'id' => $r->idrequest, 'idUsers' => $r->idUsers,
+        'requester' => optional($r->user)->username, 'role' => optional($r->user)->role,
+        'purpose' => $r->purpose, 'location' => $r->location, 'room' => $r->room,
+        'status' => $r->status, 'request_date' => $r->request_date,
+        'coordinatorForwardedAt' => $r->coordinator_forwarded_at,
+        'items' => $r->items->map(fn ($i) => ['requestItemId' => $i->idrequestItem, 'itemId' => $i->iditems, 'itemName' => optional($i->item)->item_name, 'category' => optional($i->item)->category, 'itemType' => optional($i->item)->item_type, 'qty' => $i->quantity]),
+        'uniforms' => $r->uniforms->map(fn ($u) => ['requestUniformId' => $u->idrequestUniform, 'uniformVariantId' => $u->idUnifvariant, 'quantity' => $u->quantity, 'uniformName' => optional($u->uniformVariant->type)->uniform_name, 'department' => optional($u->uniformVariant->department)->dept_name, 'size' => optional($u->uniformVariant)->size]),
+    ];
 }
 
 public function returnEquipment(HttpRequest $request, $id)
@@ -677,7 +767,8 @@ private function perHeadUsage(int $userId, Item $item): int
     }
 
     return (int) $query->whereHas('request', function ($q) {
-        $q->whereIn('status', ['Pending', 'Approved']);
+        // Requests still in review hold the allowance too.
+        $q->whereIn('status', ['Pending', 'With Coordinator', 'With Inventory', 'Approved']);
     })->get()->sum(function ($requestItem) {
         return $requestItem->quantity - $requestItem->returned_quantity;
     });

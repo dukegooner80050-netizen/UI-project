@@ -33,6 +33,13 @@ const lastUpdated = ref("");
 const selectedDayRequests = ref([]);
 const selectedDay = ref("");
 const showDayModal = ref(false);
+// Request statuses (review workflow, roadmap #14). "In flight" = still
+// waiting on a decision; "actionable" = Inventory Management can act now.
+const IN_FLIGHT = ["pending", "with coordinator", "with inventory"];
+const ACTIONABLE = ["pending", "with inventory"];
+const isInFlight = (s) => IN_FLIGHT.includes((s || "").toLowerCase());
+const isActionable = (s) => ACTIONABLE.includes((s || "").toLowerCase());
+
 const lowStockModal = ref(false);
 const overdueModal = ref(false);
 
@@ -170,7 +177,7 @@ const overdueLines = computed(() => {
 
 const pendingRequests = computed(
   () =>
-    requests.value.filter((r) => (r.status || "").toLowerCase() === "pending")
+    requests.value.filter((r) => isActionable(r.status))
       .length,
 );
 
@@ -185,7 +192,7 @@ const myRequests = computed(() => {
 
 const myPendingCount = computed(
   () =>
-    myRequests.value.filter((r) => (r.status || "").toLowerCase() === "pending")
+    myRequests.value.filter((r) => isInFlight(r.status))
       .length,
 );
 
@@ -211,7 +218,7 @@ const lowStockItems = computed(() =>
 const recentRequestsList = computed(() => {
   const base = isAdmin.value ? requests.value : myRequests.value;
   return base
-    .filter((r) => (r.status || "").toLowerCase() === "pending")
+    .filter((r) => (isAdmin.value ? isActionable(r.status) : isInFlight(r.status)))
     .slice(-5)
     .reverse();
 });
@@ -355,7 +362,7 @@ const calendarEvents = computed(() => {
 
     const status = (r.status || "").toLowerCase();
 
-if (status === "pending") {
+if (isInFlight(status)) {
   map[iso].pending.push(r);
 } else if (status === "approved") {
   map[iso].approved.push(r);
@@ -688,7 +695,7 @@ eventContent(arg) {
                     {{ r.request_date }}</small>
                 </div>
 
-                <span class="badge" :class="(r.status || '').toLowerCase() === 'pending'
+                <span class="badge" :class="isInFlight(r.status)
                     ? 'bg-warning text-dark'
                     : (r.status || '').toLowerCase() === 'approved'
                       ? 'bg-success'
@@ -732,7 +739,7 @@ eventContent(arg) {
                 </small>
               </div>
 
-              <span class="badge" :class="(r.status || '').toLowerCase() === 'pending'
+              <span class="badge" :class="isInFlight(r.status)
                   ? 'bg-warning text-dark'
                   : (r.status || '').toLowerCase() === 'approved'
                     ? 'bg-success'
@@ -842,7 +849,7 @@ eventContent(arg) {
                 {{r.items.map((i) => i.category).join(", ")}} •
                 {{ r.request_date }}</small>
             </div>
-            <span class="badge" :class="(r.status || '').toLowerCase() === 'pending'
+            <span class="badge" :class="isInFlight(r.status)
                 ? 'bg-warning text-dark'
                 : (r.status || '').toLowerCase() === 'approved'
                   ? 'bg-success'

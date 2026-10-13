@@ -44,7 +44,11 @@ class DashboardController extends Controller
 
             "requests" => [
 
-                "pending" => Request::where("status", "Pending")->count(),
+                // Everything still waiting on a decision (legacy Pending + the review workflow).
+                "pending" => Request::whereIn("status", ["Pending", "With Coordinator", "With Inventory"])->count(),
+
+                // Waiting on Inventory Management specifically.
+                "with_inventory" => Request::whereIn("status", ["Pending", "With Inventory"])->count(),
 
                 "approved" => Request::where("status", "Approved")->count(),
 

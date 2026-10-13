@@ -33,6 +33,7 @@ const user = computed(() => getCurrentUser())
 const isAdmin = computed(
   () => (user.value?.role || "").toLowerCase() === "admin"
 )
+const isDean = computed(() => (user.value?.role || "").toLowerCase() === "dean")
 
 /* PENDING REQUEST COUNT */
 
@@ -50,8 +51,7 @@ async function refreshPendingCount() {
       : response.data?.data || []
 
     pendingCount.value = requests.filter(
-      request =>
-        (request.status || "").toLowerCase() === "pending"
+      request => ["with inventory", "pending"].includes((request.status || "").toLowerCase())
     ).length
 
   } catch (error) {
@@ -282,6 +282,18 @@ onBeforeUnmount(() => {
     <RouterLink v-if="isAdmin" class="sidebar-link" :class="{ active: active('/equipment-distribution') }" to="/equipment-distribution">
       <span class="icon">🏢</span>
       <span class="label" v-if="!props.collapsed">Equipment Distribution</span>
+    </RouterLink>
+
+    <RouterLink
+      v-if="isDean"
+      class="sidebar-link d-flex justify-content-between align-items-center"
+      :class="{ active: active('/coordinator-requests') }"
+      to="/coordinator-requests"
+    >
+      <span class="d-flex align-items-center gap-2">
+        <span class="icon">🧭</span>
+        <span class="label" v-if="!props.collapsed">Coordinator Review</span>
+      </span>
     </RouterLink>
 
     <RouterLink

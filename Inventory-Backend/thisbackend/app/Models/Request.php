@@ -20,6 +20,10 @@ protected $fillable = [
     'purpose',
     'rejectReason',
     'borrowed_at',
+    'coordinator_forwarded_by',
+    'coordinator_forwarded_at',
+    'notified_at',
+    'notified_by',
 ];
 
 public $timestamps = false;

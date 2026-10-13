@@ -76,7 +76,7 @@ async function refresh() {
 }
 
 const pendingRequests = computed(() =>
-  requests.value.filter((r) => (r.status || "").toLowerCase() === "pending"),
+  requests.value.filter((r) => ["with inventory", "pending"].includes((r.status || "").toLowerCase())),
 );
 
 const uniqueRequesters = computed(() => {
@@ -209,9 +209,18 @@ async function executeConfirm() {
   confirmModal.value = false;
 }
 
+async function resendNotification(id) {
+  try {
+    const { data } = await (await import('../axios')).default.post(`/requests/${id}/resend-notification`)
+    notify('success', data.message || 'In-app notification recorded.')
+    await refresh()
+  } catch (e) { notify('danger', e.response?.data?.message || 'Unable to record notification.') }
+}
+
 function statusBadgeClass(status) {
   const s = (status || "").toLowerCase();
-  if (s === "pending") return "bg-warning text-dark";
+  if (s === "pending" || s === "with inventory") return "bg-warning text-dark";
+  if (s === "with coordinator") return "bg-info text-dark";
   if (s === "approved") return "bg-success";
   if (s === "rejected") return "bg-danger";
   return "bg-secondary";
@@ -293,7 +302,7 @@ function statusBadgeClass(status) {
                   <div class="d-flex gap-2">
                     <button
                       class="btn btn-sm btn-success"
-                      :disabled="(r.status || '').toLowerCase() !== 'pending'"
+                      :disabled="!['with inventory', 'pending'].includes((r.status || '').toLowerCase())"
                       @click="approve(r.id)"
                     >
                       Approve
@@ -301,11 +310,17 @@ function statusBadgeClass(status) {
 
                     <button
                       class="btn btn-sm btn-danger text-white"
-                      :disabled="(r.status || '').toLowerCase() !== 'pending'"
+                      :disabled="!['with inventory', 'pending'].includes((r.status || '').toLowerCase())"
                       @click="openRejectModal(r.id)"
                     >
                       Reject
                     </button>
+                    <button
+                      v-if="['approved', 'rejected'].includes((r.status || '').toLowerCase())"
+                      class="btn btn-sm btn-outline-secondary"
+                      @click="resendNotification(r.id)"
+                      title="Create another in-app notification for the requester"
+                    >Notify</button>
                   </div>
                 </td>
               </tr>
@@ -338,7 +353,7 @@ function statusBadgeClass(status) {
                               <td>{{ item.qty }}</td>
                               <td>
                                 <input
-                                  v-if="isReturnableType(item.itemType) && r.status === 'Pending'"
+                                  v-if="isReturnableType(item.itemType) && ['Pending', 'With Inventory'].includes(r.status)"
                                   type="date"
                                   class="form-control form-control-sm"
                                   :min="todayYmd"

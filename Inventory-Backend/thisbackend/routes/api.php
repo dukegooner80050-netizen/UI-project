@@ -99,6 +99,9 @@ Route::middleware([AdminSessionTimeoutMiddleware::class, 'auth:sanctum'])->group
 
         Route::get('/requests', [RequestController::class, 'index']);
         Route::get('/requests/overdue/mine', [RequestController::class, 'myOverdue']);
+        Route::get('/request-notifications', [RequestController::class, 'notifications']);
+        Route::get('/requests/coordinator-queue', [RequestController::class, 'coordinatorQueue'])->middleware('role:dean');
+        Route::put('/requests/{id}/forward-to-inventory', [RequestController::class, 'forwardToInventory'])->middleware('role:dean');
         Route::get('/requests/{id}', [RequestController::class, 'show']);
 
 
@@ -266,6 +269,7 @@ Route::middleware('role:admin,dean,cashier')->group(function () {
 
         Route::put('/requests/{id}/approve', [RequestController::class, 'approve']);
         Route::put('/requests/{id}/reject', [RequestController::class, 'reject']);
+        Route::post('/requests/{id}/resend-notification', [RequestController::class, 'resendNotification']);
 
 
         /*
