@@ -24,6 +24,9 @@ protected $fillable = [
     'coordinator_forwarded_at',
     'notified_at',
     'notified_by',
+    'release_method',
+    'released_at',
+    'released_by',
 ];
 
 public $timestamps = false;
@@ -31,6 +34,11 @@ public $timestamps = false;
 public function user()
 {
     return $this->belongsTo(User::class, 'idUsers', 'idUsers');
+}
+
+public function releasedByUser()
+{
+    return $this->belongsTo(User::class, 'released_by', 'idUsers');
 }
 
 public function items()

@@ -325,6 +325,8 @@ async function loadMyRequests() {
         status: request.status,
         date: request.request_date,
         borrowedAt: request.borrowedAt,
+        releaseMethod: request.releaseMethod,
+        releasedAt: request.releasedAt,
         location: request.location,
         room: request.room,
         purpose: request.purpose,
@@ -1132,6 +1134,9 @@ watch(activeTab, async () => {
                       >
                         {{ r.status }}
                       </span>
+                      <div v-if="r.releasedAt" class="badge bg-info text-dark mt-1">
+                        {{ r.releaseMethod }}
+                      </div>
                     </td>
                     <td>{{ formatDate(r.date) }}</td>
                     <td>
@@ -1194,6 +1199,20 @@ watch(activeTab, async () => {
               <div v-if="selected.borrowedAt">
                 <strong>Borrowed On:</strong>
                 {{ new Date(selected.borrowedAt).toLocaleString("en-PH") }}
+              </div>
+
+              <div v-if="selected.releasedAt" class="mt-1">
+                <strong>Release:</strong>
+                <span class="badge bg-info text-dark">{{ selected.releaseMethod }}</span>
+                <div class="text-muted small">
+                  {{ new Date(selected.releasedAt).toLocaleString("en-PH") }}
+                </div>
+              </div>
+              <div
+                v-else-if="(selected.status || '').toLowerCase() === 'approved'"
+                class="mt-1 text-muted small"
+              >
+                Approved — awaiting release.
               </div>
 
               <div

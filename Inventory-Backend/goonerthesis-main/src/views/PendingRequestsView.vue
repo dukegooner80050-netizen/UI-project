@@ -1,6 +1,6 @@
 <script setup>
 import { ref, computed, onMounted } from "vue";
-import { getRequests, approveRequest, rejectRequest,} from "../services/requests";
+import { getRequests, approveRequest, rejectRequest, releaseRequest } from "../services/requests";
 import { getCurrentUser } from "../services/storage";
 import { requireAdmin } from "../services/session";
 import AlertMessage from "../components/AlertMessage.vue";
@@ -19,10 +19,14 @@ function notify(type, message) {
 }
 
 const requests = ref([]);
-const showAll = ref(false);
 const admin = getCurrentUser();
 const userFilter = ref("");
 const expandedId = ref(null);
+
+// Tabs: Approving a request no longer means it's released -- those are
+// two separate admin actions now, so they get two separate tabs instead
+// of living in the same undifferentiated list.
+const activeTab = ref("pending"); // "pending" | "release" | "all"
 
 // Due dates the admin picks per borrowed line before approving
 // (roadmap #8). Keyed "requestId:requestItemId". Blank = item default.
@@ -79,6 +83,13 @@ const pendingRequests = computed(() =>
   requests.value.filter((r) => ["with inventory", "pending"].includes((r.status || "").toLowerCase())),
 );
 
+// Approved, but Inventory hasn't recorded For Pick Up / For Delivery yet.
+const releaseRequests = computed(() =>
+  requests.value.filter(
+    (r) => (r.status || "").toLowerCase() === "approved" && !r.releasedAt,
+  ),
+);
+
 const uniqueRequesters = computed(() => {
   const names = requests.value
     .map((r) => r.requester)
@@ -87,10 +98,14 @@ const uniqueRequesters = computed(() => {
   return [...new Set(names)].sort((a, b) => a.localeCompare(b));
 });
 
+const tabBase = computed(() => {
+  if (activeTab.value === "release") return releaseRequests.value;
+  if (activeTab.value === "all") return requests.value;
+  return pendingRequests.value;
+});
+
 const displayedRequests = computed(() => {
-  let data = showAll.value
-    ? [...requests.value]
-    : [...pendingRequests.value];
+  let data = [...tabBase.value];
 
   if (userFilter.value) {
     data = data.filter((r) => r.requester === userFilter.value);
@@ -104,6 +119,12 @@ const displayedRequests = computed(() => {
 });
 const requestRows = computed(() => {
   return displayedRequests.value;
+});
+
+const emptyMessage = computed(() => {
+  if (activeTab.value === "release") return "No approved requests waiting to be released.";
+  if (activeTab.value === "all") return "No requests found.";
+  return "No pending requests.";
 });
 
 function totalQty(r) {
@@ -209,6 +230,41 @@ async function executeConfirm() {
   confirmModal.value = false;
 }
 
+// RELEASE (roadmap #15 / #19) //
+// Once a request is Approved, Inventory records whether the requester
+// is picking the items up or having them delivered.
+
+const releaseModal = ref(false);
+const releaseTargetId = ref(null);
+const releaseMethod = ref("For Pick Up");
+
+function openReleaseModal(id) {
+  const target = requests.value.find((r) => r.id === id);
+  releaseTargetId.value = id;
+  releaseMethod.value = target?.releaseMethod || "For Pick Up";
+  releaseModal.value = true;
+}
+
+async function confirmRelease() {
+  const id = releaseTargetId.value;
+  const method = releaseMethod.value;
+
+  releaseModal.value = false;
+
+  try {
+    await releaseRequest(id, method);
+    notify("success", `Request marked as released: ${method}.`);
+    await refresh();
+  } catch (e) {
+    notify("danger", getErrorMessage(e));
+  }
+}
+
+function releaseBadgeText(r) {
+  if (!r.releasedAt) return "";
+  return r.releaseMethod || "Released";
+}
+
 async function resendNotification(id) {
   try {
     const { data } = await (await import('../axios')).default.post(`/requests/${id}/resend-notification`)
@@ -235,9 +291,11 @@ function statusBadgeClass(status) {
       class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3"
     >
       <div>
-        <h3 class="mb-0">Pending Requests</h3>
+        <h3 class="mb-0">Requests</h3>
         <div class="text-muted small">
           Pending: <strong>{{ pendingRequests.length }}</strong>
+          &nbsp;·&nbsp;
+          Awaiting release: <strong>{{ releaseRequests.length }}</strong>
         </div>
       </div>
 
@@ -252,18 +310,40 @@ function statusBadgeClass(status) {
             {{ name }}
           </option>
         </select>
-
-        <div class="form-check form-switch mb-0">
-          <input
-            class="form-check-input"
-            type="checkbox"
-            id="showAll"
-            v-model="showAll"
-          />
-          <label class="form-check-label" for="showAll">Show all requests</label>
-        </div>
       </div>
     </div>
+
+    <ul class="nav nav-tabs mb-3">
+      <li class="nav-item">
+        <button
+          class="nav-link"
+          :class="{ active: activeTab === 'pending' }"
+          @click="activeTab = 'pending'; expandedId = null"
+        >
+          Pending
+          <span class="badge bg-warning text-dark ms-1">{{ pendingRequests.length }}</span>
+        </button>
+      </li>
+      <li class="nav-item">
+        <button
+          class="nav-link"
+          :class="{ active: activeTab === 'release' }"
+          @click="activeTab = 'release'; expandedId = null"
+        >
+          For Release
+          <span class="badge bg-info text-dark ms-1">{{ releaseRequests.length }}</span>
+        </button>
+      </li>
+      <li class="nav-item">
+        <button
+          class="nav-link"
+          :class="{ active: activeTab === 'all' }"
+          @click="activeTab = 'all'; expandedId = null"
+        >
+          All
+        </button>
+      </li>
+    </ul>
 
     <div class="card shadow-sm">
       <div class="card-body table-scroll">
@@ -296,11 +376,18 @@ function statusBadgeClass(status) {
                   <span class="badge" :class="statusBadgeClass(r.status)">
                     {{ r.status }}
                   </span>
+                  <div
+                    v-if="releaseBadgeText(r)"
+                    class="badge bg-info text-dark mt-1"
+                  >
+                    {{ releaseBadgeText(r) }}
+                  </div>
                 </td>
                 <td>{{ r.request_date || "—" }}</td>
                 <td @click.stop>
                   <div class="d-flex gap-2">
                     <button
+                      v-if="activeTab !== 'release'"
                       class="btn btn-sm btn-success"
                       :disabled="!['with inventory', 'pending'].includes((r.status || '').toLowerCase())"
                       @click="approve(r.id)"
@@ -309,12 +396,22 @@ function statusBadgeClass(status) {
                     </button>
 
                     <button
+                      v-if="activeTab !== 'release'"
                       class="btn btn-sm btn-danger text-white"
                       :disabled="!['with inventory', 'pending'].includes((r.status || '').toLowerCase())"
                       @click="openRejectModal(r.id)"
                     >
                       Reject
                     </button>
+                    <button
+                      v-if="(r.status || '').toLowerCase() === 'approved'"
+                      class="btn btn-sm btn-info text-dark"
+                      @click="openReleaseModal(r.id)"
+                      :title="r.releasedAt ? 'Change how this request is being released' : 'Mark items as released to the requester'"
+                    >
+                      {{ r.releasedAt ? "Change Release" : "Release" }}
+                    </button>
+
                     <button
                       v-if="['approved', 'rejected'].includes((r.status || '').toLowerCase())"
                       class="btn btn-sm btn-outline-secondary"
@@ -399,6 +496,21 @@ function statusBadgeClass(status) {
                         <div class="small mb-1"><strong>Room:</strong> {{ r.room || "—" }}</div>
 
                         <div
+                          v-if="(r.status || '').toLowerCase() === 'approved'"
+                          class="small mb-1"
+                        >
+                          <strong>Release:</strong>
+                          <span v-if="r.releasedAt">
+                            {{ r.releaseMethod }} —
+                            {{ new Date(r.releasedAt).toLocaleString("en-PH") }}
+                            <span v-if="r.releasedBy" class="text-muted">
+                              (by {{ r.releasedBy }})
+                            </span>
+                          </span>
+                          <span v-else class="text-muted">Not yet released</span>
+                        </div>
+
+                        <div
                           v-if="(r.status || '').toLowerCase() === 'rejected' && r.rejectReason"
                           class="text-danger small mt-2"
                         >
@@ -413,7 +525,7 @@ function statusBadgeClass(status) {
 
             <tr v-if="displayedRequests.length === 0">
               <td colspan="7" class="text-center text-muted py-4">
-                {{ showAll ? "No requests found." : "No pending requests." }}
+                {{ emptyMessage }}
               </td>
             </tr>
           </tbody>
@@ -446,6 +558,56 @@ function statusBadgeClass(status) {
 
       <button class="btn btn-danger" @click="confirmReject" :disabled="!rejectReason.trim()">
         Reject
+      </button>
+    </div>
+
+  </div>
+</div>
+<div v-if="releaseModal" class="modal-backdrop-custom">
+  <div class="modal-custom">
+
+    <div class="modal-header">
+      <h5 class="mb-0">Release Request</h5>
+      <button class="btn-close" @click="releaseModal = false"></button>
+    </div>
+
+    <div class="modal-body">
+      <label class="form-label">How are these items going out?</label>
+
+      <div class="form-check">
+        <input
+          class="form-check-input"
+          type="radio"
+          id="release-pickup"
+          value="For Pick Up"
+          v-model="releaseMethod"
+        />
+        <label class="form-check-label" for="release-pickup">
+          For Pick Up — the requester collects it themselves
+        </label>
+      </div>
+
+      <div class="form-check">
+        <input
+          class="form-check-input"
+          type="radio"
+          id="release-delivery"
+          value="For Delivery"
+          v-model="releaseMethod"
+        />
+        <label class="form-check-label" for="release-delivery">
+          For Delivery — delivered to the request's location/room
+        </label>
+      </div>
+    </div>
+
+    <div class="modal-footer">
+      <button class="btn btn-secondary text-white" @click="releaseModal = false">
+        Cancel
+      </button>
+
+      <button class="btn btn-info text-dark" @click="confirmRelease">
+        Confirm Release
       </button>
     </div>
 
@@ -551,5 +713,15 @@ function statusBadgeClass(status) {
 
 .detail-panel {
   padding: 0.75rem 0.5rem;
+}
+
+.nav-tabs .nav-link {
+  background: none;
+  border: 1px solid transparent;
+  cursor: pointer;
+}
+
+.nav-tabs .nav-link.active {
+  font-weight: 600;
 }
 </style>

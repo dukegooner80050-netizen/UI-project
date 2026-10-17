@@ -22,7 +22,8 @@ $requests = Request::with([
     'user',
     'items.item',
     'uniforms.uniformVariant.type',
-    'uniforms.uniformVariant.department'
+    'uniforms.uniformVariant.department',
+    'releasedByUser'
 ])->get();
 
 return response()->json(
@@ -45,6 +46,9 @@ return response()->json(
             'notifiedAt' => $request->notified_at,
             'request_date' => $request->request_date,
             'borrowedAt' => $request->borrowed_at,
+            'releaseMethod' => $request->release_method,
+            'releasedAt' => $request->released_at,
+            'releasedBy' => optional($request->releasedByUser)->username,
             'items' => $request->items->map(function ($item) use ($request) {
 
                 return [
@@ -131,7 +135,8 @@ public function show($id)
         'user',
         'items.item',
         'uniforms.uniformVariant.type',
-        'uniforms.uniformVariant.department'
+        'uniforms.uniformVariant.department',
+        'releasedByUser'
     ])->find($id);
 
     if (!$request) {
@@ -166,6 +171,9 @@ public function show($id)
         'status' => $request->status,
         'request_date' => $request->request_date,
         'borrowedAt' => $request->borrowed_at,
+        'releaseMethod' => $request->release_method,
+        'releasedAt' => $request->released_at,
+        'releasedBy' => optional($request->releasedByUser)->username,
         'items' => $request->items->map(function ($item) use ($request) {
 
             return [
@@ -486,6 +494,8 @@ public function approve(HttpRequest $httpRequest, $id)
         'room' => $request->room,
         'purpose' => $request->purpose,
         'rejectReason' => $request->rejectReason,
+        'releaseMethod' => $request->release_method,
+        'releasedAt' => $request->released_at,
         'items' => $request->items->map(function ($item) use ($request) {
             return [
                 'requestItemId' => $item->idrequestItem,
@@ -568,6 +578,8 @@ return response()->json([
         'room' => $request->room,
         'purpose' => $request->purpose,
         'rejectReason' => $request->rejectReason,
+        'releaseMethod' => $request->release_method,
+        'releasedAt' => $request->released_at,
         'items' => $request->items->map(function ($item) use ($request) {
             return [
                 'requestItemId' => $item->idrequestItem,
@@ -631,6 +643,62 @@ public function resendNotification($id)
     $r->update(['notified_at' => now(), 'notified_by' => $actor->idUsers]);
     $this->logActivity($actor->idUsers, 'Resent in-app notification for Request #' . $r->idrequest);
     return response()->json(['message' => 'In-app notification recorded and made available to the requester.', 'notified_at' => $r->notified_at]);
+}
+
+// Roadmap #15 / #19: once a request is Approved, Inventory Management
+// records how the items are going out -- picked up by the requester, or
+// delivered to the request's location/room. This does not change the
+// request's status (it stays "Approved"); it just attaches the release
+// choice to it, same way "borrowed_at" already does for the approval
+// itself.
+public function release(HttpRequest $httpRequest, $id)
+{
+    $actor = request()->user();
+
+    $validated = $httpRequest->validate([
+        'release_method' => 'required|string|in:For Pick Up,For Delivery',
+    ]);
+
+    return DB::transaction(function () use ($id, $validated, $actor) {
+        $r = Request::where('idrequest', $id)->lockForUpdate()->first();
+
+        if (!$r) {
+            return response()->json(['message' => 'Request not found.'], 404);
+        }
+
+        if ($r->status !== 'Approved') {
+            return response()->json(['message' => 'Only Approved requests can be released.'], 422);
+        }
+
+        $wasAlreadyReleased = !is_null($r->released_at);
+
+        $r->update([
+            'release_method' => $validated['release_method'],
+            'released_at' => now(),
+            'released_by' => $actor->idUsers,
+        ]);
+
+        $this->createRequestNotification(
+            $r,
+            (int) $r->idUsers,
+            'released',
+            'Your request #' . $r->idrequest . ' is ready: ' . $validated['release_method'] . '.'
+        );
+
+        $this->logActivity(
+            $actor->idUsers,
+            ($wasAlreadyReleased ? 'Updated release method for' : 'Released') . ' Request #' . $r->idrequest . ' (' . $validated['release_method'] . ')'
+        );
+
+        return response()->json([
+            'message' => $wasAlreadyReleased
+                ? 'Release method updated.'
+                : 'Request marked as released.',
+            'releaseMethod' => $r->release_method,
+            'releasedAt' => $r->released_at,
+            'releasedBy' => $actor->username,
+        ]);
+    });
 }
 
 private function createRequestNotification($request, int $recipientId, string $type, string $message, ?int $actorId = null): void
