@@ -24,7 +24,7 @@ $user = new User([
     'full_name' => $validated['full_name'],
     'username'  => $validated['username'],
     'password'  => Hash::make($validated['password']),
-    'role'      => 'dean',
+    'role'      => 'instructor',
 ]);
 
         // Self sign-ups cannot sign in until an admin approves them.
@@ -74,10 +74,10 @@ if (($user->status ?? 'active') !== 'active') {
 $token = DB::transaction(function () use ($user) {
     $idleCutoff = now()->subMinutes(30);
 
-    if (strtolower((string) $user->role) === 'admin') {
+    if (strtolower((string) $user->role) === 'amo') {
         // Lock the same admin row for every admin login attempt. This serializes
         // concurrent logins so two simultaneous requests cannot both take the last slot.
-        $adminIds = User::whereRaw('LOWER(role) = ?', ['admin'])
+        $adminIds = User::whereRaw('LOWER(role) = ?', ['amo'])
             ->orderBy('idUsers')
             ->lockForUpdate()
             ->pluck('idUsers');
@@ -113,7 +113,7 @@ $token = DB::transaction(function () use ($user) {
     }
 
     return $user->createToken(
-        strtolower((string) $user->role) === 'admin' ? 'cims-admin-session' : 'cims'
+        strtolower((string) $user->role) === 'amo' ? 'cims-admin-session' : 'cims'
     )->plainTextToken;
 });
 

@@ -10,7 +10,7 @@ const viewMode = ref("item"); // "item" | "requester"
 const selectedMonth = ref(""); // "YYYY-MM"
 const currentUser = getCurrentUser();
 const isInventoryManagement =
-  String(currentUser?.role || "").toLowerCase() === "admin";
+  String(currentUser?.role || "").toLowerCase() === "amo";
 
 // Flattened list of every consumed thing (consumable items + uniforms)
 const consumptionRecords = ref([]);

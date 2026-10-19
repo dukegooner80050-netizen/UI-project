@@ -22,7 +22,7 @@ class AdminSessionTimeoutMiddleware
             $accessToken = PersonalAccessToken::findToken($plainTextToken);
 
             if ($accessToken && $accessToken->tokenable instanceof User
-                && strtolower((string) $accessToken->tokenable->role) === 'admin') {
+                && strtolower((string) $accessToken->tokenable->role) === 'amo') {
                 $lastActivity = $accessToken->last_used_at ?? $accessToken->created_at;
 
                 if (!$lastActivity || $lastActivity->lt(now()->subMinutes(30))) {

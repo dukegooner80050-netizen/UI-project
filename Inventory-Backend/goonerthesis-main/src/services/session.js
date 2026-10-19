@@ -7,7 +7,7 @@ export function requireUser() {
 }
 
 export function isAdmin(user) {
-  return (user?.role || "").toLowerCase() === "admin";
+  return (user?.role || "").toLowerCase() === "amo";
 }
 
 export function requireAdmin() {

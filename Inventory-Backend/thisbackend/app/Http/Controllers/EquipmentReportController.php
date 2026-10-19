@@ -78,7 +78,7 @@ class EquipmentReportController extends Controller
     public function index(Request $request)
     {
         $user = $request->user();
-        $isAdmin = strtolower((string) $user->role) === 'admin';
+        $isAdmin = strtolower((string) $user->role) === 'amo';
 
         $query = EquipmentReport::with(['item', 'reporter'])->orderByDesc('idreport');
 

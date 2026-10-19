@@ -20,7 +20,7 @@ import AlertMessage from "../components/AlertMessage.vue";
 
 // Only admins get the Account Requests / Account Management tabs. Everyone
 // else only ever sees General. The server enforces this too (those
-// endpoints are role:admin-gated) -- this just keeps the page from
+// endpoints are role:amo-gated) -- this just keeps the page from
 // showing tabs/controls a non-admin couldn't use anyway.
 const canEditLimit = computed(() => isAdmin(getCurrentUser()));
 const currentUser = getCurrentUser();
@@ -165,8 +165,14 @@ async function confirmSave() {
 
 const arLoading = ref(true);
 const arRequests = ref([]);
-const arRoleChoice = reactive({}); // { [idUsers]: "dean" | "cashier" | "admin" }
-const ROLE_LABELS = { dean: "Dean", cashier: "Cashier", admin: "Admin" };
+const arRoleChoice = reactive({}); // { [idUsers]: "amo" | "department_head" | "admin" | "instructor" | "cashier" }
+const ROLE_LABELS = {
+  amo: "AMO",
+  department_head: "Department Head",
+  admin: "Admin",
+  instructor: "Instructor",
+  cashier: "Cashier",
+};
 
 async function loadAccountRequests() {
   if (!canEditLimit.value) {
@@ -179,7 +185,7 @@ async function loadAccountRequests() {
   try {
     arRequests.value = await listAccountRequests();
     arRequests.value.forEach((r) => {
-      if (!arRoleChoice[r.idUsers]) arRoleChoice[r.idUsers] = "dean";
+      if (!arRoleChoice[r.idUsers]) arRoleChoice[r.idUsers] = "instructor";
     });
   } catch (e) {
     notify("danger", getErrorMessage(e));
@@ -202,13 +208,13 @@ function formatDate(date) {
 const arConfirmOpen = ref(false);
 const arConfirmAction = ref(""); // "approve" | "decline"
 const arConfirmTarget = ref(null);
-const arConfirmRole = ref("dean");
+const arConfirmRole = ref("instructor");
 const arWorking = ref(false);
 
 function arOpenApprove(request) {
   arConfirmAction.value = "approve";
   arConfirmTarget.value = request;
-  arConfirmRole.value = arRoleChoice[request.idUsers] || "dean";
+  arConfirmRole.value = arRoleChoice[request.idUsers] || "instructor";
   arConfirmOpen.value = true;
 }
 
@@ -258,7 +264,7 @@ async function arRunConfirmed() {
 
 const amLoading = ref(true);
 const amUsers = ref([]);
-const amRoleChoice = reactive({}); // { [idUsers]: "admin" | "dean" | "cashier" }
+const amRoleChoice = reactive({}); // { [idUsers]: "amo" | "department_head" | "admin" | "instructor" | "cashier" }
 
 async function loadUsers() {
   if (!canEditLimit.value) {
@@ -452,8 +458,8 @@ onMounted(async () => {
           <h6 class="mb-2">Monthly Request Limit</h6>
 
           <p class="text-muted small">
-            Maximum number of requests a cashier or dean can submit per
-            calendar month. Currently:
+            Maximum number of requests anyone except the AMO can submit
+            per calendar month. Currently:
             <strong>{{ currentLimit }}</strong> per month.
           </p>
 
@@ -563,9 +569,11 @@ onMounted(async () => {
                       v-model="arRoleChoice[r.idUsers]"
                       :aria-label="'Role for ' + r.full_name"
                     >
-                      <option value="dean">Dean</option>
-                      <option value="cashier">Cashier</option>
+                      <option value="amo">AMO</option>
+                      <option value="department_head">Department Head</option>
                       <option value="admin">Admin</option>
+                      <option value="instructor">Instructor</option>
+                      <option value="cashier">Cashier</option>
                     </select>
                   </td>
                   <td>
@@ -635,8 +643,10 @@ onMounted(async () => {
                       :disabled="isSelf(u)"
                       :aria-label="'Role for ' + u.full_name"
                     >
+                      <option value="amo">AMO</option>
+                      <option value="department_head">Department Head</option>
                       <option value="admin">Admin</option>
-                      <option value="dean">Dean</option>
+                      <option value="instructor">Instructor</option>
                       <option value="cashier">Cashier</option>
                     </select>
                   </td>
@@ -715,7 +725,7 @@ onMounted(async () => {
 
             <p class="text-muted small mt-3 mb-0">
               This setting applies system-wide to the monthly request
-              limit for cashiers and deans.
+              limit for everyone except the AMO.
             </p>
           </div>
 

@@ -22,7 +22,7 @@ const router = useRouter();
 /*  DASHBOARD FEATURES FOR REG.USER  */
 const user = computed(() => getCurrentUser());
 const isAdmin = computed(
-  () => (user.value?.role || "").toLowerCase() === "admin",
+  () => (user.value?.role || "").toLowerCase() === "amo",
 );
 
 /*  STATE  */

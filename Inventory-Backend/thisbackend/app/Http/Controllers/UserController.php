@@ -35,7 +35,7 @@ public function store(Request $request)
         'full_name' => 'required|string|max:255',
         'username'  => 'required|string|max:255|unique:users,username',
         'password'  => 'required|min:6',
-        'role'      => 'required|in:admin,dean,cashier',
+        'role'      => 'required|in:amo,department_head,admin,instructor,cashier',
     ]);
 
     $user = User::create([
@@ -70,7 +70,7 @@ public function update(Request $request, $id)
     $validated = $request->validate([
         'full_name' => 'required|string|max:255',
         'username'  => 'required|string|max:255|unique:users,username,' . $id . ',idUsers',
-        'role'      => 'required|in:admin,dean,cashier',
+        'role'      => 'required|in:amo,department_head,admin,instructor,cashier',
     ]);
 
     $user->update($validated);

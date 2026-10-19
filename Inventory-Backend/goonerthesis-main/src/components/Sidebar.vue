@@ -31,9 +31,9 @@ const route = useRoute()
 const user = computed(() => getCurrentUser())
 
 const isAdmin = computed(
-  () => (user.value?.role || "").toLowerCase() === "admin"
+  () => (user.value?.role || "").toLowerCase() === "amo"
 )
-const isDean = computed(() => (user.value?.role || "").toLowerCase() === "dean")
+const isDean = computed(() => (user.value?.role || "").toLowerCase() === "department_head")
 
 /* PENDING REQUEST COUNT */
 

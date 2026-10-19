@@ -70,7 +70,7 @@ const routes = [
         component: DashboardView,
         meta: {
           requiresAuth: true,
-          roles: ["admin", "dean", "cashier"],
+          roles: ["amo", "department_head", "admin", "instructor", "cashier"],
         },
       },
 
@@ -83,7 +83,7 @@ const routes = [
         component: InventoryView,
         meta: {
           requiresAuth: true,
-          roles: ["admin"],
+          roles: ["amo"],
         },
       },
 
@@ -92,7 +92,7 @@ const routes = [
         component: UniformsView,
         meta: {
           requiresAuth: true,
-          roles: ["admin"],
+          roles: ["amo"],
         },
       },
 
@@ -101,7 +101,7 @@ const routes = [
         component: OfficeSuppliesView,
         meta: {
           requiresAuth: true,
-          roles: ["admin"],
+          roles: ["amo"],
         },
       },
 
@@ -110,7 +110,7 @@ const routes = [
         component: SchoolEquipmentView,
         meta: {
           requiresAuth: true,
-          roles: ["admin"],
+          roles: ["amo"],
         },
       },
 
@@ -119,7 +119,7 @@ const routes = [
         component: CoordinatorRequestsView,
         meta: {
           requiresAuth: true,
-          roles: ["dean"],
+          roles: ["department_head"],
         },
       },
 
@@ -128,7 +128,7 @@ const routes = [
         component: PendingRequestsView,
         meta: {
           requiresAuth: true,
-          roles: ["admin"],
+          roles: ["amo"],
         },
       },
 
@@ -137,7 +137,7 @@ const routes = [
         component: ReportsView,
         meta: {
           requiresAuth: true,
-          roles: ["admin"],
+          roles: ["amo"],
         },
       },
 
@@ -146,7 +146,7 @@ const routes = [
         component: ActiveLogsView,
         meta: {
           requiresAuth: true,
-          roles: ["admin"],
+          roles: ["amo"],
         },
       },
 
@@ -155,7 +155,7 @@ const routes = [
         component: ConsumptionReportView,
         meta: {
           requiresAuth: true,
-          roles: ["admin", "dean", "cashier"],
+          roles: ["amo", "department_head", "admin", "instructor", "cashier"],
         },
       },
 
@@ -164,7 +164,7 @@ const routes = [
         component: EquipmentDistributionView,
         meta: {
           requiresAuth: true,
-          roles: ["admin"],
+          roles: ["amo"],
         },
       },
 
@@ -173,7 +173,7 @@ const routes = [
         component: EquipmentReportsView,
         meta: {
           requiresAuth: true,
-          roles: ["admin", "dean", "cashier"],
+          roles: ["amo", "department_head", "admin", "instructor", "cashier"],
         },
       },
 
@@ -182,7 +182,7 @@ const routes = [
         component: PendingInspectionView,
         meta: {
           requiresAuth: true,
-          roles: ["admin"],
+          roles: ["amo"],
         },
       },
 
@@ -191,7 +191,7 @@ const routes = [
         component: SettingsView,
         meta: {
           requiresAuth: true,
-          roles: ["admin", "dean", "cashier"],
+          roles: ["amo", "department_head", "admin", "instructor", "cashier"],
         },
       },
 
@@ -204,7 +204,7 @@ const routes = [
         component: RequestView,
         meta: {
           requiresAuth: true,
-          roles: ["admin", "dean", "cashier"],
+          roles: ["amo", "department_head", "admin", "instructor", "cashier"],
         },
       },
     ],

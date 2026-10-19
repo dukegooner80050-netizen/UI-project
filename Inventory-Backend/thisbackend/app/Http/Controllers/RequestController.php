@@ -148,7 +148,7 @@ public function show($id)
     $currentUser = request()->user();
 
     if (
-        strtolower((string) $currentUser->role) !== 'admin' &&
+        strtolower((string) $currentUser->role) !== 'amo' &&
         (int) $request->idUsers !== (int) $currentUser->idUsers
     ) {
         return response()->json([
@@ -233,7 +233,7 @@ if (
     $role = $request->user()->role;
 
     // Monthly request limit applies to everyone except admin.
-    if ($role !== 'admin') {
+    if ($role !== 'amo') {
         $limitSetting = \App\Models\Setting::where('setting_key', 'monthly_request_limit')->first();
         $limit = $limitSetting
             ? (int) $limitSetting->setting_value
@@ -257,7 +257,7 @@ if (
             'idUsers' => $idUsers,
             'approved_by' => null,
             'request_date' => $validated['request_date'],
-            'status' => in_array(strtolower((string) request()->user()->role), ['admin', 'dean'], true) ? 'With Inventory' : 'With Coordinator',
+            'status' => in_array(strtolower((string) request()->user()->role), ['amo', 'department_head'], true) ? 'With Inventory' : 'With Coordinator',
             'location' => $validated['location'],
             'room' => $validated['room'],
             'purpose' => $validated['purpose'],
@@ -334,7 +334,7 @@ $this->logActivity(
     "Created Request #{$newRequest->idrequest}"
 );
 if ($newRequest->status === 'With Coordinator') {
-    $coordinators = \App\Models\User::whereRaw('LOWER(role) = ?', ['dean'])->pluck('idUsers');
+    $coordinators = \App\Models\User::whereRaw('LOWER(role) = ?', ['department_head'])->pluck('idUsers');
     foreach ($coordinators as $coordinatorId) {
         $this->createRequestNotification($newRequest, (int) $coordinatorId, 'coordinator_review', 'Request #' . $newRequest->idrequest . ' is waiting for coordinator review.', (int) $idUsers);
     }
@@ -599,7 +599,7 @@ return response()->json([
 public function coordinatorQueue()
 {
     $user = request()->user();
-    if (strtolower((string) $user->role) !== 'dean') {
+    if (strtolower((string) $user->role) !== 'department_head') {
         return response()->json(['message' => 'Only the Dean/Academic Coordinator can forward requests.'], 403);
     }
     return response()->json(Request::with(['user', 'items.item', 'uniforms.uniformVariant.type', 'uniforms.uniformVariant.department'])
@@ -609,7 +609,7 @@ public function coordinatorQueue()
 public function forwardToInventory($id)
 {
     $actor = request()->user();
-    if (strtolower((string) $actor->role) !== 'dean') {
+    if (strtolower((string) $actor->role) !== 'department_head') {
         return response()->json(['message' => 'Only the Dean/Academic Coordinator can forward requests.'], 403);
     }
     return DB::transaction(function () use ($id, $actor) {
@@ -634,7 +634,7 @@ public function notifications()
 public function resendNotification($id)
 {
     $actor = request()->user();
-    if (strtolower((string) $actor->role) !== 'admin') return response()->json(['message' => 'Only Inventory Management can resend request notifications.'], 403);
+    if (strtolower((string) $actor->role) !== 'amo') return response()->json(['message' => 'Only Inventory Management can resend request notifications.'], 403);
     $r = Request::find($id);
     if (!$r) return response()->json(['message' => 'Request not found.'], 404);
     if (!in_array($r->status, ['Approved', 'Rejected'], true)) return response()->json(['message' => 'A notification can be resent after a final decision.'], 422);

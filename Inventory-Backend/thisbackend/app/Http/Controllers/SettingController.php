@@ -13,8 +13,8 @@ class SettingController extends Controller
 
     const DEFAULT_MONTHLY_REQUEST_LIMIT = 5;
 
-    // Any authenticated role can read this -- cashier/dean need to know
-    // their own limit, not just admin.
+    // Any authenticated role can read this -- everyone except the AMO
+    // needs to know their own limit.
     public function monthlyRequestLimit()
     {
         $setting = Setting::where('setting_key', 'monthly_request_limit')->first();

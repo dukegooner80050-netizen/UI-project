@@ -34,7 +34,7 @@ class AccountRequestController extends Controller
     public function approve(Request $request, $id)
     {
         $validated = $request->validate([
-            'role' => 'required|in:admin,dean,cashier',
+            'role' => 'required|in:admin,department_head,instructor,cashier',
         ]);
 
         return DB::transaction(function () use ($validated, $id) {

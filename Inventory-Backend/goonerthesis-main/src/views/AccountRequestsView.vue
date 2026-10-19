@@ -31,7 +31,7 @@ async function load() {
   try {
     requests.value = await listAccountRequests();
     requests.value.forEach((r) => {
-      if (!roleChoice[r.idUsers]) roleChoice[r.idUsers] = "dean";
+      if (!roleChoice[r.idUsers]) roleChoice[r.idUsers] = "instructor";
     });
   } catch (e) {
     notify("danger", getErrorMessage(e));
@@ -58,13 +58,13 @@ function formatDate(date) {
 const confirmOpen = ref(false);
 const confirmAction = ref(""); // "approve" | "decline"
 const confirmTarget = ref(null);
-const confirmRole = ref("dean");
+const confirmRole = ref("instructor");
 const working = ref(false);
 
 function openApprove(request) {
   confirmAction.value = "approve";
   confirmTarget.value = request;
-  confirmRole.value = roleChoice[request.idUsers] || "dean";
+  confirmRole.value = roleChoice[request.idUsers] || "instructor";
   confirmOpen.value = true;
 }
 
@@ -159,7 +159,7 @@ async function runConfirmed() {
                     v-model="roleChoice[r.idUsers]"
                     :aria-label="'Role for ' + r.full_name"
                   >
-                    <option value="dean">Dean</option>
+                    <option value="instructor">Dean</option>
                     <option value="cashier">Cashier</option>
                     <option value="admin">Admin</option>
                   </select>
@@ -216,7 +216,7 @@ async function runConfirmed() {
             can sign up again if this was a mistake.
           </p>
 
-          <p v-if="confirmAction === 'approve' && confirmRole === 'admin'" class="small text-danger mb-0">
+          <p v-if="confirmAction === 'approve' && confirmRole === 'amo'" class="small text-danger mb-0">
             Admins can change stock, approve requests and manage accounts.
           </p>
         </div>
