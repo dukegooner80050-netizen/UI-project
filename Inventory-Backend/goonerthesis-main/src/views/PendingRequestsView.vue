@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed, onMounted } from "vue";
+import { ref, reactive, computed, onMounted, watch } from "vue";
 import { getRequests, approveRequest, rejectRequest, releaseRequest } from "../services/requests";
 import { getCurrentUser } from "../services/storage";
 import { requireAdmin } from "../services/session";
@@ -7,6 +7,7 @@ import AlertMessage from "../components/AlertMessage.vue";
 import DueBadge from "../components/DueBadge.vue";
 import { getErrorMessage } from "../services/errors";
 import { isReturnableType } from "../services/itemTypes";
+import { printBorrowerForm, hasBorrowedItems } from "../services/borrowerForm";
 
 const showAlert = ref(false);
 const alertType = ref("success");
@@ -27,6 +28,17 @@ const expandedId = ref(null);
 // two separate admin actions now, so they get two separate tabs instead
 // of living in the same undifferentiated list.
 const activeTab = ref("pending"); // "pending" | "release" | "all"
+
+// On the All tab the Actions buttons are collapsed behind a small toggle
+// so the table stays compact. Keyed by request id; other tabs always show
+// their buttons.
+const actionsOpen = reactive({});
+function toggleActions(id) {
+  actionsOpen[id] = !actionsOpen[id];
+}
+watch(activeTab, () => {
+  for (const key of Object.keys(actionsOpen)) delete actionsOpen[key];
+});
 
 // Due dates the admin picks per borrowed line before approving
 // (roadmap #8). Keyed "requestId:requestItemId". Blank = item default.
@@ -356,7 +368,7 @@ function statusBadgeClass(status) {
               <th style="width: 100px">Total Qty</th>
               <th style="width: 120px">Status</th>
               <th style="width: 130px">Date</th>
-              <th style="width: 220px">Actions</th>
+              <th :style="{ width: activeTab === 'all' ? '130px' : '220px' }">Actions</th>
             </tr>
           </thead>
 
@@ -385,7 +397,19 @@ function statusBadgeClass(status) {
                 </td>
                 <td>{{ r.request_date || "—" }}</td>
                 <td @click.stop>
-                  <div class="d-flex gap-2">
+                  <button
+                    v-if="activeTab === 'all'"
+                    class="btn btn-sm btn-outline-secondary"
+                    :aria-expanded="!!actionsOpen[r.id]"
+                    @click="toggleActions(r.id)"
+                  >
+                    Actions
+                    <span :class="{ rotated: actionsOpen[r.id] }" class="chevron ms-1">▶</span>
+                  </button>
+                  <div
+                    v-if="activeTab !== 'all' || actionsOpen[r.id]"
+                    :class="activeTab === 'all' ? 'd-flex flex-column align-items-stretch gap-1 mt-2' : 'd-flex gap-2'"
+                  >
                     <button
                       v-if="activeTab !== 'release'"
                       class="btn btn-sm btn-success"
@@ -411,6 +435,13 @@ function statusBadgeClass(status) {
                     >
                       {{ r.releasedAt ? "Change Release" : "Release" }}
                     </button>
+
+                    <button
+                      v-if="(r.status || '').toLowerCase() === 'approved' && hasBorrowedItems(r)"
+                      class="btn btn-sm btn-outline-dark"
+                      @click="printBorrowerForm(r)"
+                      title="Print the Borrower's Form for this request"
+                    >Print Form</button>
 
                     <button
                       v-if="['approved', 'rejected'].includes((r.status || '').toLowerCase())"

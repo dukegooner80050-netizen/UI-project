@@ -23,7 +23,8 @@ $requests = Request::with([
     'items.item',
     'uniforms.uniformVariant.type',
     'uniforms.uniformVariant.department',
-    'releasedByUser'
+    'releasedByUser',
+    'forwardedByUser'
 ])->get();
 
 return response()->json(
@@ -34,6 +35,8 @@ return response()->json(
             'id' => $request->idrequest,
 
             'requester' => optional($request->user)->username,
+            'requesterName' => optional($request->user)->full_name,
+            'notedBy' => optional($request->forwardedByUser)->full_name,
 
             'role' => optional($request->user)->role,
 

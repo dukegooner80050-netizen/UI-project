@@ -36,6 +36,11 @@ public function user()
     return $this->belongsTo(User::class, 'idUsers', 'idUsers');
 }
 
+public function forwardedByUser()
+{
+    return $this->belongsTo(User::class, 'coordinator_forwarded_by', 'idUsers');
+}
+
 public function releasedByUser()
 {
     return $this->belongsTo(User::class, 'released_by', 'idUsers');

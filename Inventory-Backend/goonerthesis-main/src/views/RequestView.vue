@@ -1,4 +1,5 @@
 <script setup>
+import { printBorrowerForm, hasBorrowedItems } from "../services/borrowerForm";
 import { ref, watch, computed, onMounted, nextTick } from "vue";
 import axios from "../axios";
 import { createRequestBatch, getRequests } from "../services/requests";
@@ -322,6 +323,10 @@ async function loadMyRequests() {
       })
       .map((request) => ({
         id: request.id,
+        requester: request.requester,
+        requesterName: request.requesterName,
+        notedBy: request.notedBy,
+        request_date: request.request_date,
         status: request.status,
         date: request.request_date,
         borrowedAt: request.borrowedAt,
@@ -1214,6 +1219,13 @@ watch(activeTab, async () => {
               >
                 Approved — awaiting release.
               </div>
+              <button
+                v-if="(selected.status || '').toLowerCase() === 'approved' && hasBorrowedItems(selected)"
+                class="btn btn-sm btn-outline-dark mt-2"
+                @click="printBorrowerForm(selected)"
+              >
+                Print Borrower's Form
+              </button>
 
               <div
                 v-if="
