@@ -397,6 +397,9 @@ function statusBadgeClass(status) {
                   >
                     {{ releaseBadgeText(r) }}
                   </div>
+                  <div v-if="r.receivedAt" class="badge bg-success mt-1">
+                    Received
+                  </div>
                 </td>
                 <td>{{ r.request_date || "—" }}</td>
                 <td @click.stop>
@@ -542,6 +545,18 @@ function statusBadgeClass(status) {
                             </span>
                           </span>
                           <span v-else class="text-muted">Not yet released</span>
+                        </div>
+
+                        <div
+                          v-if="r.releasedAt && (r.status || '').toLowerCase() !== 'rejected'"
+                          class="small mb-1"
+                        >
+                          <strong>Received:</strong>
+                          <span v-if="r.receivedAt">
+                            Confirmed by requester —
+                            {{ new Date(r.receivedAt).toLocaleString("en-PH") }}
+                          </span>
+                          <span v-else class="text-muted">Not yet confirmed by the requester</span>
                         </div>
 
                         <div

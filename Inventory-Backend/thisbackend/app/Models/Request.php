@@ -20,6 +20,7 @@ protected $fillable = [
     'purpose',
     'rejectReason',
     'approval_remarks',
+    'received_at',
     'borrowed_at',
     'coordinator_forwarded_by',
     'coordinator_forwarded_at',

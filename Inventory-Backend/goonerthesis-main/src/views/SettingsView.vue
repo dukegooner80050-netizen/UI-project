@@ -1,5 +1,6 @@
 <script setup>
-import { ref, reactive, computed, onMounted } from "vue";
+import { ref, reactive, computed, onMounted, watch } from "vue";
+import { useRoute } from "vue-router";
 import {
   getMonthlyRequestLimit,
   updateMonthlyRequestLimit,
@@ -26,6 +27,16 @@ const canEditLimit = computed(() => isAdmin(getCurrentUser()));
 const currentUser = getCurrentUser();
 
 const activeTab = ref("GENERAL"); // GENERAL | ACCOUNT_REQUESTS | ACCOUNT_MANAGEMENT
+
+// The bell links here with ?tab=ACCOUNT_REQUESTS (AMO only).
+const route = useRoute();
+function openTabFromLink() {
+  if (route.query.tab === "ACCOUNT_REQUESTS" && canEditLimit.value) {
+    activeTab.value = "ACCOUNT_REQUESTS";
+  }
+}
+openTabFromLink();
+watch(() => route.query.tab, openTabFromLink);
 
 // ===== SHARED ALERT (used by every tab) =====
 
@@ -249,6 +260,7 @@ async function arRunConfirmed() {
     arConfirmOpen.value = false;
     arConfirmTarget.value = null;
     await loadAccountRequests();
+    window.dispatchEvent(new Event("cims:accounts-changed"));
   } catch (e) {
     arWorking.value = false;
     arConfirmOpen.value = false;

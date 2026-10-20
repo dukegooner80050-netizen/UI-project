@@ -63,6 +63,12 @@ export async function rejectRequest(id, rejectReason) {
     return response.data;
 }
 
+// The requester confirms they received the released items.
+export async function confirmReceived(id) {
+    const response = await axios.put(`/requests/${id}/confirm-received`);
+    return response.data;
+}
+
 // releaseMethod: "For Pick Up" | "For Delivery" (roadmap #15 / #19).
 export async function releaseRequest(id, releaseMethod) {
     const response = await axios.put(

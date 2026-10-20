@@ -10,6 +10,7 @@ import {
 import { getCurrentUser } from "../services/storage";
 import { isAdmin } from "../services/session";
 import { listReturnReports } from "../services/returnReports";
+import { listAccountRequests } from "../services/accountRequests";
 import DueBadge from "./DueBadge.vue";
 
 // One bell for everything that used to sit on the page as a banner or panel:
@@ -32,6 +33,7 @@ const notes = ref([]);
 const overdue = ref([]);
 const critical = ref([]);
 const returnsToCheck = ref([]); // AMO: borrowers' return reports awaiting a check
+const signups = ref([]); // AMO: new accounts waiting for approval
 // Updates that were unread when the panel opened stay highlighted until it
 // closes, even though they are marked as read on the server straight away.
 const highlighted = ref(new Set());
@@ -48,7 +50,8 @@ const badgeCount = computed(
     unreadCount.value +
     overdue.value.length +
     critical.value.length +
-    returnsToCheck.value.length,
+    returnsToCheck.value.length +
+    signups.value.length,
 );
 
 const recentNotes = computed(() => notes.value.slice(0, 10));
@@ -58,7 +61,8 @@ const isEmpty = computed(
     !recentNotes.value.length &&
     !overdue.value.length &&
     !critical.value.length &&
-    !returnsToCheck.value.length,
+    !returnsToCheck.value.length &&
+    !signups.value.length,
 );
 
 // ---- loading (each source on its own: one failing never hides the rest) ----
@@ -93,6 +97,18 @@ async function loadCritical() {
   }
 }
 
+async function loadSignups() {
+  if (!admin.value) {
+    signups.value = [];
+    return;
+  }
+  try {
+    signups.value = await listAccountRequests();
+  } catch (e) {
+    console.error("Failed to load account requests:", e);
+  }
+}
+
 async function loadReturns() {
   if (!admin.value) {
     returnsToCheck.value = [];
@@ -106,7 +122,13 @@ async function loadReturns() {
 }
 
 async function load() {
-  await Promise.all([loadNotes(), loadOverdue(), loadCritical(), loadReturns()]);
+  await Promise.all([
+    loadNotes(),
+    loadOverdue(),
+    loadCritical(),
+    loadReturns(),
+    loadSignups(),
+  ]);
 
   if (!firstLoadDone) {
     firstLoadDone = true;
@@ -127,7 +149,7 @@ function loginKey() {
 }
 
 function maybeAutoOpen() {
-  if (unreadCount.value === 0) return;
+  if (unreadCount.value === 0 && signups.value.length === 0) return;
   try {
     if (sessionStorage.getItem(loginKey())) return;
     sessionStorage.setItem(loginKey(), "1");
@@ -182,6 +204,11 @@ function goReturns() {
   router.push("/dashboard");
 }
 
+function goSignups() {
+  closePanel();
+  router.push({ path: "/settings", query: { tab: "ACCOUNT_REQUESTS" } });
+}
+
 function goRestock() {
   closePanel();
   router.push("/dashboard");
@@ -190,6 +217,10 @@ function goRestock() {
 // ---- display helpers ----
 function noteLabel(n) {
   if (n.event_type === "forwarded") return "Forwarded";
+  if (n.event_type === "released") return "Ready";
+  if (n.event_type === "received") return "Received";
+  if (n.event_type === "inventory_review") return "To approve";
+  if (n.event_type === "coordinator_review") return "To review";
   if (n.event_type === "return_reported") return "Return";
   if (n.event_type === "return_confirmed") return "Confirmed";
   if (n.event_type === "return_rejected") return "Not received";
@@ -202,7 +233,9 @@ function noteBadge(n) {
   const label = noteLabel(n);
   if (label === "Approved" || label === "Confirmed") return "bg-success";
   if (label === "Rejected" || label === "Not received") return "bg-danger";
-  if (label === "Return") return "bg-warning text-dark";
+  if (label === "Return" || label === "To approve" || label === "To review")
+    return "bg-warning text-dark";
+  if (label === "Ready" || label === "Received") return "bg-success";
   return "bg-info text-dark";
 }
 
@@ -223,6 +256,8 @@ onMounted(() => {
   document.addEventListener("visibilitychange", onVisible);
   // The restock panel fires this after a restock request is created/changed.
   window.addEventListener("cims:restock-changed", loadCritical);
+  // Settings fires this after an account request is approved or declined.
+  window.addEventListener("cims:accounts-changed", loadSignups);
 });
 
 onBeforeUnmount(() => {
@@ -231,6 +266,7 @@ onBeforeUnmount(() => {
   document.removeEventListener("keydown", onKey);
   document.removeEventListener("visibilitychange", onVisible);
   window.removeEventListener("cims:restock-changed", loadCritical);
+  window.removeEventListener("cims:accounts-changed", loadSignups);
 });
 
 // Things change while moving around (returns, new requests, stock).
@@ -284,6 +320,23 @@ watch(() => route.fullPath, load);
               <div class="small text-muted">{{ formatWhen(n.created_at) }}</div>
             </li>
           </ul>
+        </section>
+
+        <!-- NEW SIGN-UPS WAITING FOR THE AMO -->
+        <section v-if="signups.length" class="bell-section">
+          <div class="bell-title text-warning">
+            New users waiting for approval ({{ signups.length }})
+          </div>
+          <ul class="list-unstyled mb-0">
+            <li v-for="u in signups" :key="u.idUsers" class="bell-item">
+              <strong>{{ u.full_name }}</strong>
+              <span class="text-muted"> ({{ u.username }})</span>
+              <div class="small text-muted">{{ formatWhen(u.requested_at) }}</div>
+            </li>
+          </ul>
+          <button type="button" class="btn btn-warning btn-sm mt-2" @click="goSignups">
+            Review accounts
+          </button>
         </section>
 
         <!-- RETURNS WAITING FOR THE AMO -->

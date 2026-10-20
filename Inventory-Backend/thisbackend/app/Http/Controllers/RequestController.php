@@ -54,6 +54,7 @@ return response()->json(
             'borrowedAt' => $request->borrowed_at,
             'releaseMethod' => $request->release_method,
             'releasedAt' => $request->released_at,
+            'receivedAt' => $request->received_at,
             'releasedBy' => optional($request->releasedByUser)->username,
             'items' => $request->items->map(function ($item) use ($request) {
 
@@ -241,6 +242,7 @@ public function show($id)
         'borrowedAt' => $request->borrowed_at,
         'releaseMethod' => $request->release_method,
         'releasedAt' => $request->released_at,
+        'receivedAt' => $request->received_at,
         'releasedBy' => optional($request->releasedByUser)->username,
         'items' => $request->items->map(function ($item) use ($request) {
 
@@ -420,6 +422,9 @@ $this->logActivity(
     $newRequest->idUsers,
     "Created Request #{$newRequest->idrequest}"
 );
+if ($newRequest->status === 'With Inventory' && strtolower((string) $role) !== 'amo') {
+    $this->notifyInventoryOfRequest($newRequest, (int) $idUsers);
+}
 if ($newRequest->status === 'With Coordinator') {
     $coordinators = \App\Models\User::whereRaw('LOWER(role) = ?', ['department_head'])->pluck('idUsers');
     foreach ($coordinators as $coordinatorId) {
@@ -588,6 +593,7 @@ public function approve(HttpRequest $httpRequest, $id)
         'approvalRemarks' => $request->approval_remarks,
         'releaseMethod' => $request->release_method,
         'releasedAt' => $request->released_at,
+        'receivedAt' => $request->received_at,
         'items' => $request->items->map(function ($item) use ($request) {
             return [
                 'requestItemId' => $item->idrequestItem,
@@ -673,6 +679,7 @@ return response()->json([
         'approvalRemarks' => $request->approval_remarks,
         'releaseMethod' => $request->release_method,
         'releasedAt' => $request->released_at,
+        'receivedAt' => $request->received_at,
         'items' => $request->items->map(function ($item) use ($request) {
             return [
                 'requestItemId' => $item->idrequestItem,
@@ -712,6 +719,7 @@ public function forwardToInventory($id)
         $r->update(['status' => 'With Inventory', 'coordinator_forwarded_by' => $actor->idUsers, 'coordinator_forwarded_at' => now()]);
         $r->load('user');
         $this->createRequestNotification($r, (int) $r->idUsers, 'forwarded', 'Your request #' . $r->idrequest . ' was forwarded to Inventory Management.');
+        $this->notifyInventoryOfRequest($r, (int) $actor->idUsers);
         $r->update(['notified_at' => now(), 'notified_by' => $actor->idUsers]);
         $this->logActivity($actor->idUsers, 'Forwarded Request #' . $r->idrequest . ' to Inventory Management');
         return response()->json(['message' => 'Request forwarded to Inventory Management.', 'status' => $r->status]);
@@ -994,6 +1002,10 @@ public function release(HttpRequest $httpRequest, $id)
             return response()->json(['message' => 'Only Approved requests can be released.'], 422);
         }
 
+        if (!is_null($r->received_at)) {
+            return response()->json(['message' => 'The requester already confirmed receiving this request, so its release can no longer be changed.'], 422);
+        }
+
         $wasAlreadyReleased = !is_null($r->released_at);
 
         $r->update([
@@ -1020,9 +1032,67 @@ public function release(HttpRequest $httpRequest, $id)
                 : 'Request marked as released.',
             'releaseMethod' => $r->release_method,
             'releasedAt' => $r->released_at,
+            'receivedAt' => $r->received_at,
             'releasedBy' => $actor->username,
         ]);
     });
+}
+
+// Requester confirms they received the released items (proof of receipt).
+public function confirmReceived($id)
+{
+    $user = request()->user();
+
+    return DB::transaction(function () use ($id, $user) {
+        $r = Request::with('user')->where('idrequest', $id)->lockForUpdate()->first();
+
+        if (!$r) {
+            return response()->json(['message' => 'Request not found.'], 404);
+        }
+        if ((int) $r->idUsers !== (int) $user->idUsers) {
+            return response()->json(['message' => 'Only the person who made this request can confirm receiving it.'], 403);
+        }
+        if (!in_array($r->status, ['Approved', 'Returned'], true) || is_null($r->released_at)) {
+            return response()->json(['message' => 'This request has not been released yet.'], 422);
+        }
+        if (!is_null($r->received_at)) {
+            return response()->json(['message' => 'You already confirmed receiving this request.'], 422);
+        }
+
+        $r->update(['received_at' => now()]);
+
+        foreach (\App\Models\User::whereRaw('LOWER(role) = ?', ['amo'])->pluck('idUsers') as $amoId) {
+            $this->createRequestNotification(
+                $r,
+                (int) $amoId,
+                'received',
+                ($user->username ?? 'The requester') . ' confirmed receiving request #' . $r->idrequest . '.',
+                (int) $user->idUsers
+            );
+        }
+
+        $this->logActivity($user->idUsers, 'Confirmed receiving Request #' . $r->idrequest);
+
+        return response()->json([
+            'message' => 'Thanks, your receipt has been recorded.',
+            'receivedAt' => $r->received_at,
+        ]);
+    });
+}
+
+// Tells every AMO account a request is now waiting for their decision.
+private function notifyInventoryOfRequest($request, int $actorId): void
+{
+    $who = optional($request->user)->username ?? optional(\App\Models\User::find($request->idUsers))->username ?? 'A user';
+    foreach (\App\Models\User::whereRaw('LOWER(role) = ?', ['amo'])->pluck('idUsers') as $amoId) {
+        $this->createRequestNotification(
+            $request,
+            (int) $amoId,
+            'inventory_review',
+            'Request #' . $request->idrequest . ' from ' . $who . ' is waiting for your approval.',
+            $actorId
+        );
+    }
 }
 
 private function createRequestNotification($request, int $recipientId, string $type, string $message, ?int $actorId = null): void

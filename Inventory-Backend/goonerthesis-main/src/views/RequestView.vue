@@ -2,7 +2,7 @@
 import { printBorrowerForm, hasBorrowedItems } from "../services/borrowerForm";
 import { ref, watch, computed, onMounted, nextTick } from "vue";
 import axios from "../axios";
-import { createRequestBatch, getRequests } from "../services/requests";
+import { createRequestBatch, getRequests, confirmReceived } from "../services/requests";
 import { listUniformTypes, listUniformVariants } from "../services/uniforms";
 import { getCurrentUser } from "../services/storage";
 import { getItems } from "../services/items";
@@ -90,6 +90,29 @@ function startReport(item) {
 
 // Send only validates and asks "are you sure?"; the report itself goes out
 // from the confirmation modal (doReport).
+const receiveConfirmOpen = ref(false);
+const receiveBusy = ref(false);
+
+async function doConfirmReceived() {
+  const id = selected.value?.id;
+  receiveConfirmOpen.value = false;
+  if (!id) return;
+  receiveBusy.value = true;
+  try {
+    await confirmReceived(id);
+    await loadMyRequests();
+    selected.value = myRequests.value.find((r) => r.id === id) || null;
+    showWarning("Receipt recorded", "Thanks, your receipt has been recorded.");
+  } catch (e) {
+    showWarning(
+      "Confirm Received",
+      e.response?.data?.message || "Unable to record your receipt.",
+    );
+  } finally {
+    receiveBusy.value = false;
+  }
+}
+
 const reportConfirmOpen = ref(false);
 const reportTarget = ref(null);
 const reportTargetQty = ref(0);
@@ -372,6 +395,7 @@ async function loadMyRequests() {
         borrowedAt: request.borrowedAt,
         releaseMethod: request.releaseMethod,
         releasedAt: request.releasedAt,
+        receivedAt: request.receivedAt,
         location: request.location,
         room: request.room,
         purpose: request.purpose,
@@ -1346,6 +1370,24 @@ watch(activeTab, async () => {
               >
                 Approved — awaiting release.
               </div>
+
+              <div v-if="selected.releasedAt" class="mt-1">
+                <template v-if="selected.receivedAt">
+                  <strong>Received:</strong>
+                  <span class="badge bg-success">Confirmed</span>
+                  <div class="text-muted small">
+                    {{ new Date(selected.receivedAt).toLocaleString("en-PH") }}
+                  </div>
+                </template>
+                <button
+                  v-else
+                  type="button"
+                  class="btn btn-sm btn-success mt-1"
+                  @click="receiveConfirmOpen = true"
+                >
+                  Confirm received
+                </button>
+              </div>
               <button
                 v-if="(selected.status || '').toLowerCase() === 'approved' && hasBorrowedItems(selected)"
                 class="btn btn-sm btn-dark text-white mt-2"
@@ -1460,6 +1502,34 @@ watch(activeTab, async () => {
         </button>
         <button class="btn btn-success" @click="mixConflictSubmit">
           Submit current request
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <div v-if="receiveConfirmOpen" class="modal-backdrop-custom">
+    <div class="modal-custom" style="max-width: 420px">
+      <div class="modal-header">
+        <h5 class="mb-0">Confirm Received</h5>
+        <button class="btn-close" @click="receiveConfirmOpen = false"></button>
+      </div>
+
+      <div class="modal-body">
+        <p class="mb-2">
+          Confirm that you received the items for request
+          <strong>#{{ selected?.id }}</strong>?
+        </p>
+        <p class="text-muted small mb-0">
+          This is recorded with the date and time and can't be undone.
+        </p>
+      </div>
+
+      <div class="modal-footer">
+        <button class="btn btn-secondary" @click="receiveConfirmOpen = false">
+          Cancel
+        </button>
+        <button class="btn btn-success" :disabled="receiveBusy" @click="doConfirmReceived">
+          Confirm
         </button>
       </div>
     </div>
