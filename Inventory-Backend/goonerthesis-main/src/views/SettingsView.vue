@@ -784,8 +784,13 @@ onMounted(async () => {
             can sign up again if this was a mistake.
           </p>
 
-          <p v-if="arConfirmAction === 'approve' && arConfirmRole === 'admin'" class="small text-danger mb-0">
-            Admins can change stock, approve requests and manage accounts.
+          <p v-if="arConfirmAction === 'approve' && arConfirmRole === 'amo'" class="small text-danger mb-0">
+            The AMO can change stock, approve requests and manage accounts.
+            Only one AMO account is allowed.
+          </p>
+          <p v-else-if="arConfirmAction === 'approve' && arConfirmRole === 'admin'" class="small text-muted mb-0">
+            Admins are office staff. They can submit requests but cannot
+            manage inventory or accounts.
           </p>
         </div>
 

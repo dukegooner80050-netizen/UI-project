@@ -1198,6 +1198,19 @@ watch(activeTab, async () => {
               <ul>
                 <li v-for="(item, i) in selected.items" :key="'item-' + i">
                   {{ item.itemName }} (Qty: {{ item.qty }})
+                  <span
+                    v-if="isReturnableType(item.itemType) && selected.status === 'Approved'"
+                    class="text-muted small ms-1"
+                  >
+                    &middot; {{ item.returnedQty }} returned &middot;
+                    {{ item.borrowedQty }} still out
+                  </span>
+                  <span
+                    v-else-if="selected.status === 'Approved' && !isReturnableType(item.itemType)"
+                    class="text-muted small ms-1"
+                  >
+                    &middot; issued, no return needed
+                  </span>
                   <DueBadge
                     v-if="item.dueDate && item.borrowedQty > 0 && !item.pendingReturnQty"
                     class="ms-1"

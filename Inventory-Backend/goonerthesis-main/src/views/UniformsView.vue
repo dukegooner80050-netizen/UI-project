@@ -303,9 +303,20 @@ const variantSize = ref("");
 const variantPrice = ref(0);
 const variantQuantity = ref(1);
 
+// On a course page (e.g. BSMT) a new variant can only go to that course's
+// department; the "All Uniforms" page still offers every department.
+const addableDepartments = computed(() =>
+  isAllView.value
+    ? departments.value
+    : departments.value.filter((d) => d.dept_name === course.value),
+);
+
 function openAddVariant() {
   variantTypeId.value = "";
-  variantDepartmentId.value = "";
+  variantDepartmentId.value =
+    !isAllView.value && addableDepartments.value.length === 1
+      ? String(addableDepartments.value[0].iddept)
+      : "";
   variantSize.value = "";
   variantPrice.value = 0;
   variantQuantity.value = 1;
@@ -737,7 +748,7 @@ const visibleTypes = computed(() => {
 
                   <!-- DELETE -->
                   <button class="btn btn-danger btn-sm" @click="removeVariant(variant)">
-                    Delete
+                    Remove
                   </button>
                 </div>
               </td>
@@ -907,7 +918,7 @@ const visibleTypes = computed(() => {
           <label class="form-label"> Department </label>
           <select class="form-select mb-3" v-model="variantDepartmentId">
             <option value="">Select department</option>
-            <option v-for="department in departments" :key="department.iddept" :value="String(department.iddept)">
+            <option v-for="department in addableDepartments" :key="department.iddept" :value="String(department.iddept)">
               {{ department.dept_name }}
             </option>
           </select>

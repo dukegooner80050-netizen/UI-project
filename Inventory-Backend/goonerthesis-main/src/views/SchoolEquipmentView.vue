@@ -638,7 +638,7 @@ async function confirmModal() {
               ? `Restock: ${currentItem?.name}`
               : modalMode === "edit"
                 ? `Edit: ${currentItem?.name}`
-                : `Return: ${currentItem?.name}`
+                : `Return: ${currentItem?.item_name || currentItem?.name}`
           }}
         </h5>
         <button class="btn-close" @click="closeModal"></button>
