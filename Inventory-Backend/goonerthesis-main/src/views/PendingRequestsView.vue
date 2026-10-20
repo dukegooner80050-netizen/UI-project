@@ -365,7 +365,7 @@ function statusBadgeClass(status) {
               <th style="width: 100px">Total Qty</th>
               <th style="width: 120px">Status</th>
               <th style="width: 130px">Date</th>
-              <th :style="{ width: activeTab === 'all' ? '130px' : '220px' }">Actions</th>
+              <th :style="{ width: activeTab === 'all' ? '130px' : '250px' }">Actions</th>
             </tr>
           </thead>
 
@@ -373,7 +373,7 @@ function statusBadgeClass(status) {
             <template v-for="r in displayedRequests" :key="r.id">
               <tr style="cursor: pointer" @click="toggleExpand(r.id)">
                 <td class="text-center text-muted">
-                  <span :class="{ rotated: expandedId === r.id }" class="chevron">▶</span>
+                  <span :class="{ rotated: expandedId === r.id }" class="chevron">▶&#xFE0E;</span>
                 </td>
                 <td>
                   <div>{{ r.requester }}</div>
@@ -396,16 +396,16 @@ function statusBadgeClass(status) {
                 <td @click.stop>
                   <button
                     v-if="activeTab === 'all'"
-                    class="btn btn-sm btn-secondary"
+                    class="btn btn-sm btn-secondary text-white"
                     :aria-expanded="!!actionsOpen[r.id]"
                     @click="toggleActions(r.id)"
                   >
                     Actions
-                    <span :class="{ rotated: actionsOpen[r.id] }" class="chevron ms-1">▶</span>
+                    <span :class="{ rotated: actionsOpen[r.id] }" class="chevron ms-1">▶&#xFE0E;</span>
                   </button>
                   <div
                     v-if="activeTab !== 'all' || actionsOpen[r.id]"
-                    :class="activeTab === 'all' ? 'd-flex flex-column align-items-stretch gap-1 mt-2' : 'd-flex gap-2'"
+                    :class="activeTab === 'all' ? 'd-flex flex-column align-items-stretch gap-1 mt-2 text-nowrap' : 'd-flex gap-1 text-nowrap'"
                   >
                     <button
                       v-if="activeTab !== 'release'"
