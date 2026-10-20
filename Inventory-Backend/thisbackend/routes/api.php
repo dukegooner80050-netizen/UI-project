@@ -100,6 +100,7 @@ Route::middleware([AdminSessionTimeoutMiddleware::class, 'auth:sanctum'])->group
         Route::get('/requests', [RequestController::class, 'index']);
         Route::get('/requests/overdue/mine', [RequestController::class, 'myOverdue']);
         Route::get('/request-notifications', [RequestController::class, 'notifications']);
+        Route::post('/request-notifications/read', [RequestController::class, 'readNotifications']);
         Route::get('/requests/coordinator-queue', [RequestController::class, 'coordinatorQueue'])->middleware('role:department_head');
         Route::put('/requests/{id}/forward-to-inventory', [RequestController::class, 'forwardToInventory'])->middleware('role:department_head');
         Route::get('/requests/{id}', [RequestController::class, 'show']);
@@ -121,6 +122,9 @@ Route::middleware([AdminSessionTimeoutMiddleware::class, 'auth:sanctum'])->group
     Route::middleware('role:amo,department_head,admin,instructor,cashier')->group(function () {
 
         Route::post('/requests', [RequestController::class, 'store']);
+
+        // Borrowers report that they brought an item back (the AMO confirms it).
+        Route::post('/requests/items/{id}/report-return', [RequestController::class, 'reportReturn']);
 
         // Anyone who submits requests needs to see their own limit.
         Route::get('/settings/monthly-request-limit', [SettingController::class, 'monthlyRequestLimit']);
@@ -281,6 +285,11 @@ Route::middleware('role:amo,department_head,admin,instructor,cashier')->group(fu
             '/requests/items/{id}/return',
             [RequestController::class, 'returnEquipment']
         );
+
+        // Return reports waiting for the AMO to check them.
+        Route::get('/return-reports', [RequestController::class, 'returnReports']);
+        Route::put('/return-reports/{id}/confirm', [RequestController::class, 'confirmReturnReport']);
+        Route::put('/return-reports/{id}/reject', [RequestController::class, 'rejectReturnReport']);
 
 
         /*

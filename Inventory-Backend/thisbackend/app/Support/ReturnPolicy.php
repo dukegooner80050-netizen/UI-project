@@ -4,6 +4,7 @@ namespace App\Support;
 
 use App\Models\Item;
 use App\Models\Request;
+use App\Models\ReturnReport;
 use App\Models\RequestItem;
 use App\Models\Setting;
 use Carbon\Carbon;
@@ -77,7 +78,15 @@ class ReturnPolicy
     public static function dueInfo(Request $request, RequestItem $requestItem): array
     {
         $default = self::daysFor($requestItem->item);
+
+        // Units the borrower says they already brought back, still waiting
+        // for the AMO to check. They are not counted as overdue meanwhile.
+        $pendingReturn = $requestItem->idrequestItem
+            ? ReturnReport::pendingQuantity($requestItem->idrequestItem)
+            : 0;
+
         $none = [
+            'pendingReturnQty' => $pendingReturn,
             'defaultReturnDays' => $default,
             'returnDays' => null,
             'dueDate' => null,
@@ -102,10 +111,11 @@ class ReturnPolicy
             return $none;
         }
         $today = Carbon::today();
-        $stillOut = ($requestItem->quantity - $requestItem->returned_quantity) > 0;
+        $stillOut = ($requestItem->quantity - $requestItem->returned_quantity - $pendingReturn) > 0;
         $overdue = $stillOut && $request->status === 'Approved' && $today->gt($due);
 
         return [
+            'pendingReturnQty' => $pendingReturn,
             'defaultReturnDays' => $default,
             'returnDays' => $days,
             'dueDate' => $due->toDateString(),

@@ -3,6 +3,8 @@
 namespace App\Http\Controllers;
 
 use App\Models\Request;
+use App\Models\ReturnReport;
+use App\Models\User;
 use App\Models\RequestItem;
 use App\Models\RequestUniform;
 use App\Models\Item;
@@ -642,6 +644,237 @@ public function notifications()
     return response()->json(DB::table('request_notifications')->where('recipient_idUsers', $userId)->orderByDesc('created_at')->limit(100)->get());
 }
 
+// Clears the notification bell badge: marks all of the signed-in user's
+// request updates as read. They stay listed; only read_at is set.
+public function readNotifications()
+{
+    $updated = DB::table('request_notifications')
+        ->where('recipient_idUsers', (int) request()->user()->idUsers)
+        ->whereNull('read_at')
+        ->update(['read_at' => now()]);
+
+    return response()->json(['updated' => $updated]);
+}
+
+// ---------------------------------------------------------------------
+// Return reports. The borrower reports that they brought something back;
+// the AMO then confirms (which records the return as usual and sends the
+// units to inspection) or disputes it. While a report is waiting the
+// borrower is not shown as overdue for those units, and the AMO is
+// reminded through the notification bell and the dashboard.
+// ---------------------------------------------------------------------
+
+// When true, returnEquipment() does not auto-settle pending reports (the
+// confirm action below settles the one report it is dealing with itself).
+private bool $skipReportSettle = false;
+
+public function reportReturn(HttpRequest $httpRequest, $id)
+{
+    $validated = $httpRequest->validate([
+        'quantity' => 'required|integer|min:1',
+    ]);
+
+    $user = request()->user();
+
+    return DB::transaction(function () use ($id, $validated, $user) {
+        $requestItem = RequestItem::lockForUpdate()->find($id);
+
+        if (!$requestItem) {
+            return response()->json(['message' => 'Request item not found.'], 404);
+        }
+
+        $requestItem->load('request', 'item');
+        $request = $requestItem->request;
+
+        if ((int) $request->idUsers !== (int) $user->idUsers) {
+            return response()->json(['message' => 'You can only report returns for your own requests.'], 403);
+        }
+
+        if ($request->status !== 'Approved') {
+            return response()->json(['message' => 'Only approved requests can have items returned.'], 422);
+        }
+
+        if ($requestItem->item && !$requestItem->item->isReturnable()) {
+            return response()->json(['message' => 'This item was issued and does not need to be returned.'], 422);
+        }
+
+        $pending = ReturnReport::pendingQuantity($requestItem->idrequestItem);
+        $open = $requestItem->quantity - $requestItem->returned_quantity - $pending;
+
+        if ($open <= 0) {
+            return response()->json(['message' => 'Nothing left to report: the rest is already returned or waiting to be checked.'], 422);
+        }
+
+        if ($validated['quantity'] > $open) {
+            return response()->json(['message' => "Only {$open} unit(s) can still be reported."], 422);
+        }
+
+        $report = ReturnReport::create([
+            'idrequestItem' => $requestItem->idrequestItem,
+            'quantity' => $validated['quantity'],
+            'status' => 'Pending',
+            'reported_by' => $user->idUsers,
+            'reported_at' => now(),
+        ]);
+
+        $itemName = optional($requestItem->item)->item_name ?? 'item';
+        $who = $user->username ?? 'A borrower';
+        $message = "{$who} reported returning {$validated['quantity']} x {$itemName} (Request #{$request->idrequest}). Please check it.";
+
+        foreach (User::where('role', 'amo')->pluck('idUsers') as $amoId) {
+            $this->createRequestNotification($request, (int) $amoId, 'return_reported', $message, (int) $user->idUsers);
+        }
+
+        $this->logActivity(
+            $user->idUsers,
+            "Reported returning {$validated['quantity']} x {$itemName} (Request #{$request->idrequest})"
+        );
+
+        return response()->json([
+            'message' => 'Return reported. The administrator will check it.',
+            'reportId' => $report->id,
+            'pendingReturnQty' => $pending + (int) $validated['quantity'],
+        ], 201);
+    });
+}
+
+// AMO: returns the borrowers say they made that nobody has checked yet,
+// oldest first.
+public function returnReports()
+{
+    $reports = ReturnReport::where('status', 'Pending')
+        ->with(['requestItem.request', 'requestItem.item', 'reporter'])
+        ->orderBy('reported_at')
+        ->get();
+
+    return response()->json(
+        $reports->map(function ($r) {
+            $line = $r->requestItem;
+            $request = optional($line)->request;
+
+            return [
+                'id' => $r->id,
+                'requestId' => optional($request)->idrequest,
+                'requestItemId' => $r->idrequestItem,
+                'itemName' => optional(optional($line)->item)->item_name,
+                'category' => optional(optional($line)->item)->category,
+                'quantity' => (int) $r->quantity,
+                'requester' => optional($r->reporter)->username,
+                'location' => optional($request)->location,
+                'room' => optional($request)->room,
+                'reportedAt' => $r->reported_at,
+                'hoursWaiting' => (int) \Carbon\Carbon::parse($r->reported_at)->diffInHours(now()),
+            ];
+        })->values()
+    );
+}
+
+public function confirmReturnReport($id)
+{
+    $actor = request()->user();
+    $report = ReturnReport::find($id);
+
+    if (!$report) {
+        return response()->json(['message' => 'Return report not found.'], 404);
+    }
+
+    if ($report->status !== 'Pending') {
+        return response()->json(['message' => 'This report was already handled.'], 422);
+    }
+
+    $requestItem = RequestItem::with('request', 'item')->find($report->idrequestItem);
+
+    if (!$requestItem) {
+        return response()->json(['message' => 'The request item no longer exists.'], 404);
+    }
+
+    // If the AMO already recorded part of this return from another screen,
+    // only the units still out can be recorded now.
+    $open = max(0, $requestItem->quantity - $requestItem->returned_quantity);
+    $qty = min((int) $report->quantity, $open);
+
+    if ($qty > 0) {
+        $this->skipReportSettle = true;
+
+        try {
+            $response = $this->returnEquipment(
+                HttpRequest::create('/', 'PUT', ['quantity' => $qty]),
+                $requestItem->idrequestItem
+            );
+        } finally {
+            $this->skipReportSettle = false;
+        }
+
+        if ($response->getStatusCode() >= 400) {
+            return $response;
+        }
+    }
+
+    $report->update([
+        'status' => 'Confirmed',
+        'resolved_by' => $actor->idUsers,
+        'resolved_at' => now(),
+    ]);
+
+    $itemName = optional($requestItem->item)->item_name ?? 'item';
+
+    $this->createRequestNotification(
+        $requestItem->request,
+        (int) $report->reported_by,
+        'return_confirmed',
+        "Your return of {$report->quantity} x {$itemName} (Request #{$requestItem->request->idrequest}) was confirmed. It is now waiting for inspection.",
+        (int) $actor->idUsers
+    );
+
+    return response()->json(['message' => 'Return confirmed and recorded.']);
+}
+
+public function rejectReturnReport(HttpRequest $httpRequest, $id)
+{
+    $validated = $httpRequest->validate([
+        'note' => 'required|string|max:255',
+    ]);
+
+    $actor = request()->user();
+    $report = ReturnReport::find($id);
+
+    if (!$report) {
+        return response()->json(['message' => 'Return report not found.'], 404);
+    }
+
+    if ($report->status !== 'Pending') {
+        return response()->json(['message' => 'This report was already handled.'], 422);
+    }
+
+    $requestItem = RequestItem::with('request', 'item')->find($report->idrequestItem);
+
+    $report->update([
+        'status' => 'Rejected',
+        'note' => $validated['note'],
+        'resolved_by' => $actor->idUsers,
+        'resolved_at' => now(),
+    ]);
+
+    if ($requestItem && $requestItem->request) {
+        $itemName = optional($requestItem->item)->item_name ?? 'item';
+
+        $this->createRequestNotification(
+            $requestItem->request,
+            (int) $report->reported_by,
+            'return_rejected',
+            "Your return report for {$report->quantity} x {$itemName} (Request #{$requestItem->request->idrequest}) was not confirmed: {$validated['note']} The item is still listed as borrowed.",
+            (int) $actor->idUsers
+        );
+
+        $this->logActivity(
+            $actor->idUsers,
+            "Did not confirm return report for {$report->quantity} x {$itemName} (Request #{$requestItem->request->idrequest}): {$validated['note']}"
+        );
+    }
+
+    return response()->json(['message' => 'Report marked as not received. The borrower was notified.']);
+}
+
 public function resendNotification($id)
 {
     $actor = request()->user();
@@ -772,6 +1005,12 @@ if ($requestItem->request->status !== 'Approved') {
 
         $requestItem->returned_quantity += $qty;
 $requestItem->save();
+
+        // Anything the borrower had reported as returned for this line is
+        // now covered, so it drops off the AMO's "to check" list.
+        if (!$this->skipReportSettle) {
+            ReturnReport::settle($requestItem->idrequestItem, (int) $qty, request()->user()->idUsers);
+        }
 
 $request = $requestItem->request;
 

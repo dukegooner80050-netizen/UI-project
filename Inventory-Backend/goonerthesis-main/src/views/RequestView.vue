@@ -9,6 +9,8 @@ import { getItems } from "../services/items";
 import { TYPE_B, OFFICE_TYPE_OPTIONS } from "../services/itemTypes";
 import { getMonthlyRequestLimit } from "../services/settings";
 import DueBadge from "../components/DueBadge.vue";
+import { reportReturn } from "../services/returnReports";
+import { isReturnableType } from "../services/itemTypes";
 
 const user = getCurrentUser();
 const userRole = String(user?.role || "").toLowerCase();
@@ -16,7 +18,6 @@ const listContainer = ref(null);
 const activeTab = ref("create");
 const lastReceipt = ref(null);
 const myRequests = ref([]);
-const myNotifications = ref([]);
 const selected = ref(null);
 const category = ref("");
 const itemType = ref("");
@@ -57,7 +58,6 @@ onMounted(async () => {
   await loadInventory();
   await loadUniforms();
   await loadMyRequests();
-  await loadMyNotifications();
 
   if (user?.role !== "admin") {
     try {
@@ -69,34 +69,62 @@ onMounted(async () => {
   }
 });
 
-// Latest few updates on the user's own requests (newest first from the API).
-const recentNotifications = computed(() => myNotifications.value.slice(0, 5));
+// ---- Report a return (the AMO still confirms it) ----
+const reportingLine = ref(null); // requestItemId whose form is open
+const reportQty = ref(1);
+const reportBusy = ref(false);
 
-function notificationLabel(n) {
-  if (n.event_type === "forwarded") return "Forwarded";
-  if (/rejected/i.test(n.message || "")) return "Rejected";
-  if (/approved/i.test(n.message || "")) return "Approved";
-  return "Update";
+// Units of a line that can still be reported: not returned, not already waiting.
+function reportable(item) {
+  return item.borrowedQty - item.pendingReturnQty;
 }
 
-function notificationBadge(n) {
-  const label = notificationLabel(n);
-  if (label === "Approved") return "bg-success";
-  if (label === "Rejected") return "bg-danger";
-  return "bg-info text-dark";
+function startReport(item) {
+  reportingLine.value = item.requestItemId;
+  reportQty.value = reportable(item);
 }
 
-function formatNotificationDate(value) {
-  if (!value) return "";
-  return new Date(String(value).replace(" ", "T")).toLocaleString("en-PH");
+// Send only validates and asks "are you sure?"; the report itself goes out
+// from the confirmation modal (doReport).
+const reportConfirmOpen = ref(false);
+const reportTarget = ref(null);
+const reportTargetQty = ref(0);
+
+function sendReport(item) {
+  const qty = Number(reportQty.value);
+  if (!Number.isInteger(qty) || qty < 1 || qty > reportable(item)) {
+    showWarning("Report Return", `Enter a quantity from 1 to ${reportable(item)}.`);
+    return;
+  }
+  reportTarget.value = item;
+  reportTargetQty.value = qty;
+  reportConfirmOpen.value = true;
 }
 
-async function loadMyNotifications() {
+async function doReport() {
+  const item = reportTarget.value;
+  const qty = reportTargetQty.value;
+  reportConfirmOpen.value = false;
+  if (!item) return;
+
+  reportBusy.value = true;
   try {
-    const { data } = await axios.get('/request-notifications');
-    myNotifications.value = Array.isArray(data) ? data : [];
-  } catch (err) {
-    console.error('Failed to load request notifications:', err);
+    await reportReturn(item.requestItemId, qty);
+    reportingLine.value = null;
+    const openId = selected.value?.id;
+    await loadMyRequests();
+    selected.value = myRequests.value.find((r) => r.id === openId) || null;
+    showWarning(
+      "Return reported",
+      "The administrator has been told. Please hand the item over if you haven't yet; it stays on your record until they confirm it.",
+    );
+  } catch (e) {
+    showWarning(
+      "Report Return",
+      e.response?.data?.message || "Unable to report this return.",
+    );
+  } finally {
+    reportBusy.value = false;
   }
 }
 
@@ -347,6 +375,8 @@ async function loadMyRequests() {
         approvalRemarks: request.approvalRemarks,
 
         items: (request.items || []).map((item) => ({
+          requestItemId: item.requestItemId,
+          pendingReturnQty: Number(item.pendingReturnQty) || 0,
           itemId: item.itemId,
           itemName: item.itemName,
           category: item.category,
@@ -687,29 +717,6 @@ watch(activeTab, async () => {
       <span v-if="requestsThisMonth >= monthlyLimit">
         You've reached your monthly limit.
       </span>
-    </div>
-
-    <!-- REQUEST UPDATES (forwarded / approved / rejected) -->
-    <div v-if="recentNotifications.length" class="card shadow-sm mb-3">
-      <div class="card-body py-2 px-3">
-        <div class="fw-semibold small text-muted mb-1">Request updates</div>
-        <ul class="list-unstyled mb-0">
-          <li
-            v-for="n in recentNotifications"
-            :key="n.id"
-            class="d-flex justify-content-between gap-3 py-1 small"
-          >
-            <span>
-              <span
-                class="badge me-2"
-                :class="notificationBadge(n)"
-              >{{ notificationLabel(n) }}</span>
-              {{ n.message }}
-            </span>
-            <span class="text-muted text-nowrap">{{ formatNotificationDate(n.created_at) }}</span>
-          </li>
-        </ul>
-      </div>
     </div>
 
     <!-- CREATE REQUEST TAB -->
@@ -1192,12 +1199,61 @@ watch(activeTab, async () => {
                 <li v-for="(item, i) in selected.items" :key="'item-' + i">
                   {{ item.itemName }} (Qty: {{ item.qty }})
                   <DueBadge
-                    v-if="item.dueDate && item.borrowedQty > 0"
+                    v-if="item.dueDate && item.borrowedQty > 0 && !item.pendingReturnQty"
                     class="ms-1"
                     :due-date="item.dueDate"
                     :overdue="item.overdue"
                     :days-overdue="item.daysOverdue"
                   />
+                  <span
+                    v-if="item.pendingReturnQty > 0"
+                    class="badge bg-warning text-dark ms-1"
+                  >
+                    Return reported ({{ item.pendingReturnQty }}): awaiting check
+                  </span>
+
+                  <!-- Borrower says it was returned; AMO confirms -->
+                  <template
+                    v-if="
+                      selected.status === 'Approved' &&
+                      isReturnableType(item.itemType) &&
+                      reportable(item) > 0
+                    "
+                  >
+                    <button
+                      v-if="reportingLine !== item.requestItemId"
+                      type="button"
+                      class="btn btn-sm btn-success text-white ms-2"
+                      @click="startReport(item)"
+                    >
+                      Report returned
+                    </button>
+                    <span v-else class="ms-2 d-inline-flex align-items-center gap-1">
+                      <input
+                        v-model="reportQty"
+                        type="number"
+                        min="1"
+                        :max="reportable(item)"
+                        class="form-control form-control-sm"
+                        style="width: 80px"
+                      />
+                      <button
+                        type="button"
+                        class="btn btn-sm btn-success"
+                        :disabled="reportBusy"
+                        @click="sendReport(item)"
+                      >
+                        Send
+                      </button>
+                      <button
+                        type="button"
+                        class="btn btn-sm btn-light"
+                        @click="reportingLine = null"
+                      >
+                        Cancel
+                      </button>
+                    </span>
+                  </template>
                 </li>
                 <li
                   v-for="(uniform, i) in selected.uniforms"
@@ -1235,7 +1291,7 @@ watch(activeTab, async () => {
               </div>
               <button
                 v-if="(selected.status || '').toLowerCase() === 'approved' && hasBorrowedItems(selected)"
-                class="btn btn-sm btn-outline-dark mt-2"
+                class="btn btn-sm btn-dark text-white mt-2"
                 @click="printBorrowerForm(selected)"
               >
                 Print Borrower's Form
@@ -1270,7 +1326,7 @@ watch(activeTab, async () => {
             <div class="mt-3 text-end">
               <button
                 v-if="selected"
-                class="btn btn-sm btn-outline-dark"
+                class="btn btn-sm btn-secondary text-white"
                 @click="selected = null"
               >
                 Close
@@ -1315,6 +1371,34 @@ watch(activeTab, async () => {
         <button class="btn btn-success" @click="confirmSubmit">
           Confirm
         </button>
+      </div>
+    </div>
+  </div>
+
+  <div v-if="reportConfirmOpen" class="modal-backdrop-custom">
+    <div class="modal-custom" style="max-width: 420px">
+      <div class="modal-header">
+        <h5 class="mb-0">Report Return</h5>
+        <button class="btn-close" @click="reportConfirmOpen = false"></button>
+      </div>
+
+      <div class="modal-body">
+        <p class="mb-2">
+          Report
+          <strong>{{ reportTargetQty }} x {{ reportTarget?.itemName }}</strong>
+          as returned?
+        </p>
+        <p class="text-muted small mb-0">
+          The administrator will be told and still has to confirm it. The item
+          stays on your record until they do.
+        </p>
+      </div>
+
+      <div class="modal-footer">
+        <button class="btn btn-secondary" @click="reportConfirmOpen = false">
+          Cancel
+        </button>
+        <button class="btn btn-success" @click="doReport">Confirm</button>
       </div>
     </div>
   </div>

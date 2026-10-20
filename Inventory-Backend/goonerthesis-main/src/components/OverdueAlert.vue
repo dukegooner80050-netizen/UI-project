@@ -19,10 +19,33 @@ const route = useRoute();
 const lines = ref([]);
 const expanded = ref(false);
 const noticeOpen = ref(false);
+// The banner can be closed; the bell in the top corner still lists the items.
+const bannerDismissed = ref(readBannerDismissed());
 let timer = null;
 
 function seenKey() {
   return `overdueNoticeSeen:${getCurrentUser()?.idUsers ?? "anon"}`;
+}
+
+function bannerKey() {
+  return `overdueBannerDismissed:${getCurrentUser()?.idUsers ?? "anon"}`;
+}
+
+function readBannerDismissed() {
+  try {
+    return sessionStorage.getItem(bannerKey()) || "";
+  } catch {
+    return "";
+  }
+}
+
+function dismissBanner() {
+  bannerDismissed.value = signature.value;
+  try {
+    sessionStorage.setItem(bannerKey(), signature.value);
+  } catch {
+    /* ignore: the banner just shows again next time */
+  }
 }
 
 function readSeen() {
@@ -99,7 +122,11 @@ watch(() => route.fullPath, load);
 <template>
   <div>
     <!-- BANNER (every page) -->
-    <div v-if="lines.length > 0" class="alert alert-danger shadow-sm mb-3" role="alert">
+    <div
+      v-if="lines.length > 0 && bannerDismissed !== signature"
+      class="alert alert-danger shadow-sm mb-3"
+      role="alert"
+    >
       <div class="d-flex flex-wrap justify-content-between align-items-center gap-2">
         <div>
           <i class="bi bi-exclamation-octagon-fill me-2"></i>
@@ -112,13 +139,22 @@ watch(() => route.fullPath, load);
           </span>
         </div>
 
-        <button
-          type="button"
-          class="btn btn-sm btn-danger"
-          @click="expanded = !expanded"
-        >
-          {{ expanded ? "Hide details" : "View details" }}
-        </button>
+        <div class="d-flex align-items-center gap-2">
+          <button
+            type="button"
+            class="btn btn-sm btn-danger"
+            @click="expanded = !expanded"
+          >
+            {{ expanded ? "Hide details" : "View details" }}
+          </button>
+          <button
+            type="button"
+            class="btn-close"
+            aria-label="Close"
+            title="Close (the bell still lists it)"
+            @click="dismissBanner"
+          ></button>
+        </div>
       </div>
 
       <div v-if="expanded" class="table-responsive mt-3">

@@ -233,6 +233,7 @@ async function refresh() {
         dueDate: reqItem.dueDate,
         overdue: !!reqItem.overdue,
         daysOverdue: reqItem.daysOverdue || 0,
+        pendingReturnQty: reqItem.pendingReturnQty || 0,
       });
     });
   });
@@ -698,6 +699,15 @@ async function proceedAction() {
                     :overdue="borrower.overdue"
                     :days-overdue="borrower.daysOverdue"
                   />
+                </span>
+              </div>
+
+              <div v-if="borrower.pendingReturnQty > 0" class="borrower-detail">
+                <strong>Return reported:</strong>
+                <span class="borrower-value">
+                  <span class="badge bg-warning text-dark">
+                    {{ borrower.pendingReturnQty }} awaiting your check
+                  </span>
                 </span>
               </div>
 

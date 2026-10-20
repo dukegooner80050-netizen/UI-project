@@ -8,6 +8,7 @@ import { getRequests, getMyOverdue } from "../services/requests";
 import { getLogs } from "../services/logs";
 import { getCurrentUser } from "../services/storage";
 import LowStockRestockPanel from "../components/LowStockRestockPanel.vue";
+import ReturnReportsPanel from "../components/ReturnReportsPanel.vue";
 
 // Chart.js
 import Chart from "chart.js/auto";
@@ -637,6 +638,7 @@ eventContent(arg) {
 
       <!-- Restock panel + Recent Activity Logs (stacked in the narrow column) -->
       <div class="col-lg-4 col-md-12">
+        <ReturnReportsPanel v-if="isAdmin" />
         <LowStockRestockPanel v-if="isAdmin" />
 
         <div class="card shadow-sm">

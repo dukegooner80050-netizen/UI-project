@@ -250,6 +250,7 @@ async function load() {
         dueDate: reqItem.dueDate,
         overdue: !!reqItem.overdue,
         daysOverdue: reqItem.daysOverdue || 0,
+        pendingReturnQty: reqItem.pendingReturnQty || 0,
       });
     });
   });
@@ -595,6 +596,12 @@ async function confirmModal() {
                 :overdue="borrower.overdue"
                 :days-overdue="borrower.daysOverdue"
               />
+            </div>
+            <div v-if="borrower.pendingReturnQty > 0">
+              <strong>Return reported:</strong>
+              <span class="badge bg-warning text-dark">
+                {{ borrower.pendingReturnQty }} awaiting your check
+              </span>
             </div>
             <div>
               <strong>Returned:</strong>
