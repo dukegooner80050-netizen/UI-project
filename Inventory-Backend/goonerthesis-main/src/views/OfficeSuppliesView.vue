@@ -873,7 +873,7 @@ async function proceedAction() {
         <input
           class="form-control mb-3"
           v-model="addName"
-          placeholder="e.g. Bond Paper"
+          placeholder="Name of the item that is being Added."
         />
 
         <label class="form-label">Quantity</label>
