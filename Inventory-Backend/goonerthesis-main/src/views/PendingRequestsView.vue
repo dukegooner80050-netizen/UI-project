@@ -325,37 +325,34 @@ function statusBadgeClass(status) {
       </div>
     </div>
 
-    <ul class="nav nav-tabs mb-3">
-      <li class="nav-item">
-        <button
-          class="nav-link"
-          :class="{ active: activeTab === 'pending' }"
-          @click="activeTab = 'pending'; expandedId = null"
-        >
-          Pending
-          <span class="badge bg-warning text-dark ms-1">{{ pendingRequests.length }}</span>
-        </button>
-      </li>
-      <li class="nav-item">
-        <button
-          class="nav-link"
-          :class="{ active: activeTab === 'release' }"
-          @click="activeTab = 'release'; expandedId = null"
-        >
-          For Release
-          <span class="badge bg-info text-dark ms-1">{{ releaseRequests.length }}</span>
-        </button>
-      </li>
-      <li class="nav-item">
-        <button
-          class="nav-link"
-          :class="{ active: activeTab === 'all' }"
-          @click="activeTab = 'all'; expandedId = null"
-        >
-          All
-        </button>
-      </li>
-    </ul>
+    <div class="d-flex flex-wrap gap-2 mb-3">
+      <button
+        type="button"
+        class="btn"
+        :class="activeTab === 'pending' ? 'btn-primary' : 'btn-outline-primary'"
+        @click="activeTab = 'pending'; expandedId = null"
+      >
+        Pending
+        <span class="badge bg-warning text-dark ms-1">{{ pendingRequests.length }}</span>
+      </button>
+      <button
+        type="button"
+        class="btn"
+        :class="activeTab === 'release' ? 'btn-primary' : 'btn-outline-primary'"
+        @click="activeTab = 'release'; expandedId = null"
+      >
+        For Release
+        <span class="badge bg-info text-dark ms-1">{{ releaseRequests.length }}</span>
+      </button>
+      <button
+        type="button"
+        class="btn"
+        :class="activeTab === 'all' ? 'btn-primary' : 'btn-outline-primary'"
+        @click="activeTab = 'all'; expandedId = null"
+      >
+        All
+      </button>
+    </div>
 
     <div class="card shadow-sm">
       <div class="card-body table-scroll">
@@ -399,7 +396,7 @@ function statusBadgeClass(status) {
                 <td @click.stop>
                   <button
                     v-if="activeTab === 'all'"
-                    class="btn btn-sm btn-outline-secondary"
+                    class="btn btn-sm btn-secondary"
                     :aria-expanded="!!actionsOpen[r.id]"
                     @click="toggleActions(r.id)"
                   >
@@ -438,14 +435,14 @@ function statusBadgeClass(status) {
 
                     <button
                       v-if="(r.status || '').toLowerCase() === 'approved' && hasBorrowedItems(r)"
-                      class="btn btn-sm btn-outline-dark"
+                      class="btn btn-sm btn-dark text-white"
                       @click="printBorrowerForm(r)"
                       title="Print the Borrower's Form for this request"
                     >Print Form</button>
 
                     <button
                       v-if="['approved', 'rejected'].includes((r.status || '').toLowerCase())"
-                      class="btn btn-sm btn-outline-secondary"
+                      class="btn btn-sm btn-secondary text-white"
                       @click="resendNotification(r.id)"
                       title="Create another in-app notification for the requester"
                     >Notify</button>
@@ -744,15 +741,5 @@ function statusBadgeClass(status) {
 
 .detail-panel {
   padding: 0.75rem 0.5rem;
-}
-
-.nav-tabs .nav-link {
-  background: none;
-  border: 1px solid transparent;
-  cursor: pointer;
-}
-
-.nav-tabs .nav-link.active {
-  font-weight: 600;
 }
 </style>
