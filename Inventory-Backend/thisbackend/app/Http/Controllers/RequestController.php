@@ -42,6 +42,7 @@ return response()->json(
 
             'purpose' => $request->purpose,
             'rejectReason' => $request->rejectReason,
+            'approvalRemarks' => $request->approval_remarks,
             'location' => $request->location,
             'room' => $request->room,
             'status' => $request->status,
@@ -169,6 +170,7 @@ public function show($id)
 
         'purpose' => $request->purpose,
         'rejectReason' => $request->rejectReason,
+        'approvalRemarks' => $request->approval_remarks,
         'location' => $request->location,
         'room' => $request->room,
         'status' => $request->status,
@@ -391,10 +393,13 @@ public function approve(HttpRequest $httpRequest, $id)
     $validated = $httpRequest->validate([
         'due_dates' => 'nullable|array',
         'due_dates.*' => 'nullable|date_format:Y-m-d|after_or_equal:today',
+        'approval_remarks' => 'nullable|string|max:500',
     ]);
     $dueDates = $validated['due_dates'] ?? [];
+    $remarks = trim((string) ($validated['approval_remarks'] ?? ''));
+    $remarks = $remarks === '' ? null : $remarks;
 
-    return DB::transaction(function () use ($id, $dueDates) {
+    return DB::transaction(function () use ($id, $dueDates, $remarks) {
 
         $request = Request::with([
             'items',
@@ -468,11 +473,12 @@ public function approve(HttpRequest $httpRequest, $id)
         $request->update([
             'status' => 'Approved',
             'approved_by' => request()->user()->idUsers,
+            'approval_remarks' => $remarks,
             'borrowed_at' => now(),
             'notified_at' => now(),
             'notified_by' => request()->user()->idUsers,
         ]);
-        $this->createRequestNotification($request, (int) $request->idUsers, 'decision', 'Your request #' . $request->idrequest . ' was approved.');
+        $this->createRequestNotification($request, (int) $request->idUsers, 'decision', 'Your request #' . $request->idrequest . ' was approved.' . ($remarks ? ' Remarks: ' . $remarks : ''));
 
         $this->logActivity(
             request()->user()->idUsers,
@@ -497,6 +503,7 @@ public function approve(HttpRequest $httpRequest, $id)
         'room' => $request->room,
         'purpose' => $request->purpose,
         'rejectReason' => $request->rejectReason,
+        'approvalRemarks' => $request->approval_remarks,
         'releaseMethod' => $request->release_method,
         'releasedAt' => $request->released_at,
         'items' => $request->items->map(function ($item) use ($request) {
@@ -581,6 +588,7 @@ return response()->json([
         'room' => $request->room,
         'purpose' => $request->purpose,
         'rejectReason' => $request->rejectReason,
+        'approvalRemarks' => $request->approval_remarks,
         'releaseMethod' => $request->release_method,
         'releasedAt' => $request->released_at,
         'items' => $request->items->map(function ($item) use ($request) {
@@ -641,7 +649,7 @@ public function resendNotification($id)
     $r = Request::find($id);
     if (!$r) return response()->json(['message' => 'Request not found.'], 404);
     if (!in_array($r->status, ['Approved', 'Rejected'], true)) return response()->json(['message' => 'A notification can be resent after a final decision.'], 422);
-    $message = $r->status === 'Approved' ? 'Your request #' . $r->idrequest . ' was approved.' : 'Your request #' . $r->idrequest . ' was rejected. Reason: ' . ($r->rejectReason ?: 'No reason provided.');
+    $message = $r->status === 'Approved' ? 'Your request #' . $r->idrequest . ' was approved.' . ($r->approval_remarks ? ' Remarks: ' . $r->approval_remarks : '') : 'Your request #' . $r->idrequest . ' was rejected. Reason: ' . ($r->rejectReason ?: 'No reason provided.');
     $this->createRequestNotification($r, (int) $r->idUsers, 'decision_resend', $message, (int) $actor->idUsers);
     $r->update(['notified_at' => now(), 'notified_by' => $actor->idUsers]);
     $this->logActivity($actor->idUsers, 'Resent in-app notification for Request #' . $r->idrequest);

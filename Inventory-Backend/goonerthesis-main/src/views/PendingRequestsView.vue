@@ -80,6 +80,9 @@ const confirmMessage = ref("");
 const confirmButton = ref("Confirm");
 const confirmButtonClass = ref("btn-primary");
 const confirmAction = ref(null);
+// Optional note the approver can attach (only shown for Approve).
+const confirmAskRemarks = ref(false);
+const approvalRemarks = ref("");
 
 onMounted(async () => {
   requireAdmin();
@@ -172,6 +175,8 @@ async function approve(id) {
 
   confirmButton.value = "Approve";
   confirmButtonClass.value = "btn-success";
+  confirmAskRemarks.value = true;
+  approvalRemarks.value = "";
 
   const target = requests.value.find((r) => r.id === id);
   const chosen = {};
@@ -187,7 +192,7 @@ async function approve(id) {
   }
 
   confirmAction.value = async () => {
-    await approveRequest(id, chosen);
+    await approveRequest(id, chosen, approvalRemarks.value.trim());
     await refresh();
   };
 
@@ -217,6 +222,7 @@ async function confirmReject() {
 
   confirmButton.value = "Reject";
   confirmButtonClass.value = "btn-danger";
+  confirmAskRemarks.value = false;
 
   confirmAction.value = async () => {
     await rejectRequest(id, reason);
@@ -539,6 +545,13 @@ function statusBadgeClass(status) {
                         </div>
 
                         <div
+                          v-if="(r.status || '').toLowerCase() === 'approved' && r.approvalRemarks"
+                          class="small mb-1"
+                        >
+                          <strong>Approval remarks:</strong> {{ r.approvalRemarks }}
+                        </div>
+
+                        <div
                           v-if="(r.status || '').toLowerCase() === 'rejected' && r.rejectReason"
                           class="text-danger small mt-2"
                         >
@@ -652,6 +665,18 @@ function statusBadgeClass(status) {
       <p class="mb-0">
         {{ confirmMessage }}
       </p>
+
+      <div v-if="confirmAskRemarks" class="mt-3">
+        <label class="form-label small mb-1">Remarks (optional)</label>
+        <textarea
+          v-model="approvalRemarks"
+          class="form-control"
+          rows="3"
+          maxlength="500"
+          placeholder="Request Approved but won't be released yet."
+        ></textarea>
+        <div class="form-text">The requester will see this with the approval.</div>
+      </div>
     </div>
 
     <div class="modal-footer">

@@ -165,6 +165,14 @@ const totalRequestedMap = computed(() => {
 });
 
 // UNIFORM //
+// Uniform-only requests are picked up by the student at the AMO office,
+// so there is no building/room to choose. Mixed requests (uniforms +
+// items) still ask for location/room because the items may be delivered.
+const AMO_OFFICE = "AMO Office";
+const uniformOnly = computed(
+  () => requestItems.value.length === 0 && requestUniforms.value.length > 0,
+);
+
 const canRequestUniforms = computed(() => {
   return userRole === "cashier";
 });
@@ -336,6 +344,7 @@ async function loadMyRequests() {
         room: request.room,
         purpose: request.purpose,
         rejectReason: request.rejectReason,
+        approvalRemarks: request.approvalRemarks,
 
         items: (request.items || []).map((item) => ({
           itemId: item.itemId,
@@ -490,14 +499,14 @@ async function submitRequest(confirmed = false) {
     );
     return;
   }
-  if (!location.value) {
+  if (!uniformOnly.value && !location.value) {
     showWarning(
       "Location Required",
       "Please select a location before submitting your request.",
     );
     return;
   }
-  if (!room.value) {
+  if (!uniformOnly.value && !room.value) {
     showWarning(
       "Room Required",
       "Please select a room before submitting your request.",
@@ -580,8 +589,8 @@ async function submitRequest(confirmed = false) {
 
   const payload = {
     request_date: new Date().toISOString().slice(0, 10),
-    location: location.value,
-    room: room.value,
+    location: uniformOnly.value ? AMO_OFFICE : location.value,
+    room: uniformOnly.value ? "N/A" : room.value,
     purpose: requestPurpose.value.trim(),
     items: requestItems.value.map((item) => ({
       iditems: item.itemId,
@@ -970,7 +979,12 @@ watch(activeTab, async () => {
           </div>
         </div>
 
-        <div class="row">
+        <div v-if="uniformOnly" class="alert alert-info py-2 small">
+          Uniforms are picked up by the student at the AMO office, so no
+          building or room is needed.
+        </div>
+
+        <div v-else class="row">
           <div class="col-md-6">
             <label class="form-label">Location</label>
             <select v-model="location" class="form-select">
@@ -1226,6 +1240,16 @@ watch(activeTab, async () => {
               >
                 Print Borrower's Form
               </button>
+
+              <div
+                v-if="
+                  (selected.status || '').toLowerCase() === 'approved' &&
+                  selected.approvalRemarks
+                "
+                class="mt-2"
+              >
+                <strong>Remarks:</strong> {{ selected.approvalRemarks }}
+              </div>
 
               <div
                 v-if="
