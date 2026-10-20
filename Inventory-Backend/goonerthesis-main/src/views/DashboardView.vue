@@ -216,6 +216,25 @@ const lowStockItems = computed(() =>
   items.value.filter((i) => LOW_LEVELS.includes(i.stockLevel)).slice(0, 20),
 );
 
+// A request can hold items, uniforms, or both. Uniform-only requests (the
+// cashier's) have no items, so these helpers cover both lists.
+function uniformLabel(u) {
+  const name = u.uniformName || "Uniform";
+  return u.size ? `${name} (${u.size})` : name;
+}
+function requestTitle(r) {
+  const names = [
+    ...(r.items || []).map((i) => i.itemName),
+    ...(r.uniforms || []).map(uniformLabel),
+  ].filter(Boolean);
+  return names.length ? names.join(", ") : "—";
+}
+function requestCategories(r) {
+  const cats = (r.items || []).map((i) => i.category);
+  if ((r.uniforms || []).length) cats.push("Uniforms");
+  return [...new Set(cats.filter(Boolean))].join(", ") || "—";
+}
+
 const recentRequestsList = computed(() => {
   const base = isAdmin.value ? requests.value : myRequests.value;
   return base
@@ -690,10 +709,10 @@ eventContent(arg) {
                 class="list-group-item d-flex justify-content-between align-items-start">
                 <div>
                   <strong>{{
-                    r.items.map((i) => i.itemName).join(", ")
+                    requestTitle(r)
                   }}</strong>
                   <br />
-                  <small class="text-muted">{{r.items.map((i) => i.category).join(", ")}}•
+                  <small class="text-muted">{{ requestCategories(r) }} •
                     {{ r.request_date }}</small>
                 </div>
 
@@ -727,12 +746,15 @@ eventContent(arg) {
             <li v-for="r in selectedDayRequests" :key="r.id" class="list-group-item d-flex justify-content-between">
               <div>
                 <strong>
-                  {{r.items.map((i) => i.itemName).join(", ")}}
+                  {{ requestTitle(r) }}
                 </strong>
 
                 <ul class="small mb-1 mt-1">
                   <li v-for="item in r.items" :key="item.itemId">
                     {{ item.itemName }} × {{ item.qty }}
+                  </li>
+                  <li v-for="(u, ui) in r.uniforms || []" :key="'u' + ui">
+                    {{ uniformLabel(u) }} × {{ u.quantity }}
                   </li>
                 </ul>
 
@@ -846,9 +868,9 @@ eventContent(arg) {
           <li v-for="r in recentRequestsList" :key="r.id"
             class="list-group-item d-flex justify-content-between align-items-start">
             <div>
-              <strong>{{r.items.map((i) => i.itemName).join(", ")}}</strong><br />
+              <strong>{{ requestTitle(r) }}</strong><br />
               <small class="text-muted">
-                {{r.items.map((i) => i.category).join(", ")}} •
+                {{ requestCategories(r) }} •
                 {{ r.request_date }}</small>
             </div>
             <span class="badge" :class="isInFlight(r.status)

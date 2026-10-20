@@ -135,6 +135,67 @@ public function myOverdue()
     return response()->json($lines);
 }
 
+// Monthly Consumption page: what was actually handed out (issued items and
+// uniforms on Approved/Returned requests). The AMO gets everyone's records;
+// every other role only ever gets their own -- enforced here, not in the page.
+public function consumption()
+{
+    $user = request()->user();
+
+    $query = Request::with([
+        'user',
+        'items.item',
+        'uniforms.uniformVariant.type',
+        'uniforms.uniformVariant.department',
+    ])
+        ->whereIn('status', ['Approved', 'Returned'])
+        ->whereNotNull('borrowed_at');
+
+    if (strtolower((string) $user->role) !== 'amo') {
+        $query->where('idUsers', $user->idUsers);
+    }
+
+    $records = [];
+
+    foreach ($query->get() as $r) {
+        $requester = optional($r->user)->username;
+
+        foreach ($r->items as $line) {
+            // Lent-out equipment comes back, so it is not "consumed".
+            if (!$line->item || $line->item->isReturnable()) {
+                continue;
+            }
+            $records[] = [
+                'key' => 'item-' . $line->idrequestItem,
+                'name' => $line->item->item_name,
+                'type' => 'Item',
+                'qty' => (int) $line->quantity,
+                'requester' => $requester,
+                'requestId' => $r->idrequest,
+                'date' => $r->borrowed_at,
+            ];
+        }
+
+        foreach ($r->uniforms as $u) {
+            $variant = $u->uniformVariant;
+            $name = optional(optional($variant)->type)->uniform_name ?? 'Uniform';
+            $dept = optional(optional($variant)->department)->dept_name ?? 'N/A';
+            $size = optional($variant)->size ?? 'N/A';
+            $records[] = [
+                'key' => 'uniform-' . $u->idrequestUniform,
+                'name' => "{$name} ({$dept} - {$size})",
+                'type' => 'Uniform',
+                'qty' => (int) $u->quantity,
+                'requester' => $requester,
+                'requestId' => $r->idrequest,
+                'date' => $r->borrowed_at,
+            ];
+        }
+    }
+
+    return response()->json($records);
+}
+
 public function show($id)
 {
     $request = Request::with([
@@ -239,14 +300,31 @@ if (
     $idUsers = $request->user()->idUsers;
     $role = $request->user()->role;
 
-    // Monthly request limit applies to everyone except admin.
-    if ($role !== 'amo') {
+    // Uniforms are handled on their own: a uniform request cannot also
+    // carry office supplies or school equipment.
+    if (!empty($validated['uniforms']) && !empty($validated['items'])) {
+        return response()->json([
+            'message' => 'A uniform request cannot include office supplies or school equipment. Submit them as separate requests.'
+        ], 422);
+    }
+
+    // Cashier uniform requests have no monthly limit.
+    $isCashierUniformRequest = strtolower((string) $role) === 'cashier'
+        && !empty($validated['uniforms'])
+        && empty($validated['items']);
+
+    // Monthly request limit applies to everyone except the AMO, and not to
+    // cashier uniform requests (which also don't count toward it).
+    if ($role !== 'amo' && !$isCashierUniformRequest) {
         $limitSetting = \App\Models\Setting::where('setting_key', 'monthly_request_limit')->first();
         $limit = $limitSetting
             ? (int) $limitSetting->setting_value
             : \App\Http\Controllers\SettingController::DEFAULT_MONTHLY_REQUEST_LIMIT;
 
         $requestsThisMonth = Request::where('idUsers', $idUsers)
+            ->where(function ($q) {
+                $q->whereHas('items')->orWhereDoesntHave('uniforms');
+            })
             ->whereMonth('request_date', now()->month)
             ->whereYear('request_date', now()->year)
             ->count();
@@ -258,13 +336,15 @@ if (
         }
     }
 
-    DB::transaction(function () use ($validated, $idUsers, &$newRequest) {
+    DB::transaction(function () use ($validated, $idUsers, $isCashierUniformRequest, &$newRequest) {
 
         $newRequest = Request::create([
             'idUsers' => $idUsers,
             'approved_by' => null,
             'request_date' => $validated['request_date'],
-            'status' => in_array(strtolower((string) request()->user()->role), ['amo', 'department_head'], true) ? 'With Inventory' : 'With Coordinator',
+            // Only instructors go through the Department Head. Everyone else
+            // (Department Head, Admin, Cashier, AMO) goes straight to the AMO.
+            'status' => strtolower((string) request()->user()->role) === 'instructor' ? 'With Coordinator' : 'With Inventory',
             'location' => $validated['location'],
             'room' => $validated['room'],
             'purpose' => $validated['purpose'],

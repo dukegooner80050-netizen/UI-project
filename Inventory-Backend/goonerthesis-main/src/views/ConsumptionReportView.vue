@@ -1,12 +1,12 @@
 <script setup>
 import { ref, computed, onMounted } from "vue";
-import { getRequests } from "../services/requests";
+import { getConsumption } from "../services/requests";
 import { getCurrentUser } from "../services/storage";
-import { isIssuedType } from "../services/itemTypes";
 import AlertMessage from "../components/AlertMessage.vue";
 
 const loading = ref(true);
-const viewMode = ref("item"); // "item" | "requester"
+const viewMode = ref("item"); // "item" | "requester" | "records"
+const sortBy = ref("time-desc"); // time-desc | time-asc | user-asc | user-desc
 const selectedMonth = ref(""); // "YYYY-MM"
 const currentUser = getCurrentUser();
 const isInventoryManagement =
@@ -59,73 +59,18 @@ async function load() {
   loading.value = true;
 
   try {
-    const requests = await getRequests();
-    const records = [];
-
-    requests.forEach((request) => {
-      // Only things that were actually granted count as consumed.
-      if (
-        request.status !== "Approved" &&
-        request.status !== "Returned"
-      ) {
-        return;
-      }
-
-      if (!request.borrowedAt) {
-        return;
-      }
-
-      const month = monthKey(request.borrowedAt);
-
-      // Issued items (Consumable and Non-Consumable Type A)
-      request.items.forEach((reqItem) => {
-        if (!isIssuedType(reqItem.itemType)) {
-          return;
-        }
-
-        records.push({
-          key: `item-${reqItem.requestItemId}`,
-          name: reqItem.itemName,
-          type: "Item",
-          qty: Number(reqItem.qty) || 0,
-          requester: request.requester,
-          requestId: request.id,
-          date: request.borrowedAt,
-          month,
-        });
-      });
-
-      // Uniforms are treated as consumed.
-      request.uniforms.forEach((u) => {
-        records.push({
-          key: `uniform-${u.requestUniformId}`,
-          name: `${u.uniformName} (${u.department} - ${u.size})`,
-          type: "Uniform",
-          qty: Number(u.quantity) || 0,
-          requester: request.requester,
-          requestId: request.id,
-          date: request.borrowedAt,
-          month,
-        });
-      });
-    });
+    // The server already limits non-AMO users to their own records.
+    const rows = await getConsumption();
+    const records = rows
+      .filter((r) => r.date)
+      .map((r) => ({ ...r, month: monthKey(r.date) }));
 
     consumptionRecords.value = records;
 
-    const months = [
-      ...new Set(records.map((r) => r.month)),
-    ]
-      .sort()
-      .reverse();
-
-    selectedMonth.value =
-      months[0] || monthKey(new Date());
-
+    const months = [...new Set(records.map((r) => r.month))].sort().reverse();
+    selectedMonth.value = months[0] || monthKey(new Date());
   } catch (e) {
-    showNotification(
-      "danger",
-      errMsg(e)
-    );
+    showNotification("danger", errMsg(e));
   } finally {
     loading.value = false;
   }
@@ -172,6 +117,24 @@ const byRequester = computed(() => {
   return [...map.values()].sort((a, b) => a.requester.localeCompare(b.requester));
 });
 
+// ALL RECORDS: flat list, sorted by time (everyone) or by user (AMO only).
+const sortedRecords = computed(() => {
+  const list = [...filteredRecords.value];
+  const byTime = (a, b) => new Date(a.date) - new Date(b.date);
+  const byUser = (a, b) =>
+    String(a.requester || "").localeCompare(String(b.requester || ""));
+  switch (sortBy.value) {
+    case "time-asc":
+      return list.sort(byTime);
+    case "user-asc":
+      return list.sort((a, b) => byUser(a, b) || byTime(b, a));
+    case "user-desc":
+      return list.sort((a, b) => byUser(b, a) || byTime(b, a));
+    default:
+      return list.sort((a, b) => byTime(b, a));
+  }
+});
+
 const expandedRow = ref(null);
 function toggleExpand(key) {
   expandedRow.value = expandedRow.value === key ? null : key;
@@ -204,10 +167,27 @@ function toggleExpand(key) {
             >
               By Item
             </button>
+            <button
+              class="btn"
+              :class="viewMode === 'records' ? 'btn-primary' : 'btn-outline-primary'"
+              @click="viewMode = 'records'"
+            >
+              All Records
+            </button>
             <button v-if="isInventoryManagement" class="btn" :class=" viewMode === 'requester'
              ? 'btn-primary' : 'btn-outline-primary'" @click="viewMode = 'requester'">
               By Requester
             </button>
+          </div>
+
+          <div v-if="viewMode === 'records'">
+            <label class="form-label mb-1">Sort by</label>
+            <select class="form-select" v-model="sortBy">
+              <option value="time-desc">Time: newest first</option>
+              <option value="time-asc">Time: oldest first</option>
+              <option v-if="isInventoryManagement" value="user-asc">User: A to Z</option>
+              <option v-if="isInventoryManagement" value="user-desc">User: Z to A</option>
+            </select>
           </div>
 
           <div>
@@ -223,6 +203,45 @@ function toggleExpand(key) {
     </div>
 
     <div v-if="loading" class="text-center text-muted py-4">Loading...</div>
+
+    <!-- ALL RECORDS (flat, sortable) -->
+    <div v-else-if="viewMode === 'records'" class="card shadow-sm">
+      <div class="card-body">
+        <h5 class="mb-3">
+          {{ isInventoryManagement ? "All records" : "My records" }} in
+          {{ monthLabel(selectedMonth) }} ({{ sortedRecords.length }})
+        </h5>
+        <div class="table-responsive">
+          <table class="table table-striped table-hover align-middle mb-0">
+            <thead class="table-light">
+              <tr>
+                <th>Date</th>
+                <th v-if="isInventoryManagement">User</th>
+                <th>Item / Uniform</th>
+                <th>Type</th>
+                <th style="width: 100px">Qty</th>
+                <th style="width: 110px">Request</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="r in sortedRecords" :key="r.key">
+                <td>{{ formatDate(r.date) }}</td>
+                <td v-if="isInventoryManagement">{{ r.requester }}</td>
+                <td>{{ r.name }}</td>
+                <td>{{ r.type }}</td>
+                <td>{{ r.qty }}</td>
+                <td>#{{ r.requestId }}</td>
+              </tr>
+              <tr v-if="sortedRecords.length === 0">
+                <td :colspan="isInventoryManagement ? 6 : 5" class="text-center text-muted py-4">
+                  No consumption recorded for this month.
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
 
     <!-- ITEM-FOCUSED VIEW -->
     <div v-else-if="viewMode === 'item'" class="card shadow-sm">

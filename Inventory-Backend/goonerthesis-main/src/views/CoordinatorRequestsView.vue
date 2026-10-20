@@ -18,8 +18,13 @@ async function refresh() {
   } catch (e) { notify('danger', e.response?.data?.message || 'Could not load requests waiting for coordinator review.') }
   finally { loading.value = false }
 }
-async function forward(r) {
-  if (!confirm(`Forward request #${r.id} to Inventory Management?`)) return
+// Asks first (app modal, not the browser's native confirm), then forwards.
+const confirmTarget = ref(null)
+function forward(r) { confirmTarget.value = r }
+async function doForward() {
+  const r = confirmTarget.value
+  confirmTarget.value = null
+  if (!r) return
   busyId.value = r.id
   try {
     const { data } = await axios.put(`/requests/${r.id}/forward-to-inventory`)
@@ -55,9 +60,31 @@ onMounted(refresh)
         </tr></tbody>
       </table>
     </div>
+
+    <div v-if="confirmTarget" class="modal-backdrop-custom">
+      <div class="modal-custom">
+        <div class="modal-header">
+          <h5 class="mb-0">Forward Request</h5>
+          <button class="btn-close" @click="confirmTarget = null"></button>
+        </div>
+        <div class="modal-body">
+          <p class="mb-0">Forward request #{{ confirmTarget.id }} to Inventory Management?</p>
+        </div>
+        <div class="modal-footer">
+          <button class="btn btn-secondary" @click="confirmTarget = null">Cancel</button>
+          <button class="btn btn-success" @click="doForward">Forward</button>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
 <style scoped>
+.modal-backdrop-custom { position: fixed; inset: 0; background: rgba(0,0,0,.35); display: grid; place-items: center; z-index: 2000; padding: 16px; }
+.modal-custom { background: white; width: 100%; max-width: 420px; border-radius: 12px; overflow: hidden; box-shadow: 0 18px 50px rgba(0,0,0,.25); }
+.modal-header, .modal-footer { padding: 12px 16px; display: flex; align-items: center; }
+.modal-header { justify-content: space-between; border-bottom: 1px solid #dee2e6; }
+.modal-footer { justify-content: flex-end; gap: 8px; border-top: 1px solid #dee2e6; }
+.modal-body { padding: 16px; }
 .request-summary { min-width: 220px; max-width: 330px; white-space: normal; }
 </style>

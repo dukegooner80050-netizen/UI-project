@@ -19,6 +19,13 @@ export async function createRequest(requestData) {
     return response.data;
 }
 
+// Monthly Consumption records. The server returns everyone's for the AMO
+// and only the caller's own for every other role.
+export async function getConsumption() {
+    const response = await axios.get("/requests/consumption");
+    return response.data;
+}
+
 // The signed-in user's own borrowed lines that are past their due date.
 export async function getMyOverdue() {
     const response = await axios.get("/requests/overdue/mine");

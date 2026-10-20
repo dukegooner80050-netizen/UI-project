@@ -98,6 +98,7 @@ Route::middleware([AdminSessionTimeoutMiddleware::class, 'auth:sanctum'])->group
 
 
         Route::get('/requests', [RequestController::class, 'index']);
+        Route::get('/requests/consumption', [RequestController::class, 'consumption']);
         Route::get('/requests/overdue/mine', [RequestController::class, 'myOverdue']);
         Route::get('/request-notifications', [RequestController::class, 'notifications']);
         Route::post('/request-notifications/read', [RequestController::class, 'readNotifications']);

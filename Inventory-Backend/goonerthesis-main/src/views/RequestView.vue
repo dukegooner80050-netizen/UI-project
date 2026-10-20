@@ -44,9 +44,13 @@ const warningMessage = ref("");
 
 const monthlyLimit = ref(null);
 
+// Uniform-only requests have no monthly limit, so they are not counted.
 const requestsThisMonth = computed(() => {
   const now = new Date();
   return myRequests.value.filter((r) => {
+    if ((r.items || []).length === 0 && (r.uniforms || []).length > 0) {
+      return false;
+    }
     const d = new Date(r.date);
     return (
       d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear()
@@ -59,7 +63,7 @@ onMounted(async () => {
   await loadUniforms();
   await loadMyRequests();
 
-  if (user?.role !== "admin") {
+  if (user?.role !== "amo") {
     try {
       const res = await getMonthlyRequestLimit();
       monthlyLimit.value = res.monthly_request_limit;
@@ -402,11 +406,48 @@ async function loadMyRequests() {
 
 // ADD ITEM TO REQUEST LIST //
 
+// Uniforms are requested on their own, never mixed with office supplies or
+// school equipment. If the list already holds the other kind, ask whether
+// to submit it or discard it first.
+const mixConflictOpen = ref(false);
+const mixConflictHas = computed(() =>
+  requestUniforms.value.length > 0 ? "uniforms" : "items",
+);
+
+function mixConflictCancel() {
+  mixConflictOpen.value = false;
+}
+
+function mixConflictSubmit() {
+  mixConflictOpen.value = false;
+  submitRequest();
+}
+
+async function mixConflictDiscard() {
+  mixConflictOpen.value = false;
+  requestItems.value = [];
+  requestUniforms.value = [];
+  await addToList();
+}
+
 async function addToList() {
   error.value = "";
   const quantity = Number(qty.value);
   if (!Number.isInteger(quantity) || quantity < 1) {
     error.value = "Quantity must be at least 1.";
+    return;
+  }
+
+  const addingUniform = category.value === "Uniforms";
+  const hasSelection = addingUniform
+    ? !!selectedUniformVariant.value
+    : !!selectedItem.value;
+  if (
+    hasSelection &&
+    ((addingUniform && requestItems.value.length > 0) ||
+      (!addingUniform && requestUniforms.value.length > 0))
+  ) {
+    mixConflictOpen.value = true;
     return;
   }
 
@@ -714,6 +755,9 @@ watch(activeTab, async () => {
     >
       You've submitted {{ requestsThisMonth }} of {{ monthlyLimit }} requests
       this month.
+      <span v-if="canRequestUniforms" class="text-muted">
+        (Uniform requests are not counted.)
+      </span>
       <span v-if="requestsThisMonth >= monthlyLimit">
         You've reached your monthly limit.
       </span>
@@ -1372,7 +1416,7 @@ watch(activeTab, async () => {
             <span v-if="u.size">({{ u.size }})</span>
           </li>
         </ul>
-        <p class="text-muted small mb-0">
+        <p v-if="!uniformOnly" class="text-muted small mb-0">
           It will count toward your monthly request limit.
         </p>
       </div>
@@ -1383,6 +1427,39 @@ watch(activeTab, async () => {
         </button>
         <button class="btn btn-success" @click="confirmSubmit">
           Confirm
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <div v-if="mixConflictOpen" class="modal-backdrop-custom">
+    <div class="modal-custom" style="max-width: 440px">
+      <div class="modal-header">
+        <h5 class="mb-0">Uniforms Are Requested Separately</h5>
+        <button class="btn-close" @click="mixConflictCancel"></button>
+      </div>
+
+      <div class="modal-body">
+        <p class="mb-2">
+          A uniform request can't include office supplies or school
+          equipment. Your current request already has
+          <strong>{{ mixConflictHas === "uniforms" ? "uniforms" : "items" }}</strong>.
+        </p>
+        <p class="text-muted small mb-0">
+          Submit the current request first, or discard it and start a new
+          one.
+        </p>
+      </div>
+
+      <div class="modal-footer">
+        <button class="btn btn-secondary" @click="mixConflictCancel">
+          Cancel
+        </button>
+        <button class="btn btn-danger" @click="mixConflictDiscard">
+          Discard current request
+        </button>
+        <button class="btn btn-success" @click="mixConflictSubmit">
+          Submit current request
         </button>
       </div>
     </div>
