@@ -4,6 +4,7 @@ import { useRoute } from "vue-router";
 import { getMyOverdue } from "../services/requests";
 import { getCurrentUser } from "../services/storage";
 import DueBadge from "./DueBadge.vue";
+import { startPolling, throttled } from "../services/poller";
 
 // Roadmap #8: tells whoever borrowed something that it is overdue.
 //  - A red banner on every page while anything of theirs is overdue.
@@ -12,7 +13,7 @@ import DueBadge from "./DueBadge.vue";
 // It only ever shows the signed-in user's own items. What the admin sees
 // about everybody is the Overdue Returns card on the dashboard.
 
-const REFRESH_MS = 60000; // looks again every minute
+const REFRESH_MS = 300000; // looks again every 5 minutes (the bell checks every minute)
 
 const route = useRoute();
 
@@ -21,7 +22,7 @@ const expanded = ref(false);
 const noticeOpen = ref(false);
 // The banner can be closed; the bell in the top corner still lists the items.
 const bannerDismissed = ref(readBannerDismissed());
-let timer = null;
+let stopPolling = null;
 
 function seenKey() {
   return `overdueNoticeSeen:${getCurrentUser()?.idUsers ?? "anon"}`;
@@ -100,23 +101,17 @@ function place(line) {
   return [line.location, line.room].filter(Boolean).join(" / ");
 }
 
-function onVisible() {
-  if (document.visibilityState === "visible") load();
-}
-
 onMounted(() => {
   load();
-  timer = setInterval(load, REFRESH_MS);
-  document.addEventListener("visibilitychange", onVisible);
+  stopPolling = startPolling(load, REFRESH_MS);
 });
 
 onBeforeUnmount(() => {
-  if (timer) clearInterval(timer);
-  document.removeEventListener("visibilitychange", onVisible);
+  if (stopPolling) stopPolling();
 });
 
-// Refresh when moving between pages (the user may just have returned items).
-watch(() => route.fullPath, load);
+// Refresh when moving between pages, at most once every 15 s.
+watch(() => route.fullPath, throttled(load, 15000));
 </script>
 
 <template>

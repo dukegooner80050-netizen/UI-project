@@ -26,6 +26,41 @@ class ReturnPolicy
 
     private static ?array $defaults = null;
 
+    // requestItem id => units waiting to be checked. Filled by
+    // preloadPending() so a list of requests costs ONE query for this
+    // instead of one per line.
+    private static ?array $pendingMap = null;
+
+    /** @param iterable<int> $requestItemIds */
+    public static function preloadPending(iterable $requestItemIds): void
+    {
+        $ids = [];
+        foreach ($requestItemIds as $id) {
+            if ($id) {
+                $ids[(int) $id] = 0;
+            }
+        }
+
+        if ($ids) {
+            $rows = ReturnReport::where('status', 'Pending')
+                ->whereIn('idrequestItem', array_keys($ids))
+                ->selectRaw('idrequestItem, SUM(quantity) AS qty')
+                ->groupBy('idrequestItem')
+                ->pluck('qty', 'idrequestItem');
+
+            foreach ($rows as $id => $qty) {
+                $ids[(int) $id] = (int) $qty;
+            }
+        }
+
+        self::$pendingMap = $ids;
+    }
+
+    public static function forgetPending(): void
+    {
+        self::$pendingMap = null;
+    }
+
     /** @return array<string, int|null> category => default days (null = none) */
     public static function categoryDefaults(): array
     {
@@ -81,9 +116,14 @@ class ReturnPolicy
 
         // Units the borrower says they already brought back, still waiting
         // for the AMO to check. They are not counted as overdue meanwhile.
-        $pendingReturn = $requestItem->idrequestItem
-            ? ReturnReport::pendingQuantity($requestItem->idrequestItem)
-            : 0;
+        $id = $requestItem->idrequestItem;
+        if (!$id) {
+            $pendingReturn = 0;
+        } elseif (self::$pendingMap !== null && array_key_exists((int) $id, self::$pendingMap)) {
+            $pendingReturn = self::$pendingMap[(int) $id];
+        } else {
+            $pendingReturn = ReturnReport::pendingQuantity($id);
+        }
 
         $none = [
             'pendingReturnQty' => $pendingReturn,

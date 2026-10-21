@@ -1,5 +1,6 @@
 <script setup>
 import { ref, onMounted, onBeforeUnmount } from "vue";
+import { startPolling } from "../services/poller";
 import {
   listReturnReports,
   confirmReturnReport,
@@ -22,7 +23,7 @@ const message = ref({ type: "", text: "" });
 const rejectId = ref(null);
 const rejectNote = ref("");
 
-let timer = null;
+let stopPolling = null;
 
 async function load() {
   try {
@@ -91,9 +92,9 @@ async function sendReject() {
 
 onMounted(() => {
   load();
-  timer = setInterval(load, REFRESH_MS);
+  stopPolling = startPolling(load, REFRESH_MS);
 });
-onBeforeUnmount(() => timer && clearInterval(timer));
+onBeforeUnmount(() => stopPolling && stopPolling());
 </script>
 
 <template>

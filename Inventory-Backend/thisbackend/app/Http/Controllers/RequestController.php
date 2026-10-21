@@ -29,6 +29,10 @@ $requests = Request::with([
     'forwardedByUser'
 ])->get();
 
+// One query for every line's "waiting to be checked" quantity.
+ReturnPolicy::preloadPending($requests->flatMap(fn ($r) => $r->items->pluck('idrequestItem')));
+app()->terminating(fn () => ReturnPolicy::forgetPending());
+
 return response()->json(
     $requests->map(function ($request) {
 
@@ -102,6 +106,9 @@ public function myOverdue()
         ->where('status', 'Approved')
         ->with('items.item')
         ->get();
+
+    ReturnPolicy::preloadPending($requests->flatMap(fn ($r) => $r->items->pluck('idrequestItem')));
+app()->terminating(fn () => ReturnPolicy::forgetPending());
 
     $lines = [];
 

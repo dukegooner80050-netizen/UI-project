@@ -11,6 +11,7 @@ import { getCurrentUser } from "../services/storage";
 import { isAdmin } from "../services/session";
 import { listReturnReports } from "../services/returnReports";
 import { listAccountRequests } from "../services/accountRequests";
+import { startPolling, throttled } from "../services/poller";
 import DueBadge from "./DueBadge.vue";
 
 // One bell for everything that used to sit on the page as a banner or panel:
@@ -38,7 +39,7 @@ const signups = ref([]); // AMO: new accounts waiting for approval
 // closes, even though they are marked as read on the server straight away.
 const highlighted = ref(new Set());
 
-let timer = null;
+let stopPolling = null;
 let firstLoadDone = false;
 
 const admin = computed(() => isAdmin(getCurrentUser()));
@@ -195,10 +196,6 @@ function onKey(e) {
   if (e.key === "Escape" && open.value) closePanel();
 }
 
-function onVisible() {
-  if (document.visibilityState === "visible") load();
-}
-
 function goReturns() {
   closePanel();
   router.push("/dashboard");
@@ -250,10 +247,9 @@ function place(line) {
 
 onMounted(() => {
   load();
-  timer = setInterval(load, REFRESH_MS);
+  stopPolling = startPolling(load, REFRESH_MS);
   document.addEventListener("click", onDocumentClick);
   document.addEventListener("keydown", onKey);
-  document.addEventListener("visibilitychange", onVisible);
   // The restock panel fires this after a restock request is created/changed.
   window.addEventListener("cims:restock-changed", loadCritical);
   // Settings fires this after an account request is approved or declined.
@@ -261,16 +257,16 @@ onMounted(() => {
 });
 
 onBeforeUnmount(() => {
-  if (timer) clearInterval(timer);
+  if (stopPolling) stopPolling();
   document.removeEventListener("click", onDocumentClick);
   document.removeEventListener("keydown", onKey);
-  document.removeEventListener("visibilitychange", onVisible);
   window.removeEventListener("cims:restock-changed", loadCritical);
   window.removeEventListener("cims:accounts-changed", loadSignups);
 });
 
 // Things change while moving around (returns, new requests, stock).
-watch(() => route.fullPath, load);
+// Navigating refreshes, but not more than once every 15 s.
+watch(() => route.fullPath, throttled(load, 15000));
 </script>
 
 <template>

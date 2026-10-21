@@ -121,7 +121,9 @@ onMounted(async () => {
 
   clockTimer = setInterval(tickPH, 1000);
 
-  resyncTimer = setInterval(fetchPHTime, 60000);
+  // The clock ticks locally every second; re-checking the time service every
+  // 10 minutes is plenty.
+  resyncTimer = setInterval(fetchPHTime, 600000);
 });
 
 /*  CARD MODALS  */

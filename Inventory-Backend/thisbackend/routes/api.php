@@ -298,6 +298,7 @@ Route::middleware('role:amo,department_head,admin,instructor,cashier')->group(fu
         | Return Inspections
         */
 
+        Route::get('/nav-counts', [\App\Http\Controllers\NavCountController::class, 'index']);
         Route::get('/inspections', [InspectionController::class, 'index']);
         Route::put('/inspections/{id}', [InspectionController::class, 'inspect']);
         Route::put('/items/{itemId}/return-to-service', [InspectionController::class, 'returnToService']);

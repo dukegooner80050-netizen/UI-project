@@ -32,6 +32,8 @@ async function load() {
   loading.value = true;
   try {
     inspections.value = await getPendingInspections();
+    // The sidebar's inspection badge depends on this list.
+    window.dispatchEvent(new Event("cims:counts-changed"));
   } catch (e) {
     showNotification("danger", errMsg(e));
   } finally {

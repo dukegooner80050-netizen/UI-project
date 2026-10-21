@@ -92,6 +92,8 @@ onMounted(async () => {
 
 async function refresh() {
   requests.value = await getRequests();
+  // Approving/rejecting changes the sidebar's pending badge.
+  window.dispatchEvent(new Event("cims:counts-changed"));
 }
 
 const pendingRequests = computed(() =>

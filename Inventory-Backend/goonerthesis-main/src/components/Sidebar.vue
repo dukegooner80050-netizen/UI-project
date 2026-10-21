@@ -4,6 +4,7 @@ import { computed, ref, onMounted, onBeforeUnmount, watch } from "vue"
 import { useRoute, useRouter } from "vue-router"
 import { getCurrentUser } from "../services/storage"
 import { logout as doLogout } from "../services/auth"
+import { startPolling, throttled } from "../services/poller"
 
 const showUniforms = ref(false)
 
@@ -35,90 +36,28 @@ const isAdmin = computed(
 )
 const isDean = computed(() => (user.value?.role || "").toLowerCase() === "department_head")
 
-/* PENDING REQUEST COUNT */
+/* SIDEBAR BADGES
+ * One cheap request returns all four counts (the server just COUNTs rows).
+ * It used to download the full request, inspection and report lists every
+ * 2 seconds. */
 
-async function refreshPendingCount() {
+async function refreshCounts() {
   if (!isAdmin.value) {
     pendingCount.value = 0
-    return
-  }
-
-  try {
-    const response = await axios.get("/requests")
-
-    const requests = Array.isArray(response.data)
-      ? response.data
-      : response.data?.data || []
-
-    pendingCount.value = requests.filter(
-      request => ["with inventory", "pending"].includes((request.status || "").toLowerCase())
-    ).length
-
-  } catch (error) {
-    console.error("Failed to load pending request count:", error)
-  }
-}
-
-/* PENDING INSPECTION COUNT */
-
-async function refreshPendingInspectionCount() {
-  if (!isAdmin.value) {
     pendingInspectionCount.value = 0
-    return
-  }
-
-  try {
-    const response = await axios.get("/inspections")
-
-    // /inspections already only returns items still awaiting evaluation
-    const inspections = Array.isArray(response.data)
-      ? response.data
-      : response.data?.data || []
-
-    pendingInspectionCount.value = inspections.length
-
-  } catch (error) {
-    console.error("Failed to load pending inspection count:", error)
-  }
-}
-
-/* ACCOUNT REQUEST COUNT (sign-ups waiting for approval) */
-
-async function refreshAccountRequestCount() {
-  if (!isAdmin.value) {
     accountRequestCount.value = 0
-    return
-  }
-
-  try {
-    const response = await axios.get("/account-requests")
-
-    accountRequestCount.value = Array.isArray(response.data)
-      ? response.data.length
-      : 0
-
-  } catch (error) {
-    console.error("Failed to load account request count:", error)
-  }
-}
-
-/* OPEN EQUIPMENT REPORTS (maintenance / disposal reports waiting for review) */
-
-async function refreshEquipmentReportCount() {
-  if (!isAdmin.value) {
     equipmentReportCount.value = 0
     return
   }
 
   try {
-    const response = await axios.get("/equipment-reports")
-
-    equipmentReportCount.value = Array.isArray(response.data)
-      ? response.data.filter(r => r.status === "Open").length
-      : 0
-
+    const { data } = await axios.get("/nav-counts")
+    pendingCount.value = Number(data.pending_requests) || 0
+    pendingInspectionCount.value = Number(data.pending_inspections) || 0
+    accountRequestCount.value = Number(data.account_requests) || 0
+    equipmentReportCount.value = Number(data.open_equipment_reports) || 0
   } catch (error) {
-    console.error("Failed to load equipment report count:", error)
+    console.error("Failed to load sidebar counts:", error)
   }
 }
 
@@ -135,43 +74,28 @@ const active = (path) => route.path === path
 
 /* AUTO REFRESH */
 
-let pendingRefreshTimer = null
-let accountRequestTimer = null
+// Every 30 s while the tab is visible, plus right away when something on
+// screen changes a count (pages fire these events) or the user navigates.
+const refreshSoon = throttled(refreshCounts, 3000)
+let stopPolling = null
 
-onMounted(async () => {
-  // Load immediately
-  await refreshPendingCount()
-  await refreshPendingInspectionCount()
-  await refreshAccountRequestCount()
-  await refreshEquipmentReportCount()
+onMounted(() => {
+  refreshCounts()
+  stopPolling = startPolling(refreshCounts, 30000)
 
-  // The equipment report page tells us right away when something changes
-  window.addEventListener("cims:equipment-reports-changed", refreshEquipmentReportCount)
-
-  // Check the backend every 5 seconds
-  pendingRefreshTimer = setInterval(() => {
-    refreshPendingCount()
-    refreshPendingInspectionCount()
-  }, 2000)
-
-  // New sign-ups are rare, so this one checks far less often
-  accountRequestTimer = setInterval(() => {
-    refreshAccountRequestCount()
-    refreshEquipmentReportCount()
-  }, 15000)
+  window.addEventListener("cims:counts-changed", refreshCounts)
+  window.addEventListener("cims:accounts-changed", refreshCounts)
+  window.addEventListener("cims:equipment-reports-changed", refreshCounts)
 })
 
 onBeforeUnmount(() => {
-  window.removeEventListener("cims:equipment-reports-changed", refreshEquipmentReportCount)
-
-  if (pendingRefreshTimer) {
-    clearInterval(pendingRefreshTimer)
-  }
-
-  if (accountRequestTimer) {
-    clearInterval(accountRequestTimer)
-  }
+  if (stopPolling) stopPolling()
+  window.removeEventListener("cims:counts-changed", refreshCounts)
+  window.removeEventListener("cims:accounts-changed", refreshCounts)
+  window.removeEventListener("cims:equipment-reports-changed", refreshCounts)
 })
+
+watch(() => route.fullPath, refreshSoon)
 </script>
 
 <template>
