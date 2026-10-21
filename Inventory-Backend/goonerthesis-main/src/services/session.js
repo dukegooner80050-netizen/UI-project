@@ -1,4 +1,4 @@
-import { getCurrentUser, clearCurrentUser } from "./storage";
+import { getCurrentUser } from "./storage";
 
 export function requireUser() {
   const user = getCurrentUser();

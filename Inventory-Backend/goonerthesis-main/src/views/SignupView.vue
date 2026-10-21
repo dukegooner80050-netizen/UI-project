@@ -73,23 +73,53 @@ async function submit() {
 
       <form @submit.prevent="submit">
         <div class="mb-2">
-          <label class="form-label">Full Name</label>
-          <input v-model="fullName" class="form-control" required />
+          <label class="form-label" for="signup-fullname">Full Name</label>
+          <input
+            id="signup-fullname"
+            name="full_name"
+            v-model="fullName"
+            class="form-control"
+            autocomplete="name"
+            required
+          />
         </div>
 
         <div class="mb-2">
-          <label class="form-label">Username</label>
-          <input v-model="username" class="form-control" required />
+          <label class="form-label" for="signup-username">Username</label>
+          <input
+            id="signup-username"
+            name="username"
+            v-model="username"
+            class="form-control"
+            autocomplete="username"
+            required
+          />
         </div>
 
         <div class="mb-2">
-          <label class="form-label">Password</label>
-          <input v-model="password" type="password" class="form-control" required/>
+          <label class="form-label" for="signup-password">Password</label>
+          <input
+            id="signup-password"
+            name="password"
+            v-model="password"
+            type="password"
+            class="form-control"
+            autocomplete="new-password"
+            required
+          />
         </div>
 
         <div class="mb-3">
-          <label class="form-label">Confirm Password</label>
-          <input v-model="confirmPassword" type="password" class="form-control" required/>
+          <label class="form-label" for="signup-confirm">Confirm Password</label>
+          <input
+            id="signup-confirm"
+            name="password_confirmation"
+            v-model="confirmPassword"
+            type="password"
+            class="form-control"
+            autocomplete="new-password"
+            required
+          />
         </div>
 
         <button class="btn btn-primary w-100">Sign Up</button>

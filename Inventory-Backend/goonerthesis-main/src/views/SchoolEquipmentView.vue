@@ -648,46 +648,44 @@ async function confirmModal() {
         <template v-if="!confirmAction">
           <!-- EDIT -->
           <template v-if="modalMode === 'edit'">
-            <label class="form-label"> Equipment Name </label>
+            <label for="se-edit-name" class="form-label"> Equipment Name </label>
 
-            <input class="form-control" v-model="editName" />
+            <input class="form-control" v-model="editName" id="se-edit-name" name="edit-name" />
 
         <label class="form-label mt-3">Stock Levels</label>
         <div class="row g-2">
           <div class="col">
             <small class="text-muted">Critical (at or below)</small>
-            <input type="number" min="0" class="form-control" v-model="editCritical" />
+            <input aria-label="Edit critical" type="number" min="0" class="form-control" v-model="editCritical" id="se-edit-critical" name="edit-critical" />
           </div>
           <div class="col">
             <small class="text-muted">Minimum (at or below)</small>
-            <input type="number" min="0" class="form-control" v-model="editMinimum" />
+            <input aria-label="Edit minimum" type="number" min="0" class="form-control" v-model="editMinimum" id="se-edit-minimum" name="edit-minimum" />
           </div>
           <div class="col">
             <small class="text-muted">Optimal (at or above)</small>
-            <input type="number" min="0" class="form-control" v-model="editOptimal" />
+            <input aria-label="Edit optimal" type="number" min="0" class="form-control" v-model="editOptimal" id="se-edit-optimal" name="edit-optimal" />
           </div>
         </div>
 
-        <label class="form-label mt-3">Return Period (days)</label>
+        <label for="se-edit-return-days" class="form-label mt-3">Return Period (days)</label>
         <input
           type="number"
           min="1"
           class="form-control"
           v-model="editReturnDays"
-          placeholder="Blank = category default"
-        />
+          placeholder="Blank = category default" id="se-edit-return-days" name="edit-return-days" />
         <small class="text-muted d-block">
           How long a borrower may keep this equipment before it is overdue.
         </small>
 
         <div class="form-check mt-3">
-          <input
+          <input aria-label="Edit is limitable"
             type="checkbox"
             class="form-check-input"
             id="editIsLimitable"
             v-model="editIsLimitable"
-            @change="onEditLimitableChange"
-          />
+            @change="onEditLimitableChange" name="edit-is-limitable" />
           <label class="form-check-label" for="editIsLimitable">
             Limitable (ordinary, stockable equipment)
           </label>
@@ -697,15 +695,14 @@ async function confirmModal() {
           aircon) - unique equipment like that can't carry a per-head limit.
         </small>
 
-        <label class="form-label mt-2">Per-Head Limit</label>
+        <label for="se-edit-per-head-limit" class="form-label mt-2">Per-Head Limit</label>
         <input
           type="number"
           min="1"
           class="form-control"
           v-model="editPerHeadLimit"
           placeholder="Blank = no limit"
-          :disabled="!editIsLimitable"
-        />
+          :disabled="!editIsLimitable" id="se-edit-per-head-limit" name="edit-per-head-limit" />
         <small class="text-muted d-block">
           Max a single requester may hold/have pending of this item at once.
         </small>
@@ -716,29 +713,27 @@ async function confirmModal() {
             <!-- RESTOCK -->
             <template v-if="modalMode === 'restock'">
               <div class="mb-3">
-                <label class="form-label"> Current Stock </label>
-                <input class="form-control" :value="currentItem.qty" disabled />
+                <label for="se-input" class="form-label"> Current Stock </label>
+                <input class="form-control" :value="currentItem.qty" disabled id="se-input" name="input" />
               </div>
 
-              <label class="form-label"> Restock Quantity </label>
+              <label for="se-modal-qty" class="form-label"> Restock Quantity </label>
               <input
                 type="number"
                 min="1"
                 class="form-control"
-                v-model="modalQty"
-              />
+                v-model="modalQty" id="se-modal-qty" name="modal-qty" />
             </template>
 
             <!-- RETURN -->
             <template v-else>
-              <label class="form-label"> Return Quantity </label>
+              <label for="se-modal-qty-2" class="form-label"> Return Quantity </label>
               <input
                 type="number"
                 min="1"
                 :max="modalMax"
                 class="form-control"
-                v-model="modalQty"
-              />
+                v-model="modalQty" id="se-modal-qty-2" name="modal-qty" />
               <small class="text-muted"> Max: {{ modalMax }} </small>
             </template>
           </template>
@@ -818,52 +813,49 @@ async function confirmModal() {
       </div>
 
       <div class="modal-body">
-        <label class="form-label">Name</label>
+        <label for="se-add-name" class="form-label">Name</label>
         <input
           class="form-control mb-3"
           v-model="addName"
-          placeholder="e.g. Projector"
-        />
+          placeholder="e.g. Projector" id="se-add-name" name="add-name" />
 
-        <label class="form-label">Quantity</label>
-        <input type="number" min="1" class="form-control" v-model="addQty" />
+        <label for="se-add-qty" class="form-label">Quantity</label>
+        <input type="number" min="1" class="form-control" v-model="addQty" id="se-add-qty" name="add-qty" />
 
         <label class="form-label mt-3">Stock Levels</label>
         <div class="row g-2">
           <div class="col">
             <small class="text-muted">Critical (at or below)</small>
-            <input type="number" min="0" class="form-control" v-model="addCritical" />
+            <input aria-label="Add critical" type="number" min="0" class="form-control" v-model="addCritical" id="se-add-critical" name="add-critical" />
           </div>
           <div class="col">
             <small class="text-muted">Minimum (at or below)</small>
-            <input type="number" min="0" class="form-control" v-model="addMinimum" />
+            <input aria-label="Add minimum" type="number" min="0" class="form-control" v-model="addMinimum" id="se-add-minimum" name="add-minimum" />
           </div>
           <div class="col">
             <small class="text-muted">Optimal (at or above)</small>
-            <input type="number" min="0" class="form-control" v-model="addOptimal" />
+            <input aria-label="Add optimal" type="number" min="0" class="form-control" v-model="addOptimal" id="se-add-optimal" name="add-optimal" />
           </div>
         </div>
 
-        <label class="form-label mt-3">Return Period (days)</label>
+        <label for="se-add-return-days" class="form-label mt-3">Return Period (days)</label>
         <input
           type="number"
           min="1"
           class="form-control"
           v-model="addReturnDays"
-          placeholder="Blank = category default"
-        />
+          placeholder="Blank = category default" id="se-add-return-days" name="add-return-days" />
         <small class="text-muted d-block">
           How long a borrower may keep this equipment before it is overdue.
         </small>
 
         <div class="form-check mt-3">
-          <input
+          <input aria-label="Add is limitable"
             type="checkbox"
             class="form-check-input"
             id="addIsLimitable"
             v-model="addIsLimitable"
-            @change="onAddLimitableChange"
-          />
+            @change="onAddLimitableChange" name="add-is-limitable" />
           <label class="form-check-label" for="addIsLimitable">
             Limitable (ordinary, stockable equipment)
           </label>
@@ -873,15 +865,14 @@ async function confirmModal() {
           aircon) - unique equipment like that can't carry a per-head limit.
         </small>
 
-        <label class="form-label mt-2">Per-Head Limit</label>
+        <label for="se-add-per-head-limit" class="form-label mt-2">Per-Head Limit</label>
         <input
           type="number"
           min="1"
           class="form-control"
           v-model="addPerHeadLimit"
           placeholder="Blank = no limit"
-          :disabled="!addIsLimitable"
-        />
+          :disabled="!addIsLimitable" id="se-add-per-head-limit" name="add-per-head-limit" />
         <small class="text-muted d-block">
           Max a single requester may hold/have pending of this item at once.
         </small>

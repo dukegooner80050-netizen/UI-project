@@ -28,7 +28,7 @@ export async function getConsumption() {
 
 // The signed-in user's own borrowed lines that are past their due date.
 export async function getMyOverdue() {
-    const response = await axios.get("/requests/overdue/mine");
+    const response = await axios.get("/requests/overdue/mine", { silent: true });
     return response.data;
 }
 

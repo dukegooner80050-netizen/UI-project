@@ -1,7 +1,7 @@
 import axios from "../axios";
 
 export async function getLowStock() {
-  return (await axios.get("/restock/low-stock")).data;
+  return (await axios.get("/restock/low-stock", { silent: true })).data;
 }
 
 export async function getRestockRequests(status) {

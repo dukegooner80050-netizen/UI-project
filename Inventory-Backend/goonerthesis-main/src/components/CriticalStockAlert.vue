@@ -70,8 +70,12 @@ const signature = computed(() =>
     .join(","),
 );
 
+// The dashboard shows its own, richer urgent-stock card, so skip the banner there.
 const visible = computed(
-  () => items.value.length > 0 && dismissed.value !== signature.value,
+  () =>
+    items.value.length > 0 &&
+    dismissed.value !== signature.value &&
+    !onDashboard.value,
 );
 
 function dismiss() {

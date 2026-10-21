@@ -3,7 +3,7 @@ import axios from "../axios";
 // The signed-in user's request updates (forwarded / approved / rejected),
 // newest first.
 export async function getNotifications() {
-  const { data } = await axios.get("/request-notifications");
+  const { data } = await axios.get("/request-notifications", { silent: true });
   return Array.isArray(data) ? data : [];
 }
 

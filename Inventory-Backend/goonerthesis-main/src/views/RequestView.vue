@@ -1,7 +1,6 @@
 <script setup>
 import { printBorrowerForm, hasBorrowedItems } from "../services/borrowerForm";
 import { ref, watch, computed, onMounted, nextTick } from "vue";
-import axios from "../axios";
 import { createRequestBatch, getRequests, confirmReceived } from "../services/requests";
 import { listUniformTypes, listUniformVariants } from "../services/uniforms";
 import { getCurrentUser } from "../services/storage";
@@ -801,8 +800,8 @@ watch(activeTab, async () => {
         <h4 class="mb-4">Request Item</h4>
 
         <div class="mb-3">
-          <label class="form-label">Category</label>
-          <select v-model="category" class="form-select">
+          <label for="rq-category" class="form-label">Category</label>
+          <select v-model="category" class="form-select" id="rq-category" name="category">
             <option value="">Select category</option>
             <option value="Office Supplies">Office Supplies</option>
             <option value="School Equipment">School Equipment</option>
@@ -822,11 +821,10 @@ watch(activeTab, async () => {
               </small>
             </label>
 
-            <select
+            <select aria-label="Item type"
               v-model="itemType"
               class="form-select"
-              :disabled="isItemTypeLocked"
-            >
+              :disabled="isItemTypeLocked" id="rq-item-type" name="item-type">
               <option value="">Select item type</option>
               <option
                 v-for="opt in OFFICE_TYPE_OPTIONS"
@@ -840,12 +838,11 @@ watch(activeTab, async () => {
 
           <!-- Item Name -->
           <div class="mb-3">
-            <label class="form-label">Item Name</label>
+            <label for="rq-selected-item-id" class="form-label">Item Name</label>
             <select
               v-model="selectedItemId"
               class="form-select"
-              :disabled="!category || !itemType"
-            >
+              :disabled="!category || !itemType" id="rq-selected-item-id" name="selected-item-id">
               <option value="">Select item</option>
               <option
                 v-for="i in itemOptions"
@@ -861,15 +858,14 @@ watch(activeTab, async () => {
 
           <!-- Quantity -->
           <div class="mb-3">
-            <label class="form-label">Quantity</label>
+            <label for="rq-qty" class="form-label">Quantity</label>
 
             <input
               type="number"
               min="1"
               :max="maxQty"
               v-model="qty"
-              class="form-control"
-            />
+              class="form-control" id="rq-qty" name="qty" />
             <div v-if="qtyWarning" class="text-danger small mt-1">
               {{ qtyWarning }}
             </div>
@@ -881,9 +877,9 @@ watch(activeTab, async () => {
         <template v-else-if="category === 'Uniforms'">
           <!-- Uniform Type -->
           <div class="mb-3">
-            <label class="form-label"> Uniform Type </label>
+            <label for="rq-selected-uniform-type-id" class="form-label"> Uniform Type </label>
 
-            <select v-model="selectedUniformTypeId" class="form-select">
+            <select v-model="selectedUniformTypeId" class="form-select" id="rq-selected-uniform-type-id" name="selected-uniform-type-id">
               <option value="">Select uniform type</option>
 
               <option
@@ -898,13 +894,12 @@ watch(activeTab, async () => {
 
           <!-- Uniform Variant -->
           <div class="mb-3">
-            <label class="form-label"> Uniform Variant </label>
+            <label for="rq-selected-uniform-variant-id" class="form-label"> Uniform Variant </label>
 
             <select
               v-model="selectedUniformVariantId"
               class="form-select"
-              :disabled="!selectedUniformTypeId"
-            >
+              :disabled="!selectedUniformTypeId" id="rq-selected-uniform-variant-id" name="selected-uniform-variant-id">
               <option value="">Select uniform variant</option>
 
               <option
@@ -922,14 +917,13 @@ watch(activeTab, async () => {
 
           <!-- Uniform Quantity -->
           <div class="mb-3">
-            <label class="form-label"> Quantity </label>
+            <label for="rq-qty-2" class="form-label"> Quantity </label>
             <input
               type="number"
               min="1"
               :max="uniformMaxQty"
               v-model="qty"
-              class="form-control"
-            />
+              class="form-control" id="rq-qty-2" name="qty" />
             <div
               v-if="selectedUniformVariant && uniformMaxQty <= 0"
               class="text-danger small mt-1"
@@ -1061,8 +1055,8 @@ watch(activeTab, async () => {
 
         <div v-else class="row">
           <div class="col-md-6">
-            <label class="form-label">Location</label>
-            <select v-model="location" class="form-select">
+            <label for="rq-location" class="form-label">Location</label>
+            <select v-model="location" class="form-select" id="rq-location" name="location">
               <option value="">Select location</option>
               <option>SFB.Faculty</option>
               <option>SFB.Building 1</option>
@@ -1071,8 +1065,8 @@ watch(activeTab, async () => {
             </select>
           </div>
           <div class="col-md-6">
-            <label class="form-label">Room</label>
-            <select v-model="room" class="form-select">
+            <label for="rq-room" class="form-label">Room</label>
+            <select v-model="room" class="form-select" id="rq-room" name="room">
               <option value="">Select Room</option>
               <option>Room 201</option>
               <option>Room 202</option>
@@ -1083,13 +1077,12 @@ watch(activeTab, async () => {
         </div>
 
         <div class="mb-3">
-          <label class="form-label">Purpose</label>
+          <label for="rq-request-purpose" class="form-label">Purpose</label>
           <textarea
             v-model="requestPurpose"
             class="form-control"
             rows="3"
-            placeholder="Enter purpose of request..."
-          ></textarea>
+            placeholder="Enter purpose of request..." id="rq-request-purpose" name="request-purpose"></textarea>
         </div>
 
         <div class="mt-3">
@@ -1310,14 +1303,13 @@ watch(activeTab, async () => {
                       Report returned
                     </button>
                     <span v-else class="ms-2 d-inline-flex align-items-center gap-1">
-                      <input
+                      <input aria-label="Report qty"
                         v-model="reportQty"
                         type="number"
                         min="1"
                         :max="reportable(item)"
                         class="form-control form-control-sm"
-                        style="width: 80px"
-                      />
+                        style="width: 80px" id="rq-report-qty" name="report-qty" />
                       <button
                         type="button"
                         class="btn btn-sm btn-success"

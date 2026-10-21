@@ -8,10 +8,7 @@ import {
   listInventory,
   addItem,
   updateItem,
-  autoStatus,
   restockOfficeSupplies,
-  releaseOfficeConsumables,
-  borrowNonConsumables,
 } from "../services/inventory";
 import { getRequests, returnEquipment } from "../services/requests";
 import AlertMessage from "../components/AlertMessage.vue";
@@ -271,34 +268,77 @@ const officeItems = computed(() =>
   items.value.filter((i) => i.category === "Office Supplies"),
 );
 
-// Consumable and Type A are handed over for good (never returned); only
-// Type B is tracked and expected back.
-const consumables = computed(() =>
-  officeItems.value.filter((i) => i.item_type === TYPE_CONSUMABLE),
-);
-
-const typeAItems = computed(() =>
-  officeItems.value.filter((i) => i.item_type === TYPE_A),
-);
-
 const typeBItems = computed(() =>
   officeItems.value.filter((i) => i.item_type === TYPE_B),
 );
 
-const issuedSections = computed(() => [
-  {
-    key: "consumable",
-    title: "Consumables",
-    note: "Used up, never returned",
-    items: consumables.value,
-  },
-  {
-    key: "type-a",
-    title: "Non-Consumable Type A",
-    note: "Issued items: handed over for good, never returned",
-    items: typeAItems.value,
-  },
-]);
+// ---- One table: search, filter by type / stock level, sort by column ----
+const LEVELS = ["Out of Stock", "Critical", "Minimum", "Adequate", "Optimal"];
+const LEVEL_ORDER = Object.fromEntries(LEVELS.map((l, n) => [l, n]));
+
+const search = ref("");
+const typeFilter = ref("ALL");
+const levelFilter = ref("ALL");
+const sortKey = ref("name");
+const sortDir = ref("asc");
+
+function typeShort(type) {
+  return OFFICE_TYPE_OPTIONS.find((t) => t.value === type)?.short || type;
+}
+
+function typeBadge(type) {
+  if (type === TYPE_A) return "bg-primary";
+  if (type === TYPE_B) return "bg-success";
+  return "bg-secondary";
+}
+
+function sortBy(key) {
+  if (sortKey.value === key) {
+    sortDir.value = sortDir.value === "asc" ? "desc" : "asc";
+  } else {
+    sortKey.value = key;
+    sortDir.value = "asc";
+  }
+}
+
+function sortMark(key) {
+  if (sortKey.value !== key) return "";
+  return sortDir.value === "asc" ? " ▲" : " ▼";
+}
+
+const tableRows = computed(() => {
+  const q = search.value.trim().toLowerCase();
+
+  const rows = officeItems.value.filter(
+    (i) =>
+      (!q || (i.item_name || "").toLowerCase().includes(q)) &&
+      (typeFilter.value === "ALL" || i.item_type === typeFilter.value) &&
+      (levelFilter.value === "ALL" || i.stock_level === levelFilter.value),
+  );
+
+  const value = (i) => {
+    switch (sortKey.value) {
+      case "type":
+        return typeShort(i.item_type);
+      case "level":
+        return LEVEL_ORDER[i.stock_level] ?? 99;
+      case "qty":
+        return Number(i.quantity) || 0;
+      case "borrowed":
+        return Number(i.borrowedQty) || 0;
+      default:
+        return (i.item_name || "").toLowerCase();
+    }
+  };
+
+  const dir = sortDir.value === "asc" ? 1 : -1;
+  return [...rows].sort((x, y) => {
+    const a = value(x);
+    const b = value(y);
+    const c = typeof a === "number" ? a - b : String(a).localeCompare(String(b));
+    return c * dir || (x.item_name || "").localeCompare(y.item_name || "");
+  });
+});
 
 function openQtyModal(mode, item) {
   modalMode.value = mode;
@@ -392,7 +432,6 @@ async function proceedAction() {
     confirmAction.value = false;
     modalOpen.value = false;
   } catch (e) {
-    console.log(e.response?.data);
     notify("danger", getErrorMessage(e));
   }
 }
@@ -432,158 +471,128 @@ async function proceedAction() {
         + Add Office Supply
       </button>
     </div>
-    <div v-if="activeTab === 'inventory'">
-      <!-- CONSUMABLES + NON-CONSUMABLE TYPE A (issued, never returned) -->
-      <div
-        v-for="section in issuedSections"
-        :key="section.key"
-        class="card shadow-sm mb-4"
-      >
-        <div class="card-body">
-          <div
-            class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3"
-          >
-            <h5 class="mb-0">{{ section.title }}</h5>
-            <small class="text-muted">{{ section.note }}</small>
+    <div v-if="activeTab === 'inventory'" class="card shadow-sm">
+      <div class="card-body">
+        <!-- Filters: one table for everything; narrow it by type or stock level -->
+        <div class="row g-2 align-items-end mb-3">
+          <div class="col-md-4">
+            <label class="form-label small mb-1" for="os-search">Search</label>
+            <input
+              id="os-search"
+              name="os-search"
+              v-model="search"
+              type="search"
+              class="form-control"
+              placeholder="Search by item name" />
           </div>
-
-          <div class="table-responsive table-scroll">
-            <table class="table table-striped table-hover align-middle mb-0">
-              <thead class="table-light">
-                <tr>
-                  <th>Name</th>
-                  <th>Stock Level</th>
-                  <th style="width: 120px">Qty</th>
-                  <th style="width: 110px">Per-Head Limit</th>
-                  <th style="width: 260px; text-align: center">Acton</th>
-                </tr>
-              </thead>
-
-              <tbody>
-                <tr v-for="i in section.items" :key="i.iditems">
-                  <td>{{ i.item_name }}</td>
-                  <td>
-                    <StockBadge
-                      :level="i.stock_level"
-                      :title="`Critical ≤ ${i.critical_stock} · Minimum ≤ ${i.minimum_stock} · Optimal ≥ ${i.optimal_stock}`"
-                    />
-                  </td>
-                  <td>{{ i.quantity }}</td>
-                  <td>{{ i.per_head_limit ?? "No limit" }}</td>
-                  <td class="text-center">
-                    <div class="d-flex justify-content-center gap-2">
-                      <button
-                        class="btn btn-success btn-sm"
-                        @click="openQtyModal('restock', i)"
-                      >
-                        Restock
-                      </button>
-                      <button
-                        class="btn btn-warning btn-sm"
-                        @click="openQtyModal('edit', i)"
-                      >
-                        Edit
-                      </button>
-                      <button
-                        class="btn btn-danger btn-sm"
-                        title="Record missing, lost or stolen stock"
-                        @click="openAdjust(i)"
-                      >
-                        Missing
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-
-                <tr v-if="section.items.length === 0">
-                  <td colspan="5" class="text-center text-muted">
-                    No items found.
-                  </td>
-                </tr>
-              </tbody>
-            </table>
+          <div class="col-md-3">
+            <label class="form-label small mb-1" for="os-type-filter">Type</label>
+            <select
+              id="os-type-filter"
+              name="os-type-filter"
+              v-model="typeFilter"
+              class="form-select">
+              <option value="ALL">All types</option>
+              <option v-for="t in OFFICE_TYPE_OPTIONS" :key="t.value" :value="t.value">
+                {{ t.short }}
+              </option>
+            </select>
+          </div>
+          <div class="col-md-3">
+            <label class="form-label small mb-1" for="os-level-filter">Stock level</label>
+            <select
+              id="os-level-filter"
+              name="os-level-filter"
+              v-model="levelFilter"
+              class="form-select">
+              <option value="ALL">All levels</option>
+              <option v-for="l in LEVELS" :key="l" :value="l">{{ l }}</option>
+            </select>
+          </div>
+          <div class="col-md-2 text-md-end small text-muted">
+            Showing {{ tableRows.length }} of {{ officeItems.length }}
           </div>
         </div>
-      </div>
 
-      <!-- NON-CONSUMABLES -->
-      <div class="card shadow-sm">
-        <div class="card-body">
-          <div
-            class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3"
-          >
-            <h5 class="mb-0">Non-Consumable Type B</h5>
-            <small class="text-muted">Tracked items: lent out, must be returned</small>
-          </div>
+        <div class="table-responsive table-scroll">
+          <table class="table table-striped table-hover align-middle mb-0">
+            <thead class="table-light">
+              <tr>
+                <th class="sortable" @click="sortBy('name')">Name{{ sortMark("name") }}</th>
+                <th class="sortable" @click="sortBy('type')">Type{{ sortMark("type") }}</th>
+                <th class="sortable" @click="sortBy('level')">Stock Level{{ sortMark("level") }}</th>
+                <th class="sortable" style="width: 90px" @click="sortBy('qty')">Qty{{ sortMark("qty") }}</th>
+                <th class="sortable" style="width: 100px" @click="sortBy('borrowed')">Borrowed{{ sortMark("borrowed") }}</th>
+                <th>Return Period</th>
+                <th style="width: 110px">Per-Head Limit</th>
+                <th style="width: 260px; text-align: center">Action</th>
+              </tr>
+            </thead>
 
-          <div class="table-responsive table-scroll">
-            <table class="table table-striped table-hover align-middle mb-0">
-              <thead class="table-light">
-                <tr>
-                  <th>Name</th>
-                  <th>Status</th>
-                  <th>Stock Level</th>
-                  <th style="width: 120px">Qty</th>
-                  <th style="width: 120px">Borrowed</th>
-                  <th>Return Period</th>
-                  <th style="width: 110px">Per-Head Limit</th>
-                  <th style="width: 260px; text-align: center">Acton</th>
-                </tr>
-              </thead>
-
-              <tbody>
-                <tr v-for="i in typeBItems" :key="i.iditems">
-                  <td>{{ i.item_name }}</td>
-                  <td>{{ i.status }}</td>
-                  <td>
-                    <StockBadge
-                      :level="i.stock_level"
-                      :title="`Critical ≤ ${i.critical_stock} · Minimum ≤ ${i.minimum_stock} · Optimal ≥ ${i.optimal_stock}`"
-                    />
-                  </td>
-                  <td>{{ i.quantity }}</td>
-                  <td>{{ Number(i.borrowedQty) || 0 }}</td>
-                  <td>
+            <tbody>
+              <tr v-for="i in tableRows" :key="i.iditems">
+                <td>{{ i.item_name }}</td>
+                <td>
+                  <span class="badge" :class="typeBadge(i.item_type)">
+                    {{ typeShort(i.item_type) }}
+                  </span>
+                </td>
+                <td>
+                  <StockBadge
+                    :level="i.stock_level"
+                    :title="`Critical ≤ ${i.critical_stock} · Minimum ≤ ${i.minimum_stock} · Optimal ≥ ${i.optimal_stock}`"
+                  />
+                </td>
+                <td>{{ i.quantity }}</td>
+                <td>
+                  <template v-if="i.item_type === TYPE_B">
+                    {{ Number(i.borrowedQty) || 0 }}
+                  </template>
+                  <span v-else class="text-muted">-</span>
+                </td>
+                <td>
+                  <template v-if="i.item_type === TYPE_B">
                     <span v-if="i.return_days">{{ i.return_days }} days</span>
                     <span v-else-if="i.effective_return_days" class="text-muted">
                       {{ i.effective_return_days }} days (default)
                     </span>
                     <span v-else class="text-muted">None</span>
-                  </td>
-                  <td>{{ i.per_head_limit ?? "No limit" }}</td>
-                  <td class="text-center">
-                    <div class="d-flex justify-content-center gap-2">
-                      <button
-                        class="btn btn-success btn-sm"
-                        @click="openQtyModal('restock', i)"
-                      >
-                        Restock
-                      </button>
-                      <button
-                        class="btn btn-warning btn-sm"
-                        @click="openQtyModal('edit', i)"
-                      >
-                        Edit
-                      </button>
-                      <button
-                        class="btn btn-danger btn-sm"
-                        title="Record missing, lost or stolen stock"
-                        @click="openAdjust(i)"
-                      >
-                        Missing
-                      </button>
-                    </div>
-                  </td>
-                </tr>
+                  </template>
+                  <span v-else class="text-muted">-</span>
+                </td>
+                <td>{{ i.per_head_limit ?? "No limit" }}</td>
+                <td class="text-center">
+                  <div class="d-flex justify-content-center gap-2">
+                    <button
+                      class="btn btn-success btn-sm"
+                      @click="openQtyModal('restock', i)"
+                    >
+                      Restock
+                    </button>
+                    <button
+                      class="btn btn-warning btn-sm"
+                      @click="openQtyModal('edit', i)"
+                    >
+                      Edit
+                    </button>
+                    <button
+                      class="btn btn-danger btn-sm"
+                      title="Record missing, lost or stolen stock"
+                      @click="openAdjust(i)"
+                    >
+                      Missing
+                    </button>
+                  </div>
+                </td>
+              </tr>
 
-                <tr v-if="typeBItems.length === 0">
-                  <td colspan="8" class="text-center text-muted">
-                    No Type B items found.
-                  </td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
+              <tr v-if="tableRows.length === 0">
+                <td colspan="8" class="text-center text-muted py-4">
+                  No items match the current filters.
+                </td>
+              </tr>
+            </tbody>
+          </table>
         </div>
       </div>
     </div>
@@ -759,11 +768,11 @@ async function proceedAction() {
         </div>
         <div class="modal-body">
           <template v-if="modalMode === 'edit'">
-            <label class="form-label">Item Name</label>
-            <input class="form-control mb-3" v-model="editName" />
+            <label for="os-edit-name" class="form-label">Item Name</label>
+            <input class="form-control mb-3" v-model="editName" id="os-edit-name" name="edit-name" />
 
-            <label class="form-label">Type</label>
-            <select class="form-select mb-3" v-model="editType">
+            <label for="os-edit-type" class="form-label">Type</label>
+            <select class="form-select mb-3" v-model="editType" id="os-edit-type" name="edit-type">
               <option
                 v-for="opt in OFFICE_TYPE_OPTIONS"
                 :key="opt.value"
@@ -774,14 +783,13 @@ async function proceedAction() {
             </select>
 
             <template v-if="editType === TYPE_B">
-              <label class="form-label">Return Period (days)</label>
+              <label for="os-edit-return-days" class="form-label">Return Period (days)</label>
               <input
                 type="number"
                 min="1"
                 class="form-control"
                 v-model="editReturnDays"
-                placeholder="Blank = category default"
-              />
+                placeholder="Blank = category default" id="os-edit-return-days" name="edit-return-days" />
               <small class="text-muted d-block mb-3">
                 How long a borrower may keep this item before it is overdue.
               </small>
@@ -791,39 +799,37 @@ async function proceedAction() {
             <div class="row g-2 mb-1">
               <div class="col">
                 <small class="text-muted">Critical (at or below)</small>
-                <input type="number" min="0" class="form-control" v-model="editCritical" />
+                <input aria-label="Edit critical" type="number" min="0" class="form-control" v-model="editCritical" id="os-edit-critical" name="edit-critical" />
               </div>
               <div class="col">
                 <small class="text-muted">Minimum (at or below)</small>
-                <input type="number" min="0" class="form-control" v-model="editMinimum" />
+                <input aria-label="Edit minimum" type="number" min="0" class="form-control" v-model="editMinimum" id="os-edit-minimum" name="edit-minimum" />
               </div>
               <div class="col">
                 <small class="text-muted">Optimal (at or above)</small>
-                <input type="number" min="0" class="form-control" v-model="editOptimal" />
+                <input aria-label="Edit optimal" type="number" min="0" class="form-control" v-model="editOptimal" id="os-edit-optimal" name="edit-optimal" />
               </div>
             </div>
 
-            <label class="form-label mt-3">Per-Head Limit</label>
+            <label for="os-edit-per-head-limit" class="form-label mt-3">Per-Head Limit</label>
             <input
               type="number"
               min="1"
               class="form-control"
               v-model="editPerHeadLimit"
-              placeholder="Blank = no limit"
-            />
+              placeholder="Blank = no limit" id="os-edit-per-head-limit" name="edit-per-head-limit" />
             <small class="text-muted d-block">
               Max a single requester may hold/have pending of this item at once.
             </small>
           </template>
           <template v-else>
-            <label class="form-label">Quantity</label>
+            <label for="os-modal-qty" class="form-label">Quantity</label>
             <input
               type="number"
               min="1"
               :max="modalMax || undefined"
               class="form-control"
-              v-model="modalQty"
-            />
+              v-model="modalQty" id="os-modal-qty" name="modal-qty" />
           </template>
           <small
             v-if="modalMode !== 'edit' && modalMax"
@@ -858,8 +864,8 @@ async function proceedAction() {
       </div>
 
       <div class="modal-body">
-        <label class="form-label">Type</label>
-        <select class="form-select mb-3" v-model="addSubCategory">
+        <label for="os-add-sub-category" class="form-label">Type</label>
+        <select class="form-select mb-3" v-model="addSubCategory" id="os-add-sub-category" name="add-sub-category">
           <option
             v-for="opt in OFFICE_TYPE_OPTIONS"
             :key="opt.value"
@@ -869,25 +875,23 @@ async function proceedAction() {
           </option>
         </select>
 
-        <label class="form-label">Name</label>
+        <label for="os-add-name" class="form-label">Name</label>
         <input
           class="form-control mb-3"
           v-model="addName"
-          placeholder="Name of the item that is being Added."
-        />
+          placeholder="Name of the item that is being Added." id="os-add-name" name="add-name" />
 
-        <label class="form-label">Quantity</label>
-        <input type="number" min="1" class="form-control" v-model="addQty" />
+        <label for="os-add-qty" class="form-label">Quantity</label>
+        <input type="number" min="1" class="form-control" v-model="addQty" id="os-add-qty" name="add-qty" />
 
         <template v-if="addSubCategory === TYPE_B">
-          <label class="form-label mt-3">Return Period (days)</label>
+          <label for="os-add-return-days" class="form-label mt-3">Return Period (days)</label>
           <input
             type="number"
             min="1"
             class="form-control"
             v-model="addReturnDays"
-            placeholder="Blank = category default"
-          />
+            placeholder="Blank = category default" id="os-add-return-days" name="add-return-days" />
           <small class="text-muted d-block">
             How long a borrower may keep this item before it is overdue.
           </small>
@@ -897,26 +901,25 @@ async function proceedAction() {
         <div class="row g-2">
           <div class="col">
             <small class="text-muted">Critical (at or below)</small>
-            <input type="number" min="0" class="form-control" v-model="addCritical" />
+            <input aria-label="Add critical" type="number" min="0" class="form-control" v-model="addCritical" id="os-add-critical" name="add-critical" />
           </div>
           <div class="col">
             <small class="text-muted">Minimum (at or below)</small>
-            <input type="number" min="0" class="form-control" v-model="addMinimum" />
+            <input aria-label="Add minimum" type="number" min="0" class="form-control" v-model="addMinimum" id="os-add-minimum" name="add-minimum" />
           </div>
           <div class="col">
             <small class="text-muted">Optimal (at or above)</small>
-            <input type="number" min="0" class="form-control" v-model="addOptimal" />
+            <input aria-label="Add optimal" type="number" min="0" class="form-control" v-model="addOptimal" id="os-add-optimal" name="add-optimal" />
           </div>
         </div>
 
-        <label class="form-label mt-3">Per-Head Limit</label>
+        <label for="os-add-per-head-limit" class="form-label mt-3">Per-Head Limit</label>
         <input
           type="number"
           min="1"
           class="form-control"
           v-model="addPerHeadLimit"
-          placeholder="Blank = no limit"
-        />
+          placeholder="Blank = no limit" id="os-add-per-head-limit" name="add-per-head-limit" />
         <small class="text-muted d-block">
           Max a single requester may hold/have pending of this item at once.
         </small>
@@ -1063,5 +1066,11 @@ async function proceedAction() {
   min-width: 0;
   overflow-wrap: anywhere;
   word-break: break-word;
+}
+
+.sortable {
+  cursor: pointer;
+  user-select: none;
+  white-space: nowrap;
 }
 </style>

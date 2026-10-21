@@ -12,7 +12,7 @@ export async function reportReturn(requestItemId, quantity) {
 
 // AMO: reports waiting to be checked, oldest first.
 export async function listReturnReports() {
-  const { data } = await axios.get("/return-reports");
+  const { data } = await axios.get("/return-reports", { silent: true });
   return Array.isArray(data) ? data : [];
 }
 

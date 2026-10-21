@@ -20,7 +20,10 @@ async function submit() {
 
     router.push("/dashboard");
   } catch (e) {
-    if (e.response?.data?.message) {
+    if (e.response?.status === 429) {
+      const wait = Number(e.response.headers?.["retry-after"]) || 60;
+      error.value = `Too many login attempts. Please wait ${wait} seconds and try again.`;
+    } else if (e.response?.data?.message) {
       error.value = e.response.data.message;
     } else {
       error.value = "Unable to login.";
@@ -39,16 +42,26 @@ async function submit() {
 
       <form @submit.prevent="submit">
         <div class="mb-3">
-          <label class="form-label">Username</label>
-          <input v-model="username" class="form-control" required />
+          <label class="form-label" for="login-username">Username</label>
+          <input
+            id="login-username"
+            name="username"
+            v-model="username"
+            class="form-control"
+            autocomplete="username"
+            required
+          />
         </div>
 
         <div class="mb-3">
-          <label class="form-label">Password</label>
+          <label class="form-label" for="login-password">Password</label>
           <input
+            id="login-password"
+            name="password"
             v-model="password"
             type="password"
             class="form-control"
+            autocomplete="current-password"
             required
           />
         </div>

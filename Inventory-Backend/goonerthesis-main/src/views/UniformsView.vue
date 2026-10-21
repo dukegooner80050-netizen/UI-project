@@ -776,12 +776,12 @@ const visibleTypes = computed(() => {
         </div>
 
         <div class="modal-body">
-          <label class="form-label"> Uniform Name </label>
-          <input class="form-control mb-3" v-model="typeName" placeholder="e.g. PE Uniform"/>
+          <label for="un-type-name" class="form-label"> Uniform Name </label>
+          <input class="form-control mb-3" v-model="typeName" placeholder="e.g. PE Uniform" id="un-type-name" name="type-name" />
 
-          <label class="form-label"> Description </label>
+          <label for="un-type-description" class="form-label"> Description </label>
 
-          <textarea class="form-control" rows="3" v-model="typeDescription" placeholder="Enter uniform description"></textarea>
+          <textarea class="form-control" rows="3" v-model="typeDescription" placeholder="Enter uniform description" id="un-type-description" name="type-description"></textarea>
         </div>
 
         <div class="modal-footer">
@@ -853,10 +853,10 @@ const visibleTypes = computed(() => {
 
         <div class="modal-body">
           <template v-if="!editTypeConfirm">
-            <label class="form-label"> Uniform Name </label>
-            <input class="form-control mb-3" v-model="editTypeName" />
-            <label class="form-label"> Description </label>
-            <textarea class="form-control" rows="3" v-model="editTypeDescription"></textarea>
+            <label for="un-edit-type-name" class="form-label"> Uniform Name </label>
+            <input class="form-control mb-3" v-model="editTypeName" id="un-edit-type-name" name="edit-type-name" />
+            <label for="un-edit-type-description" class="form-label"> Description </label>
+            <textarea class="form-control" rows="3" v-model="editTypeDescription" id="un-edit-type-description" name="edit-type-description"></textarea>
           </template>
 
           <!-- CONFIRMATION SCREEN -->
@@ -904,8 +904,8 @@ const visibleTypes = computed(() => {
         <div class="modal-body">
           <!-- TYPE -->
 
-          <label class="form-label"> Uniform Type </label>
-          <select class="form-select mb-3" v-model="variantTypeId">
+          <label for="un-variant-type-id" class="form-label"> Uniform Type </label>
+          <select class="form-select mb-3" v-model="variantTypeId" id="un-variant-type-id" name="variant-type-id">
             <option value="">Select uniform type</option>
 
             <option v-for="type in uniformTypes" :key="type.idUniftype" :value="String(type.idUniftype)">
@@ -915,8 +915,8 @@ const visibleTypes = computed(() => {
 
           <!-- DEPARTMENT -->
 
-          <label class="form-label"> Department </label>
-          <select class="form-select mb-3" v-model="variantDepartmentId">
+          <label for="un-variant-department-id" class="form-label"> Department </label>
+          <select class="form-select mb-3" v-model="variantDepartmentId" id="un-variant-department-id" name="variant-department-id">
             <option value="">Select department</option>
             <option v-for="department in addableDepartments" :key="department.iddept" :value="String(department.iddept)">
               {{ department.dept_name }}
@@ -925,18 +925,18 @@ const visibleTypes = computed(() => {
 
           <!-- SIZE -->
 
-          <label class="form-label"> Size </label>
-          <input class="form-control mb-3" v-model="variantSize" placeholder="e.g. Small, Medium, Large"/>
+          <label for="un-variant-size" class="form-label"> Size </label>
+          <input class="form-control mb-3" v-model="variantSize" placeholder="e.g. Small, Medium, Large" id="un-variant-size" name="variant-size" />
 
           <!-- PRICE -->
 
-          <label class="form-label"> Price </label>
-          <input type="number" min="0" step="0.01" class="form-control mb-3" v-model.number="variantPrice"/>
+          <label for="un-variant-price" class="form-label"> Price </label>
+          <input type="number" min="0" step="0.01" class="form-control mb-3" v-model.number="variantPrice" id="un-variant-price" name="variant-price" />
 
           <!-- QUANTITY -->
 
-          <label class="form-label"> Quantity </label>
-          <input type="number" min="0" class="form-control" v-model.number="variantQuantity"/>
+          <label for="un-variant-quantity" class="form-label"> Quantity </label>
+          <input type="number" min="0" class="form-control" v-model.number="variantQuantity" id="un-variant-quantity" name="variant-quantity" />
         </div>
 
         <div class="modal-footer">
@@ -1004,24 +1004,24 @@ const visibleTypes = computed(() => {
 
         <div class="modal-body">
           <!-- TYPE -->
-          <label class="form-label"> Uniform Type </label>
-          <input class="form-control mb-3" :value="editingVariant ? getTypeName(editingVariant) : ''" disabled/>
+          <label for="un-input" class="form-label"> Uniform Type </label>
+          <input class="form-control mb-3" :value="editingVariant ? getTypeName(editingVariant) : ''" disabled id="un-input" name="input" />
 
           <!-- DEPARTMENT -->
-          <label class="form-label"> Department </label>
-          <input class="form-control mb-3" :value="editingVariant ? getDepartmentName(editingVariant) : ''"disabled/>
+          <label for="un-input-2" class="form-label"> Department </label>
+          <input class="form-control mb-3" :value="editingVariant ? getDepartmentName(editingVariant) : ''"disabled id="un-input-2" name="input" />
 
           <!-- SIZE -->
-          <label class="form-label"> Size </label>
-          <input class="form-control mb-3" :value="editingVariant ? editingVariant.size : ''" disabled/>
+          <label for="un-input-3" class="form-label"> Size </label>
+          <input class="form-control mb-3" :value="editingVariant ? editingVariant.size : ''" disabled id="un-input-3" name="input" />
 
           <!-- PRICE -->
-          <label class="form-label"> Price </label>
-          <input type="number" min="0" step="0.01" class="form-control mb-3" v-model.number="editVariantPrice"/>
+          <label for="un-edit-variant-price" class="form-label"> Price </label>
+          <input type="number" min="0" step="0.01" class="form-control mb-3" v-model.number="editVariantPrice" id="un-edit-variant-price" name="edit-variant-price" />
 
           <!-- QUANTITY -->
-          <label class="form-label"> Quantity </label>
-          <input type="number" class="form-control" :value="editingVariant ? editingVariant.quantity : 0" disabled/>
+          <label for="un-input-4" class="form-label"> Quantity </label>
+          <input type="number" class="form-control" :value="editingVariant ? editingVariant.quantity : 0" disabled id="un-input-4" name="input" />
         </div>
 
         <div class="modal-footer">
@@ -1066,9 +1066,9 @@ const visibleTypes = computed(() => {
             }}
           </div>
 
-          <label class="form-label"> Quantity </label>
+          <label for="un-stock-quantity" class="form-label"> Quantity </label>
           <input type="number" min="1" :max=" stockMode === 'release' && stockVariant
-                ? stockVariant.quantity : undefined" class="form-control" v-model.number="stockQuantity"/>
+                ? stockVariant.quantity : undefined" class="form-control" v-model.number="stockQuantity" id="un-stock-quantity" name="stock-quantity" />
           <div v-if="stockMode === 'release' && stockVariant" class="text-muted small mt-2">
             Current stock:
             {{ Number(stockVariant.quantity) || 0 }}

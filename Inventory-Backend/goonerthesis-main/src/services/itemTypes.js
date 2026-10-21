@@ -8,9 +8,9 @@ export const TYPE_A = "Non-Consumable Type A";
 export const TYPE_B = "Non-Consumable Type B";
 
 export const OFFICE_TYPE_OPTIONS = [
-  { value: TYPE_CONSUMABLE, label: "Consumable (used up)" },
-  { value: TYPE_A, label: "Non-Consumable Type A (issued, not returned)" },
-  { value: TYPE_B, label: "Non-Consumable Type B (tracked, must be returned)" },
+  { value: TYPE_CONSUMABLE, short: "Consumable", label: "Consumable (used up)" },
+  { value: TYPE_A, short: "Type A", label: "Non-Consumable Type A (issued, not returned)" },
+  { value: TYPE_B, short: "Type B", label: "Non-Consumable Type B (tracked, must be returned)" },
 ];
 
 // Handed over for good: never returned, never "borrowed".

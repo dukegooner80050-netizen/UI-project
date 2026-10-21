@@ -9,6 +9,7 @@ import { getLogs } from "../services/logs";
 import { getCurrentUser } from "../services/storage";
 import LowStockRestockPanel from "../components/LowStockRestockPanel.vue";
 import ReturnReportsPanel from "../components/ReturnReportsPanel.vue";
+import { getLowStock } from "../services/restock";
 
 // Chart.js
 import Chart from "chart.js/auto";
@@ -41,8 +42,37 @@ const ACTIONABLE = ["pending", "with inventory"];
 const isInFlight = (s) => IN_FLIGHT.includes((s || "").toLowerCase());
 const isActionable = (s) => ACTIONABLE.includes((s || "").toLowerCase());
 
+// One colour per status, matching the calendar badges. (Returned used to
+// fall through to red, so it looked like a rejection.)
+function statusBadgeClass(status) {
+  const s = (status || "").toLowerCase();
+  if (isInFlight(s)) return "bg-warning text-dark";
+  if (s === "approved") return "bg-success";
+  if (s === "rejected") return "bg-danger";
+  if (s === "returned") return "bg-info text-dark";
+  return "bg-secondary";
+}
+
 const lowStockModal = ref(false);
 const overdueModal = ref(false);
+
+// Items at Critical stock (or out), straight from the restock API so we know
+// whether a restock request already exists for each one.
+const criticalStock = ref([]);
+
+// The urgent card can be closed. It stays closed for this browser session and
+// comes back if a different set of items reaches Critical.
+function urgentKey() {
+  return `urgentCardDismissed:${getCurrentUser()?.idUsers ?? "anon"}`;
+}
+function readUrgentDismissed() {
+  try {
+    return sessionStorage.getItem(urgentKey()) || "";
+  } catch {
+    return "";
+  }
+}
+const urgentDismissed = ref(readUrgentDismissed());
 
 // The signed-in user's own overdue lines (borrowers). Admins use the list
 // built from every request instead.
@@ -94,6 +124,14 @@ async function loadAll() {
   if (isAdmin.value) {
     logs.value = await getLogs();
     myOverdue.value = [];
+    try {
+      const low = await getLowStock();
+      criticalStock.value = low
+        .filter((r) => r.level === "Critical")
+        .sort((a, b) => a.quantity - b.quantity);
+    } catch (e) {
+      criticalStock.value = [];
+    }
   } else {
     logs.value = [];
     try {
@@ -126,12 +164,75 @@ onMounted(async () => {
   resyncTimer = setInterval(fetchPHTime, 600000);
 });
 
+/*  COMPACT CLOCK  */
+const clockTime = computed(() =>
+  now.value
+    ? now.value.toLocaleTimeString("en-PH", {
+        hour: "numeric",
+        minute: "2-digit",
+        second: "2-digit",
+      })
+    : "--:--:--",
+);
+const clockDate = computed(() =>
+  now.value
+    ? now.value.toLocaleDateString("en-PH", {
+        weekday: "short",
+        month: "short",
+        day: "numeric",
+        year: "numeric",
+      })
+    : "",
+);
+const clockTitle = computed(() =>
+  clockStatus.value === "synced"
+    ? "Synced with Philippine time"
+    : clockStatus.value === "syncing"
+      ? "Syncing with the time service..."
+      : "Offline: showing this device's clock",
+);
+
 /*  CARD MODALS  */
 function openLowStockModal() {
   lowStockModal.value = true;
 }
 
 /*  SUMMARY  */
+const urgentItems = computed(() => criticalStock.value.slice(0, 5));
+const urgentSignature = computed(() =>
+  criticalStock.value
+    .map((r) => r.iditems)
+    .sort((a, b) => a - b)
+    .join(","),
+);
+const urgentVisible = computed(
+  () =>
+    isAdmin.value &&
+    criticalStock.value.length > 0 &&
+    urgentDismissed.value !== urgentSignature.value,
+);
+
+function dismissUrgent() {
+  urgentDismissed.value = urgentSignature.value;
+  try {
+    sessionStorage.setItem(urgentKey(), urgentSignature.value);
+  } catch {
+    /* ignore: the card just comes back on the next load */
+  }
+}
+const urgentWithoutRequest = computed(
+  () => criticalStock.value.filter((r) => !r.active_request_id).length,
+);
+const outOfStockCount = computed(
+  () => items.value.filter((i) => i.stockLevel === "Out of Stock").length,
+);
+
+function scrollToRestock() {
+  document
+    .getElementById("restock-panel")
+    ?.scrollIntoView({ behavior: "smooth", block: "start" });
+}
+
 const totalItems = computed(() =>
   items.value.reduce((a, i) => a + (Number(i.qty) || 0), 0),
 );
@@ -213,6 +314,105 @@ const myRejectedCount = computed(
     ).length,
 );
 
+/*  KPI CARDS  */
+// Ordered by what needs attention first. Each card says what the number
+// counts, and clickable cards open the list behind the number.
+const overdueBorrowers = computed(
+  () => new Set(overdueLines.value.map((l) => l.requester)).size,
+);
+
+const kpiCards = computed(() => {
+  if (isAdmin.value) {
+    return [
+      {
+        key: "pending",
+        label: "Pending Requests",
+        value: pendingRequests.value,
+        sub: pendingRequests.value ? "waiting for a decision" : "nothing waiting",
+        icon: "bi-list-check",
+        tone: pendingRequests.value ? "text-warning" : "text-success",
+        onClick: () => (showPendingRequestsModal.value = true),
+      },
+      {
+        key: "overdue",
+        label: "Overdue Returns",
+        value: overdueLines.value.length,
+        sub: overdueLines.value.length
+          ? `from ${overdueBorrowers.value} borrower${overdueBorrowers.value === 1 ? "" : "s"}`
+          : "all returns on time",
+        icon: "bi-clock-history",
+        tone: overdueLines.value.length ? "text-danger" : "text-success",
+        onClick: () => (overdueModal.value = true),
+      },
+      {
+        key: "low",
+        label: "Low Stock Items",
+        value: lowStockCount.value,
+        sub: outOfStockCount.value
+          ? `${outOfStockCount.value} out of stock`
+          : lowStockCount.value
+            ? "at or below minimum"
+            : "stock levels are fine",
+        icon: "bi-exclamation-triangle",
+        tone: criticalStock.value.length
+          ? "text-danger"
+          : lowStockCount.value
+            ? "text-warning"
+            : "text-success",
+        onClick: openLowStockModal,
+      },
+      {
+        key: "stock",
+        label: "Units in Stock",
+        value: totalItems.value,
+        sub: `across ${items.value.length} item types`,
+        icon: "bi-box-seam",
+        tone: "text-primary",
+        onClick: null,
+      },
+    ];
+  }
+
+  return [
+    {
+      key: "my-pending",
+      label: "My Pending Requests",
+      value: myPendingCount.value,
+      sub: "still being reviewed",
+      icon: "bi-hourglass-split",
+      tone: myPendingCount.value ? "text-warning" : "text-muted",
+      onClick: null,
+    },
+    {
+      key: "my-approved",
+      label: "My Approved Requests",
+      value: myApprovedCount.value,
+      sub: "approved so far",
+      icon: "bi-check-circle",
+      tone: "text-success",
+      onClick: null,
+    },
+    {
+      key: "my-rejected",
+      label: "My Rejected Requests",
+      value: myRejectedCount.value,
+      sub: "not approved",
+      icon: "bi-x-circle",
+      tone: myRejectedCount.value ? "text-danger" : "text-muted",
+      onClick: null,
+    },
+    {
+      key: "my-overdue",
+      label: "My Overdue Returns",
+      value: overdueLines.value.length,
+      sub: overdueLines.value.length ? "please return them" : "nothing overdue",
+      icon: "bi-clock-history",
+      tone: overdueLines.value.length ? "text-danger" : "text-success",
+      onClick: () => (overdueModal.value = true),
+    },
+  ];
+});
+
 /*  LISTS (CARDS)  */
 const lowStockItems = computed(() =>
   items.value.filter((i) => LOW_LEVELS.includes(i.stockLevel)).slice(0, 20),
@@ -286,50 +486,92 @@ function destroyCharts() {
   }
 }
 
+// Colours that mean something: green = fine, amber = running low, red = out.
+const STATUS_COLORS = {
+  Available: "#198754",
+  "Low Stock": "#ffc107",
+  "Out of Stock": "#dc3545",
+  Borrowed: "#0d6efd",
+  Unknown: "#6c757d",
+};
+const FALLBACK_COLORS = ["#0d6efd", "#6f42c1", "#20c997", "#fd7e14", "#d63384"];
+
 function renderCharts() {
-  // STATUS PIE
+  // Follow the page's light/dark text colour so labels stay readable.
+  const textColor = getComputedStyle(document.body).color;
+  Chart.defaults.color = textColor;
+
+  // ITEMS BY STATUS (doughnut: a handful of parts of one whole)
   if (statusCanvas.value) {
     const data = statusCounts.value;
     if (statusChart) statusChart.destroy();
 
+    const names = Object.keys(data);
+
     statusChart = new Chart(statusCanvas.value, {
-      type: "pie",
+      type: "doughnut",
       data: {
-        labels: Object.keys(data),
-        datasets: [{ data: Object.values(data) }],
+        labels: names.map((n) => `${n} (${data[n]})`),
+        datasets: [
+          {
+            data: Object.values(data),
+            backgroundColor: names.map(
+              (n, i) =>
+                STATUS_COLORS[n] || FALLBACK_COLORS[i % FALLBACK_COLORS.length],
+            ),
+            borderWidth: 2,
+          },
+        ],
       },
       options: {
         responsive: true,
         maintainAspectRatio: false,
+        cutout: "62%",
         plugins: {
           legend: {
             position: window.innerWidth < 768 ? "bottom" : "right",
-            labels: { boxWidth: 14, padding: 14, usePointStyle: true },
+            labels: { boxWidth: 12, padding: 14, usePointStyle: true },
           },
         },
       },
     });
   }
 
-  // CATEGORY DOUGHNUT
+  // UNITS BY CATEGORY (horizontal bars: comparing amounts, not shares)
   if (categoryCanvas.value) {
-    const data = categoryCounts.value;
+    const entries = Object.entries(categoryCounts.value).sort(
+      (a, b) => b[1] - a[1],
+    );
     if (categoryChart) categoryChart.destroy();
 
     categoryChart = new Chart(categoryCanvas.value, {
-      type: "doughnut",
+      type: "bar",
       data: {
-        labels: Object.keys(data),
-        datasets: [{ data: Object.values(data) }],
+        labels: entries.map(([name]) => name),
+        datasets: [
+          {
+            label: "Units",
+            data: entries.map(([, qty]) => qty),
+            backgroundColor: entries.map(
+              (_, i) => FALLBACK_COLORS[i % FALLBACK_COLORS.length],
+            ),
+            borderRadius: 6,
+            maxBarThickness: 34,
+          },
+        ],
       },
       options: {
+        indexAxis: "y",
         responsive: true,
         maintainAspectRatio: false,
-        plugins: {
-          legend: {
-            position: window.innerWidth < 768 ? "bottom" : "right",
-            labels: { boxWidth: 14, padding: 14, usePointStyle: true },
+        plugins: { legend: { display: false } },
+        scales: {
+          x: {
+            beginAtZero: true,
+            ticks: { precision: 0 },
+            grid: { color: "rgba(128, 128, 128, 0.18)" },
           },
+          y: { grid: { display: false } },
         },
       },
     });
@@ -400,6 +642,8 @@ if (isInFlight(status)) {
     allDay: true,
     display: "block",
     title: "",
+    backgroundColor: "transparent",
+    borderColor: "transparent",
 
     extendedProps: {
       pending: data.pending,
@@ -409,6 +653,21 @@ if (isInFlight(status)) {
     },
   }));
 });
+
+function openDay(iso) {
+  const ev = calendarEvents.value.find((e) => e.start === iso);
+  if (!ev) return;
+
+  const p = ev.extendedProps;
+  selectedDayRequests.value = [
+    ...(p.pending || []),
+    ...(p.approved || []),
+    ...(p.rejected || []),
+    ...(p.returned || []),
+  ];
+  selectedDay.value = iso;
+  showDayModal.value = true;
+}
 
 const calendarOptions = computed(() => ({
   plugins: [dayGridPlugin, interactionPlugin],
@@ -423,18 +682,15 @@ const calendarOptions = computed(() => ({
 
   events: calendarEvents.value,
 
+  fixedWeekCount: false,
+  dayMaxEvents: 2,
+
+  // Click the badges or anywhere in the day to see that day's requests.
   eventClick(info) {
-    const p = info.event.extendedProps;
-
-    selectedDayRequests.value = [
-      ...(p.pending || []),
-      ...(p.approved || []),
-      ...(p.rejected || []),
-      ...(p.returned || []),
-    ];
-
-    selectedDay.value = info.event.startStr;
-    showDayModal.value = true;
+    openDay(info.event.startStr);
+  },
+  dateClick(info) {
+    openDay(info.dateStr);
   },
 
 eventContent(arg) {
@@ -447,15 +703,22 @@ eventContent(arg) {
 
   const container = document.createElement("div");
 
+  const tip = [
+    pending ? `${pending} in review` : "",
+    approved ? `${approved} approved` : "",
+    rejected ? `${rejected} rejected` : "",
+    returned ? `${returned} returned` : "",
+  ]
+    .filter(Boolean)
+    .join(", ");
+
+  container.title = tip;
   container.innerHTML = `
-    <div style="display:flex; gap:4px; flex-wrap:wrap; font-size:12px;">
+    <div style="display:flex; gap:4px; flex-wrap:wrap; font-size:12px; cursor:pointer;">
       ${pending ? `<span class="badge bg-warning text-dark">${pending}</span>` : ""}
-
-      ${ approved ? `<span class="badge bg-success">${approved}</span>` : ""}
-
-      ${ rejected ? `<span class="badge bg-danger">${rejected}</span>` : ""}
-
-      ${ returned ? `<span class="badge bg-info text-dark">${returned}</span>` : ""}
+      ${approved ? `<span class="badge bg-success">${approved}</span>` : ""}
+      ${rejected ? `<span class="badge bg-danger">${rejected}</span>` : ""}
+      ${returned ? `<span class="badge bg-info text-dark">${returned}</span>` : ""}
     </div>
   `;
 
@@ -466,165 +729,130 @@ eventContent(arg) {
 
 <template>
   <div>
-    <div class="d-flex justify-content-between align-items-start flex-wrap gap-2 mb-4">
+    <!-- HEADER: title, compact clock, refresh -->
+    <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
       <div>
-        <h3 class="mb-1">Dashboard</h3>
-        <div class="text-muted small">
-          Last updated: {{ lastUpdated || "—" }}
+        <h3 class="mb-0">Dashboard</h3>
+        <div class="text-muted small">Last updated {{ lastUpdated || "—" }}</div>
+      </div>
+
+      <div class="d-flex align-items-center gap-2">
+        <div
+          class="clock-pill d-flex align-items-center gap-2 border rounded-pill px-3 py-1 bg-body-tertiary"
+          :title="clockTitle"
+        >
+          <span class="clock-dot" :class="clockStatus"></span>
+          <span class="fw-semibold clock-time">{{ clockTime }}</span>
+          <span class="text-muted small d-none d-sm-inline">{{ clockDate }}</span>
+        </div>
+
+        <button
+          class="btn btn-outline-secondary btn-sm"
+          title="Refresh"
+          aria-label="Refresh dashboard"
+          @click="refresh"
+        >
+          <i class="bi bi-arrow-clockwise"></i>
+        </button>
+      </div>
+    </div>
+
+    <!-- URGENT STOCK (admin, only when something is at Critical or out) -->
+    <div v-if="urgentVisible" class="card shadow-sm border-danger mb-3 urgent-card">
+      <div class="card-body">
+        <div class="d-flex justify-content-between align-items-start flex-wrap gap-2 mb-2">
+          <div>
+            <h6 class="text-danger mb-1">
+              <i class="bi bi-exclamation-octagon-fill me-1"></i>
+              Urgent: {{ criticalStock.length }}
+              item{{ criticalStock.length === 1 ? "" : "s" }} at Critical stock
+            </h6>
+            <div class="text-muted small">
+              <template v-if="urgentWithoutRequest">
+                {{ urgentWithoutRequest }} still
+                {{ urgentWithoutRequest === 1 ? "has" : "have" }} no restock request.
+              </template>
+              <template v-else>A restock request is open for every one of them.</template>
+            </div>
+          </div>
+
+          <div class="d-flex gap-2">
+            <button class="btn btn-danger btn-sm" @click="scrollToRestock">
+              Go to restocking
+            </button>
+            <button class="btn btn-outline-secondary btn-sm" @click="openLowStockModal">
+              All low stock
+            </button>
+            <button
+              type="button"
+              class="btn-close ms-1 align-self-center"
+              aria-label="Close"
+              title="Close"
+              @click="dismissUrgent"
+            ></button>
+          </div>
+        </div>
+
+        <ul class="list-group list-group-flush">
+          <li
+            v-for="r in urgentItems"
+            :key="r.iditems"
+            class="list-group-item d-flex justify-content-between align-items-center gap-2 px-0"
+          >
+            <div class="min-w-0">
+              <div class="fw-semibold text-truncate">{{ r.item_name }}</div>
+              <div class="small text-muted">{{ r.category }}</div>
+            </div>
+
+            <div class="d-flex align-items-center gap-2 flex-shrink-0">
+              <span v-if="r.quantity <= 0" class="badge bg-dark">Out of stock</span>
+              <span v-else class="badge bg-danger">{{ r.quantity }} left</span>
+              <span
+                class="badge"
+                :class="r.active_request_id ? 'bg-success' : 'bg-warning text-dark'"
+              >
+                {{ r.active_request_id ? "Restock requested" : "No request yet" }}
+              </span>
+            </div>
+          </li>
+        </ul>
+
+        <div v-if="criticalStock.length > urgentItems.length" class="small text-muted mt-2">
+          and {{ criticalStock.length - urgentItems.length }} more
         </div>
       </div>
     </div>
 
-    <!-- CLOCK CARD  -->
-    <div class="row mb-4">
-      <div class="col-12">
-        <div class="card shadow-sm">
-          <div class="card-body">
-            <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
-              <div>
-                <div class="text-muted small">Current time</div>
-                <div class="fw-bold" style="font-size: 2.25rem; line-height: 1">
-                  {{ now ? now.toLocaleTimeString("en-PH") : "—" }}
-                </div>
-                <div class="text-muted">
-                  {{ now ? now.toLocaleDateString("en-PH") : "—" }}
-                </div>
-              </div>
-
-              <div class="text-muted small text-end">
-                <div>
-                  <span v-if="typeof clockStatus !== 'undefined'">
-                    ({{
-                      clockStatus === "synced"
-                        ? "Online"
-                        : clockStatus === "syncing"
-                          ? "Syncing"
-                          : "Offline"
-                    }})
-                  </span>
-                </div>
-              </div>
+    <!-- KPI CARDS -->
+    <div class="row g-3 mb-3">
+      <div v-for="c in kpiCards" :key="c.key" class="col-6 col-lg-3">
+        <div
+          class="card shadow-sm h-100 kpi-card"
+          :class="{ 'kpi-click': c.onClick }"
+          :role="c.onClick ? 'button' : undefined"
+          :tabindex="c.onClick ? 0 : undefined"
+          @click="c.onClick && c.onClick()"
+          @keyup.enter="c.onClick && c.onClick()"
+        >
+          <div class="card-body d-flex justify-content-between align-items-center gap-2">
+            <div>
+              <div class="text-muted small">{{ c.label }}</div>
+              <div class="fs-2 fw-bold lh-1 my-1" :class="c.tone">{{ c.value }}</div>
+              <div class="text-muted small">{{ c.sub }}</div>
             </div>
+            <i class="bi fs-1 opacity-75" :class="[c.icon, c.tone]"></i>
           </div>
         </div>
       </div>
     </div>
 
-    <!-- SUMMARY CARDS -->
-    <div class="row mb-4">
-      <!-- Admin cards -->
-      <template v-if="isAdmin">
-        <div class="col-md-3 mb-3 mb-md-0">
-          <div class="card shadow-sm">
-            <div class="card-body">
-              <h6 class="text-muted">Total Inventory Quantity</h6>
-              <h3 class="mb-0">{{ totalItems }}</h3>
-            </div>
-          </div>
-        </div>
-
-        <div class="col-md-3 mb-3 mb-md-0">
-          <div class="card shadow-sm cursor-pointer" @click="openLowStockModal">
-            <div class="card-body d-flex justify-content-between align-items-center">
-              <div>
-                <h6 class="text-muted mb-1">Low Stock Items</h6>
-                <h3 class="mb-0 text-danger">{{ lowStockItems.length }}</h3>
-              </div>
-              <i class="bi bi-exclamation-triangle fs-2 text-danger"></i>
-            </div>
-          </div>
-        </div>
-
-        <div class="col-md-3 mb-3 mb-md-0">
-          <div class="card shadow-sm cursor-pointer" @click="showPendingRequestsModal = true">
-            <div class="card-body d-flex justify-content-between align-items-center">
-              <div>
-                <h6 class="text-muted mb-1">Pending Requests</h6>
-                <h3 class="mb-0 text-warning">{{ pendingRequests }}</h3>
-              </div>
-              <i class="bi bi-list-check fs-2 text-warning"></i>
-            </div>
-          </div>
-        </div>
-        <div class="col-md-3">
-          <div class="card shadow-sm cursor-pointer" @click="overdueModal = true">
-            <div class="card-body d-flex justify-content-between align-items-center">
-              <div>
-                <h6 class="text-muted mb-1">Overdue Returns</h6>
-                <h3
-                  class="mb-0"
-                  :class="overdueLines.length ? 'text-danger' : 'text-success'"
-                >
-                  {{ overdueLines.length }}
-                </h3>
-              </div>
-              <i
-                class="bi bi-clock-history fs-2"
-                :class="overdueLines.length ? 'text-danger' : 'text-success'"
-              ></i>
-            </div>
-          </div>
-        </div>
-            </template>
-
-      <!-- User cards -->
-      <template v-else>
-        <div class="col-md-3 mb-3 mb-md-0">
-          <div class="card shadow-sm">
-            <div class="card-body">
-              <h6 class="text-muted">My Pending Requests</h6>
-              <h3 class="mb-0 text-warning">{{ myPendingCount }}</h3>
-            </div>
-          </div>
-        </div>
-
-        <div class="col-md-3 mb-3 mb-md-0">
-          <div class="card shadow-sm">
-            <div class="card-body">
-              <h6 class="text-muted">My Approved Requests</h6>
-              <h3 class="mb-0 text-success">{{ myApprovedCount }}</h3>
-            </div>
-          </div>
-        </div>
-
-        <div class="col-md-3 mb-3 mb-md-0">
-          <div class="card shadow-sm">
-            <div class="card-body">
-              <h6 class="text-muted">My Rejected Requests</h6>
-              <h3 class="mb-0 text-danger">{{ myRejectedCount }}</h3>
-            </div>
-          </div>
-        </div>
-
-        <div class="col-md-3">
-          <div class="card shadow-sm cursor-pointer" @click="overdueModal = true">
-            <div class="card-body d-flex justify-content-between align-items-center">
-              <div>
-                <h6 class="text-muted mb-1">My Overdue Returns</h6>
-                <h3
-                  class="mb-0"
-                  :class="overdueLines.length ? 'text-danger' : 'text-success'"
-                >
-                  {{ overdueLines.length }}
-                </h3>
-              </div>
-              <i
-                class="bi bi-clock-history fs-2"
-                :class="overdueLines.length ? 'text-danger' : 'text-success'"
-              ></i>
-            </div>
-          </div>
-        </div>
-      </template>
-    </div>
-
-    <!-- CHARTS (SIDE BY SIDE) -->
-    <div v-if="isAdmin" class="row">
-      <!-- Chart 1 -->
-      <div class="col-md-6 mb-3">
+    <!-- CHARTS (admin) -->
+    <div v-if="isAdmin" class="row g-3 mb-3">
+      <div class="col-md-6">
         <div class="card shadow-sm h-100">
           <div class="card-body">
-            <h6 class="mb-3">Inventory Status Distribution</h6>
+            <h6 class="mb-1">Items by Status</h6>
+            <div class="text-muted small mb-2">Number of item types in each status</div>
             <div class="chart-wrap">
               <canvas ref="statusCanvas"></canvas>
             </div>
@@ -632,11 +860,11 @@ eventContent(arg) {
         </div>
       </div>
 
-      <!-- Chart 2 -->
-      <div class="col-md-6 mb-3">
+      <div class="col-md-6">
         <div class="card shadow-sm h-100">
           <div class="card-body">
-            <h6 class="mb-3">Inventory by Category</h6>
+            <h6 class="mb-1">Units by Category</h6>
+            <div class="text-muted small mb-2">Total units currently in stock</div>
             <div class="chart-wrap">
               <canvas ref="categoryCanvas"></canvas>
             </div>
@@ -645,22 +873,46 @@ eventContent(arg) {
       </div>
     </div>
 
-    <!-- CALENDAR + RECENT ACTIVITY -->
-    <div v-if="isAdmin" class="row">
-      <!-- Calendar (Left or Right) -->
-      <div class="col-lg-8 col-md-12 mb-3 mb-lg-0">
+    <!-- MAIN ROW (admin): calendar + action panels -->
+    <div v-if="isAdmin" class="row g-3 mb-3">
+      <div class="col-lg-8 col-md-12">
         <div class="card shadow-sm h-100">
           <div class="card-body">
-            <h6 class="mb-3">Requests Calendar</h6>
+            <div class="d-flex justify-content-between align-items-start flex-wrap gap-2 mb-2">
+              <h6 class="mb-0">Requests Calendar</h6>
+              <small class="text-muted">Click a day to see its requests</small>
+            </div>
+
+            <!-- Legend: what each badge on a day is -->
+            <div class="calendar-legend d-flex flex-wrap align-items-center mb-1 small">
+              <span class="d-inline-flex align-items-center gap-1">
+                <span class="legend-dot bg-warning"></span> In review
+              </span>
+              <span class="d-inline-flex align-items-center gap-1">
+                <span class="legend-dot bg-success"></span> Approved
+              </span>
+              <span class="d-inline-flex align-items-center gap-1">
+                <span class="legend-dot bg-danger"></span> Rejected
+              </span>
+              <span class="d-inline-flex align-items-center gap-1">
+                <span class="legend-dot bg-info"></span> Returned
+              </span>
+            </div>
+            <div class="text-muted small mb-3">
+              Each badge is the number of requests made that day with that status.
+            </div>
+
             <FullCalendar :options="calendarOptions" />
           </div>
         </div>
       </div>
 
-      <!-- Restock panel + Recent Activity Logs (stacked in the narrow column) -->
+      <!-- Restock panels + Recent Activity Logs (stacked in the narrow column) -->
       <div class="col-lg-4 col-md-12">
         <ReturnReportsPanel v-if="isAdmin" />
-        <LowStockRestockPanel v-if="isAdmin" />
+        <div id="restock-panel">
+          <LowStockRestockPanel v-if="isAdmin" />
+        </div>
 
         <div class="card shadow-sm">
           <div class="card-body">
@@ -694,43 +946,29 @@ eventContent(arg) {
       </div>
     </div>
 
-    <!-- LOW STOCK + RECENT REQUESTS -->
-    <div class="row mt-2">
-      <!-- PENDING REQUESTS CARD -->
-      <template v-if="!isAdmin">
-        <div class="col-12 mb-3">
-          <div class="card p-3 shadow-sm h-100">
-            <h6 class="mb-3">Pending Requests</h6>
+    <!-- MY PENDING REQUESTS (non-admin) -->
+    <div v-if="!isAdmin" class="card p-3 shadow-sm">
+      <h6 class="mb-3">Pending Requests</h6>
 
-            <ul class="list-group list-group-flush">
-              <li v-if="recentRequestsList.length === 0" class="list-group-item text-center text-muted">
-                No pending requests
-              </li>
+      <ul class="list-group list-group-flush">
+        <li v-if="recentRequestsList.length === 0" class="list-group-item text-center text-muted">
+          No pending requests
+        </li>
 
-              <li v-for="r in recentRequestsList" :key="r.id"
-                class="list-group-item d-flex justify-content-between align-items-start">
-                <div>
-                  <strong>{{
-                    requestTitle(r)
-                  }}</strong>
-                  <br />
-                  <small class="text-muted">{{ requestCategories(r) }} •
-                    {{ r.request_date }}</small>
-                </div>
-
-                <span class="badge" :class="isInFlight(r.status)
-                    ? 'bg-warning text-dark'
-                    : (r.status || '').toLowerCase() === 'approved'
-                      ? 'bg-success'
-                      : 'bg-danger'
-                  ">
-                  {{ r.status }}
-                </span>
-              </li>
-            </ul>
+        <li v-for="r in recentRequestsList" :key="r.id"
+          class="list-group-item d-flex justify-content-between align-items-start">
+          <div>
+            <strong>{{ requestTitle(r) }}</strong>
+            <br />
+            <small class="text-muted">{{ requestCategories(r) }} •
+              {{ r.request_date }}</small>
           </div>
-        </div>
-      </template>
+
+          <span class="badge flex-shrink-0" :class="statusBadgeClass(r.status)">
+            {{ r.status }}
+          </span>
+        </li>
+      </ul>
     </div>
   </div>
   <!-- DAY REQUEST MODAL -->
@@ -745,7 +983,7 @@ eventContent(arg) {
 
         <div class="modal-body modal-scroll">
           <ul class="list-group">
-            <li v-for="r in selectedDayRequests" :key="r.id" class="list-group-item d-flex justify-content-between">
+            <li v-for="r in selectedDayRequests" :key="r.id" class="list-group-item d-flex justify-content-between align-items-start gap-3">
               <div>
                 <strong>
                   {{ requestTitle(r) }}
@@ -765,12 +1003,7 @@ eventContent(arg) {
                 </small>
               </div>
 
-              <span class="badge" :class="isInFlight(r.status)
-                  ? 'bg-warning text-dark'
-                  : (r.status || '').toLowerCase() === 'approved'
-                    ? 'bg-success'
-                    : 'bg-danger'
-                ">
+              <span class="badge flex-shrink-0" :class="statusBadgeClass(r.status)">
                 {{ r.status }}
               </span>
             </li>
@@ -875,12 +1108,7 @@ eventContent(arg) {
                 {{ requestCategories(r) }} •
                 {{ r.request_date }}</small>
             </div>
-            <span class="badge" :class="isInFlight(r.status)
-                ? 'bg-warning text-dark'
-                : (r.status || '').toLowerCase() === 'approved'
-                  ? 'bg-success'
-                  : 'bg-danger'
-              ">
+            <span class="badge flex-shrink-0" :class="statusBadgeClass(r.status)">
               {{ r.status }}
             </span>
           </li>
@@ -923,6 +1151,86 @@ eventContent(arg) {
 .calendar-container {
   max-height: 420px;
   overflow-y: auto;
+}
+
+/* Compact clock */
+.clock-pill {
+  line-height: 1.2;
+}
+.clock-time {
+  font-variant-numeric: tabular-nums;
+}
+.clock-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #6c757d;
+  flex-shrink: 0;
+}
+.clock-dot.synced {
+  background: #198754;
+}
+.clock-dot.syncing {
+  background: #ffc107;
+}
+.clock-dot.offline {
+  background: #dc3545;
+}
+
+/* KPI cards */
+.kpi-click {
+  cursor: pointer;
+  transition: transform 0.12s ease, box-shadow 0.12s ease;
+}
+.kpi-click:hover,
+.kpi-click:focus-visible {
+  transform: translateY(-2px);
+  box-shadow: 0 0.5rem 1rem rgba(0, 0, 0, 0.15) !important;
+  outline: none;
+}
+
+.urgent-card {
+  border-width: 1px 1px 1px 5px;
+}
+.min-w-0 {
+  min-width: 0;
+}
+
+/* Legend colour dots (no numbers) */
+.legend-dot {
+  display: inline-block;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+}
+
+/* The event itself is only a carrier for the count badges: no blue bar */
+:deep(.fc .fc-event) {
+  background: transparent !important;
+  border-color: transparent !important;
+  box-shadow: none !important;
+}
+:deep(.fc .fc-event:hover::after),
+:deep(.fc .fc-event:focus::after) {
+  display: none;
+}
+
+/* FullCalendar tweaks (it renders its own DOM, so :deep is needed) */
+:deep(.fc .fc-toolbar-title) {
+  font-size: 1.05rem;
+}
+:deep(.fc .fc-button) {
+  padding: 0.25rem 0.6rem;
+  font-size: 0.85rem;
+}
+:deep(.fc .fc-daygrid-day) {
+  cursor: pointer;
+}
+:deep(.fc .fc-daygrid-day-frame) {
+  min-height: 64px;
+}
+:deep(.fc .fc-more-link) {
+  font-size: 0.75rem;
 }
 
 .modal-scroll {
