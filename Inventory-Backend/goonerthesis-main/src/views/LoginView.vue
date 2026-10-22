@@ -13,12 +13,12 @@ async function submit() {
   error.value = "";
 
   try {
-    await login({
+    const user = await login({
       username: username.value,
       password: password.value,
     });
 
-    router.push("/dashboard");
+    router.push(user?.must_change_password ? "/change-password" : "/dashboard");
   } catch (e) {
     if (e.response?.status === 429) {
       const wait = Number(e.response.headers?.["retry-after"]) || 60;

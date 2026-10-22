@@ -1005,35 +1005,6 @@ async function proceedAction() {
   z-index: 2;
   box-shadow: 0 1px 0 #dee2e6;
 }
-
-.modal-backdrop-custom {
-  position: fixed;
-  inset: 0;
-  background: rgba(0, 0, 0, 0.35);
-  display: grid;
-  place-items: center;
-  z-index: 2000;
-  padding: 16px;
-}
-.modal-custom {
-  width: 100%;
-  max-width: 520px;
-  background: #fff;
-  border-radius: 12px;
-  box-shadow: 0 18px 50px rgba(0, 0, 0, 0.25);
-  overflow: hidden;
-}
-.modal-header,
-.modal-footer {
-  padding: 12px 16px;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-}
-.modal-body {
-  padding: 16px;
-}
 .highlight {
   text-decoration: underline;
 }

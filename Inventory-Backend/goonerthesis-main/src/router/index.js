@@ -14,6 +14,7 @@ import CoordinatorRequestsView from "../views/CoordinatorRequestsView.vue";
 import ReportsView from "../views/ReportsView.vue";
 import ActiveLogsView from "../views/ActiveLogsView.vue";
 import ConsumptionReportView from "../views/ConsumptionReportView.vue";
+import ChangePasswordView from "../views/ChangePasswordView.vue";
 import EquipmentDistributionView from "../views/EquipmentDistributionView.vue";
 import PendingInspectionView from "../views/PendingInspectionView.vue";
 import EquipmentReportsView from "../views/EquipmentReportsView.vue";
@@ -42,6 +43,15 @@ const routes = [
     },
   },
 
+
+  // Forced after the AMO resets a password (see the guard below).
+  {
+    path: "/change-password",
+    component: ChangePasswordView,
+    meta: {
+      requiresAuth: true,
+    },
+  },
 
   // PROTECTED ROUTES
 
@@ -262,6 +272,16 @@ router.beforeEach((to) => {
 
   if (to.meta?.requiresAuth && !user) {
     return "/login";
+  }
+
+  // TEMPORARY PASSWORD: nothing but the change-password page until it is changed
+
+  if (user?.must_change_password && to.path !== "/change-password") {
+    return "/change-password";
+  }
+
+  if (user && !user.must_change_password && to.path === "/change-password") {
+    return "/dashboard";
   }
 
   // ROLE CHECKING

@@ -49,7 +49,7 @@ onMounted(refresh)
     <AlertMessage v-model:show="showAlert" :type="alertType" :message="alertMessage" />
     <div v-if="loading && !requests.length" class="text-muted py-4">Loading coordinator queue…</div>
     <div v-else-if="!requests.length" class="alert alert-success">No requests are currently waiting for coordinator review.</div>
-    <div v-else class="table-responsive bg-white rounded shadow-sm">
+    <div v-else class="table-responsive bg-body rounded shadow-sm">
       <table class="table table-hover align-middle mb-0">
         <thead class="table-light"><tr><th>Request</th><th>Requester</th><th>Date</th><th>Items / uniforms</th><th>Purpose / location</th><th>Status</th><th>Action</th></tr></thead>
         <tbody><tr v-for="r in requests" :key="r.id">
@@ -62,7 +62,7 @@ onMounted(refresh)
     </div>
 
     <div v-if="confirmTarget" class="modal-backdrop-custom">
-      <div class="modal-custom">
+      <div class="modal-custom" style="max-width: 420px">
         <div class="modal-header">
           <h5 class="mb-0">Forward Request</h5>
           <button class="btn-close" @click="confirmTarget = null"></button>
@@ -80,11 +80,5 @@ onMounted(refresh)
 </template>
 
 <style scoped>
-.modal-backdrop-custom { position: fixed; inset: 0; background: rgba(0,0,0,.35); display: grid; place-items: center; z-index: 2000; padding: 16px; }
-.modal-custom { background: white; width: 100%; max-width: 420px; border-radius: 12px; overflow: hidden; box-shadow: 0 18px 50px rgba(0,0,0,.25); }
-.modal-header, .modal-footer { padding: 12px 16px; display: flex; align-items: center; }
-.modal-header { justify-content: space-between; border-bottom: 1px solid #dee2e6; }
-.modal-footer { justify-content: flex-end; gap: 8px; border-top: 1px solid #dee2e6; }
-.modal-body { padding: 16px; }
 .request-summary { min-width: 220px; max-width: 330px; white-space: normal; }
 </style>

@@ -26,6 +26,22 @@ export async function login({ username, password }) {
   return response.data.user;
 }
 
+/** CHANGE OWN PASSWORD */
+export async function changePassword({ current_password, password, password_confirmation }) {
+  const response = await axios.post("/change-password", {
+    current_password,
+    password,
+    password_confirmation,
+  });
+
+  // The stored user carries the "must change password" flag; refresh it.
+  if (response.data.user) {
+    setCurrentUser(response.data.user);
+  }
+
+  return response.data;
+}
+
 /** LOGOUT */
 export async function logout(){
 

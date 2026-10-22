@@ -47,7 +47,11 @@ Route::post('/logout', [AuthController::class, 'logout'])
 |--------------------------------------------------------------------------
 */
 
-Route::middleware([AdminSessionTimeoutMiddleware::class, 'auth:sanctum'])->group(function () {
+Route::middleware([AdminSessionTimeoutMiddleware::class, 'auth:sanctum', \App\Http\Middleware\ForcePasswordChange::class])->group(function () {
+
+    // Change your own password (the only route open while a temporary one is set).
+    Route::post('/change-password', [AuthController::class, 'changePassword'])
+        ->middleware('throttle:6,1');
 
     /*
     |--------------------------------------------------------------------------
@@ -178,6 +182,7 @@ Route::middleware('role:amo,department_head,admin,instructor,cashier')->group(fu
         Route::post('/users', [UserController::class, 'store']);
         Route::put('/users/{id}', [UserController::class, 'update']);
         Route::delete('/users/{id}', [UserController::class, 'destroy']);
+        Route::post('/users/{id}/reset-password', [UserController::class, 'resetPassword']);
 
 
         /*
@@ -319,6 +324,7 @@ Route::middleware('role:amo,department_head,admin,instructor,cashier')->group(fu
         */
 
         Route::get('/logs', [LogController::class, 'index']);
+        Route::get('/logs/users', [LogController::class, 'users']);
 
 
         /*

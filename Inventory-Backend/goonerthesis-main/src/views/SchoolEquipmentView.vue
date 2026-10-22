@@ -909,32 +909,6 @@ async function confirmModal() {
   background: #f8f9fa;
   z-index: 2;
 }
-
-.modal-backdrop-custom {
-  position: fixed;
-  inset: 0;
-  background: rgba(0, 0, 0, 0.35);
-  display: grid;
-  place-items: center;
-  z-index: 2000;
-}
-.modal-custom {
-  background: #fff;
-  width: 100%;
-  max-width: 520px;
-  border-radius: 12px;
-  overflow: hidden;
-}
-.modal-header,
-.modal-footer {
-  padding: 12px 16px;
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-}
-.modal-body {
-  padding: 16px;
-}
 .borrower-card-body {
   overflow: hidden;
 }

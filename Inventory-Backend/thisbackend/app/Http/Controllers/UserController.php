@@ -85,6 +85,48 @@ public function update(Request $request, $id)
     ]);
 }
 
+// AMO only (route middleware). Sets a temporary password, shown once to
+// the AMO to pass on. The user is signed out everywhere and must choose a
+// new password at their next login.
+public function resetPassword($id)
+{
+    $user = User::find($id);
+
+    if (!$user) {
+        return response()->json(['message' => 'User not found.'], 404);
+    }
+
+    if ((int) $user->idUsers === (int) request()->user()->idUsers) {
+        return response()->json(['message' => 'Use Change Password in Settings for your own account.'], 422);
+    }
+
+    if (($user->status ?? 'active') === 'pending') {
+        return response()->json(['message' => 'This account has not been approved yet.'], 422);
+    }
+
+    // No look-alike characters (0/O, 1/l/I) so it is easy to read out.
+    $alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789';
+    $temp = '';
+    for ($i = 0; $i < 10; $i++) {
+        $temp .= $alphabet[random_int(0, strlen($alphabet) - 1)];
+    }
+
+    $user->password = $temp; // hashed by the model cast
+    $user->must_change_password = true;
+    $user->save();
+    $user->tokens()->delete();
+
+    $this->logActivity(
+        request()->user()->idUsers,
+        "Reset password for '{$user->full_name}'"
+    );
+
+    return response()->json([
+        'message' => 'Password reset.',
+        'temporary_password' => $temp,
+    ]);
+}
+
 public function destroy($id)
 {
     $user = User::find($id);

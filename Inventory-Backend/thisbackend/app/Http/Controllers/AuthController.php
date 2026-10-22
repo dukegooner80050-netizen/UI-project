@@ -131,6 +131,51 @@ return response()->json([
 ]);
 }
 
+// Any signed-in user changes their own password. Needs the current one,
+// so a stolen/left-open session alone can't take the account over.
+public function changePassword(Request $request)
+{
+    $validated = $request->validate([
+        'current_password' => 'required|string',
+        'password' => 'required|string|min:8|max:100|confirmed',
+    ]);
+
+    $user = $request->user();
+
+    if (!Hash::check($validated['current_password'], $user->password)) {
+        return response()->json([
+            'message' => 'Your current password is not correct.',
+            'errors' => ['current_password' => ['Your current password is not correct.']],
+        ], 422);
+    }
+
+    if (Hash::check($validated['password'], $user->password)) {
+        return response()->json([
+            'message' => 'Your new password must be different from the current one.',
+            'errors' => ['password' => ['Your new password must be different from the current one.']],
+        ], 422);
+    }
+
+    $user->password = $validated['password']; // hashed by the model cast
+    $user->must_change_password = false;
+    $user->save();
+
+    // Sign every other device/session out; keep the one used right now.
+    $currentId = $request->user()->currentAccessToken()->id ?? null;
+    $user->tokens()->when($currentId, fn ($q) => $q->where('id', '!=', $currentId))->delete();
+
+    \App\Models\Log::create([
+        'idUsers' => $user->idUsers,
+        'activity_description' => 'Changed own password',
+        'timestamp' => now()->toDateTimeString(),
+    ]);
+
+    return response()->json([
+        'message' => 'Your password was changed.',
+        'user' => $user->fresh(),
+    ]);
+}
+
 public function logout(Request $request)
 {
     $request->user()->currentAccessToken()->delete();

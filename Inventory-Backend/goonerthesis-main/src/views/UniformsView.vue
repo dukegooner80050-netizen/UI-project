@@ -1225,43 +1225,4 @@ const visibleTypes = computed(() => {
   background: #f8f9fa;
   z-index: 2;
 }
-
-/* MODALS */
-.modal-backdrop-custom {
-  position: fixed;
-  inset: 0;
-  background: rgba(0, 0, 0, 0.35);
-  display: grid;
-  place-items: center;
-  z-index: 2000;
-  padding: 16px;
-}
-.modal-custom {
-  background: #fff;
-  width: 100%;
-  max-width: 520px;
-  max-height: 90vh;
-  border-radius: 12px;
-  overflow: hidden;
-  box-shadow: 0 18px 50px rgba(0, 0, 0, 0.25);
-}
-.modal-header,
-.modal-footer {
-  padding: 12px 16px;
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-}
-.modal-header {
-  border-bottom: 1px solid #dee2e6;
-}
-.modal-footer {
-  border-top: 1px solid #dee2e6;
-  justify-content: flex-end;
-  gap: 8px;
-}
-.modal-body {
-  padding: 16px;
-  overflow-y: auto;
-}
 </style>

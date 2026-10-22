@@ -19,3 +19,8 @@ export async function updateUser(id, data) {
 export async function deleteUser(id) {
     return (await axios.delete(`/users/${id}`)).data;
 }
+
+// AMO only. Returns { temporary_password } -- shown once.
+export async function resetUserPassword(id) {
+    return (await axios.post(`/users/${id}/reset-password`)).data;
+}

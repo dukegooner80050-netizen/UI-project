@@ -1578,37 +1578,6 @@ watch(activeTab, async () => {
 </template>
 
 <style scoped>
-.modal-backdrop-custom {
-  position: fixed;
-  inset: 0;
-  background: rgba(0, 0, 0, 0.35);
-  display: grid;
-  place-items: center;
-  z-index: 2000;
-  padding: 16px;
-}
-.modal-custom {
-  background: white;
-  width: 100%;
-  max-width: 500px;
-  border-radius: 12px;
-  overflow: hidden;
-  box-shadow: 0 18px 50px rgba(0, 0, 0, 0.25);
-}
-.modal-header,
-.modal-footer {
-  padding: 12px 16px;
-  border-bottom: 1px solid #dee2e6;
-}
-.modal-footer {
-  border-top: 1px solid #dee2e6;
-  border-bottom: none;
-  display: flex;
-  justify-content: flex-end;
-}
-.modal-body {
-  padding: 16px;
-}
 .card-body {
   overflow-y: auto;
 }

@@ -421,9 +421,9 @@ watch(() => route.fullPath, throttled(load, 15000));
   width: 40px;
   height: 40px;
   border-radius: 50%;
-  border: 1px solid rgba(0, 0, 0, 0.12);
-  background: #fff;
-  color: #104605;
+  border: 1px solid var(--bs-border-color);
+  background: var(--bs-body-bg);
+  color: var(--bs-success);
   font-size: 1.1rem;
   display: grid;
   place-items: center;
@@ -431,7 +431,7 @@ watch(() => route.fullPath, throttled(load, 15000));
   cursor: pointer;
 }
 .bell-btn:hover {
-  background: #f1f8ef;
+  background: var(--bs-tertiary-bg);
 }
 .bell-badge {
   position: absolute;
@@ -457,8 +457,8 @@ watch(() => route.fullPath, throttled(load, 15000));
   max-height: 70vh;
   display: flex;
   flex-direction: column;
-  background: #fff;
-  color: #212529;
+  background: var(--bs-body-bg);
+  color: var(--bs-body-color);
   border-radius: 12px;
   box-shadow: 0 8px 28px rgba(0, 0, 0, 0.22);
   z-index: 2200;
@@ -497,6 +497,6 @@ watch(() => route.fullPath, throttled(load, 15000));
   margin-top: 2px;
 }
 .bell-new {
-  background: #eaf4ff;
+  background: var(--bs-info-bg-subtle);
 }
 </style>

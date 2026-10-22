@@ -122,7 +122,7 @@ async function loadAll() {
   items.value = await getItems();
   requests.value = await getRequests();
   if (isAdmin.value) {
-    logs.value = await getLogs();
+    logs.value = await getLogs({ limit: 5 });
     myOverdue.value = [];
     try {
       const low = await getLowStock();
@@ -446,7 +446,7 @@ const recentRequestsList = computed(() => {
 });
 
 const recentLogsList = computed(() =>
-  [...(logs.value || [])].slice(-5).reverse(),
+  (logs.value || []).slice(0, 5), // newest first
 );
 
 /*  CHART DATA  */
@@ -1238,43 +1238,6 @@ eventContent(arg) {
   overflow-y: auto;
 }
 
-.modal-backdrop-custom {
-  position: fixed;
-  inset: 0;
-  background: rgba(0, 0, 0, 0.35);
-  display: grid;
-  place-items: center;
-  z-index: 2000;
-  padding: 16px;
-}
-
-.modal-custom {
-  background: #fff;
-  border-radius: 12px;
-  max-width: 700px;
-  width: 100%;
-  max-height: 80%;
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-  box-shadow: 0 18px 50px rgba(0, 0, 0, 0.25);
-}
-
-.modal-header,
-.modal-footer {
-  padding: 12px 16px;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  border-bottom: 1px solid #dee2e6;
-}
-
-.modal-body {
-  padding: 16px;
-  overflow-y: auto;
-}
-
 .table-scroll {
   max-height: 400px;
   overflow-y: auto;
@@ -1291,5 +1254,10 @@ eventContent(arg) {
 .card-body ul {
   max-height: 400px;
   overflow-y: auto;
+}
+
+/* the dashboard's list pop-ups are wider than the default */
+.modal-custom {
+  max-width: 700px;
 }
 </style>

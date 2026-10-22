@@ -859,43 +859,4 @@ function formatDate(date) {
 </style>
 
 <style scoped>
-.modal-backdrop-custom {
-  position: fixed;
-  inset: 0;
-  background: rgba(0, 0, 0, 0.5);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 1050;
-}
-
-.modal-custom {
-  width: min(500px, calc(100% - 2rem));
-  background: #fff;
-  border-radius: 0.5rem;
-  box-shadow: 0 0.5rem 1rem rgba(0, 0, 0, 0.15);
-}
-
-.modal-custom .modal-header,
-.modal-custom .modal-footer {
-  padding: 1rem;
-}
-
-.modal-custom .modal-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  border-bottom: 1px solid #dee2e6;
-}
-
-.modal-custom .modal-body {
-  padding: 1rem;
-}
-
-.modal-custom .modal-footer {
-  display: flex;
-  justify-content: flex-end;
-  gap: 0.5rem;
-  border-top: 1px solid #dee2e6;
-}
 </style>

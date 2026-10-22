@@ -15,7 +15,8 @@ import {
   approveAccountRequest,
   declineAccountRequest,
 } from "../services/accountRequests";
-import { getUsers, updateUser, deleteUser } from "../services/users";
+import { getUsers, updateUser, deleteUser, resetUserPassword } from "../services/users";
+import ChangePasswordForm from "../components/ChangePasswordForm.vue";
 import { getErrorMessage } from "../services/errors";
 import AlertMessage from "../components/AlertMessage.vue";
 
@@ -307,7 +308,7 @@ function amRoleChanged(user) {
 }
 
 const amConfirmOpen = ref(false);
-const amConfirmAction = ref(""); // "role" | "delete"
+const amConfirmAction = ref(""); // "role" | "delete" | "reset"
 const amConfirmTarget = ref(null);
 const amWorking = ref(false);
 
@@ -323,6 +324,31 @@ function amOpenDelete(user) {
   amConfirmAction.value = "delete";
   amConfirmTarget.value = user;
   amConfirmOpen.value = true;
+}
+
+function amOpenReset(user) {
+  if (isSelf(user)) return;
+  amConfirmAction.value = "reset";
+  amConfirmTarget.value = user;
+  amConfirmOpen.value = true;
+}
+
+// Shown once after a reset so the AMO can pass it on.
+const amTemp = ref(null); // { name, username, password }
+const amCopied = ref(false);
+
+async function amCopyTemp() {
+  try {
+    await navigator.clipboard.writeText(amTemp.value.password);
+    amCopied.value = true;
+  } catch {
+    /* clipboard blocked: the password is still on screen to read out */
+  }
+}
+
+function amCloseTemp() {
+  amTemp.value = null;
+  amCopied.value = false;
 }
 
 function amCloseConfirm() {
@@ -348,6 +374,14 @@ async function amRunConfirmed() {
       });
 
       notify("success", `${user.full_name}'s role is now ${ROLE_LABELS[newRole] || newRole}.`);
+    } else if (amConfirmAction.value === "reset") {
+      const res = await resetUserPassword(user.idUsers);
+      amTemp.value = {
+        name: user.full_name,
+        username: user.username,
+        password: res.temporary_password,
+      };
+      amCopied.value = false;
     } else {
       await deleteUser(user.idUsers);
       notify("success", `Removed "${user.full_name}".`);
@@ -426,9 +460,11 @@ onMounted(async () => {
     <!-- ============================================================ -->
 
     <template v-if="activeTab === 'GENERAL'">
+    <div class="row g-3 align-items-start">
 
+      <div class="col-12 col-md-6 col-xl-4">
       <!-- APPEARANCE -->
-      <div class="card shadow-sm mb-3" style="max-width: 480px">
+      <div class="card shadow-sm mb-3">
         <div class="card-body">
 
           <h6 class="mb-2">Appearance</h6>
@@ -464,7 +500,7 @@ onMounted(async () => {
         Loading...
       </div>
 
-      <div v-else-if="canEditLimit" class="card shadow-sm" style="max-width: 480px">
+      <div v-else-if="canEditLimit" class="card shadow-sm mb-3">
         <div class="card-body">
 
           <h6 class="mb-2">Monthly Request Limit</h6>
@@ -492,11 +528,23 @@ onMounted(async () => {
         </div>
       </div>
 
-      <div
-        v-if="canEditLimit && !loading"
-        class="card shadow-sm mt-3"
-        style="max-width: 480px"
-      >
+      </div>
+      <div class="col-12 col-md-6 col-xl-4">
+      <!-- CHANGE PASSWORD (everyone) -->
+      <div class="card shadow-sm mb-3">
+        <div class="card-body">
+          <h6 class="mb-2">Change Password</h6>
+          <p class="text-muted small">
+            Choose a new password for your own account. Your other devices
+            will be signed out.
+          </p>
+          <ChangePasswordForm />
+        </div>
+      </div>
+
+      </div>
+      <div class="col-12 col-md-6 col-xl-4">
+      <div v-if="canEditLimit && !loading" class="card shadow-sm mb-3">
         <div class="card-body">
 
           <h6 class="mb-2">Default Return Periods</h6>
@@ -539,6 +587,9 @@ onMounted(async () => {
         </div>
       </div>
 
+      </div>
+
+    </div>
     </template>
 
     <!-- ============================================================ -->
@@ -637,7 +688,7 @@ onMounted(async () => {
                   <th>Name</th>
                   <th>Username</th>
                   <th style="width: 170px">Role</th>
-                  <th style="width: 230px"></th>
+                  <th style="width: 340px"></th>
                 </tr>
               </thead>
 
@@ -670,6 +721,14 @@ onMounted(async () => {
                         @click="amOpenRoleChange(u)"
                       >
                         Save Role
+                      </button>
+                      <button
+                        class="btn btn-sm btn-outline-secondary"
+                        :disabled="isSelf(u)"
+                        :title="isSelf(u) ? 'Use Change Password for your own account.' : 'Set a temporary password'"
+                        @click="amOpenReset(u)"
+                      >
+                        Reset Password
                       </button>
                       <button
                         class="btn btn-sm btn-danger text-white"
@@ -836,7 +895,13 @@ onMounted(async () => {
       <div class="modal-custom" style="max-width: 440px">
         <div class="modal-header">
           <h5 class="mb-0">
-            {{ amConfirmAction === "role" ? "Change Role" : "Remove Account" }}
+            {{
+              amConfirmAction === "role"
+                ? "Change Role"
+                : amConfirmAction === "reset"
+                  ? "Reset Password"
+                  : "Remove Account"
+            }}
           </h5>
           <button
             type="button"
@@ -853,6 +918,11 @@ onMounted(async () => {
             to
             <strong>{{ ROLE_LABELS[amRoleChoice[amConfirmTarget?.idUsers]] || amRoleChoice[amConfirmTarget?.idUsers] }}</strong>?
           </p>
+          <p v-else-if="amConfirmAction === 'reset'" class="mb-2">
+            Reset the password for <strong>{{ amConfirmTarget?.full_name }}</strong>
+            ({{ amConfirmTarget?.username }})? They will be signed out
+            everywhere and must choose a new password at their next login.
+          </p>
           <p v-else class="mb-2">
             Remove <strong>{{ amConfirmTarget?.full_name }}</strong>
             ({{ amConfirmTarget?.username }})? They will no longer be able to
@@ -866,7 +936,7 @@ onMounted(async () => {
           </button>
           <button
             class="btn"
-            :class="amConfirmAction === 'role' ? 'btn-primary' : 'btn-danger'"
+            :class="amConfirmAction === 'role' || amConfirmAction === 'reset' ? 'btn-primary' : 'btn-danger'"
             :disabled="amWorking"
             @click="amRunConfirmed"
           >
@@ -875,9 +945,51 @@ onMounted(async () => {
                 ? "Please wait..."
                 : amConfirmAction === "role"
                   ? "Confirm Change"
-                  : "Remove"
+                  : amConfirmAction === "reset"
+                    ? "Reset Password"
+                    : "Remove"
             }}
           </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ============================================================ -->
+    <!-- TEMPORARY PASSWORD (shown once after a reset) -->
+    <!-- ============================================================ -->
+
+    <div v-if="amTemp" class="modal-backdrop-custom">
+      <div class="modal-custom" style="max-width: 440px">
+        <div class="modal-header">
+          <h5 class="mb-0">Temporary Password</h5>
+          <button type="button" class="btn-close" @click="amCloseTemp"></button>
+        </div>
+
+        <div class="modal-body">
+          <p class="mb-2">
+            Give this to <strong>{{ amTemp.name }}</strong> ({{ amTemp.username }}).
+            They must change it when they sign in.
+          </p>
+          <div class="input-group mb-2">
+            <input
+              id="temp-password"
+              name="temp-password"
+              class="form-control font-monospace"
+              :value="amTemp.password"
+              readonly
+              aria-label="Temporary password"
+            />
+            <button type="button" class="btn btn-outline-secondary" @click="amCopyTemp">
+              {{ amCopied ? "Copied" : "Copy" }}
+            </button>
+          </div>
+          <p class="text-danger small mb-0">
+            This is shown only once. If it is lost, reset the password again.
+          </p>
+        </div>
+
+        <div class="modal-footer">
+          <button class="btn btn-primary" @click="amCloseTemp">Done</button>
         </div>
       </div>
     </div>
@@ -886,47 +998,4 @@ onMounted(async () => {
 </template>
 
 <style scoped>
-.modal-backdrop-custom {
-  position: fixed;
-  inset: 0;
-  background: rgba(0, 0, 0, 0.35);
-  display: grid;
-  place-items: center;
-  z-index: 2000;
-  padding: 16px;
-}
-
-.modal-custom {
-  background: var(--bs-body-bg, white);
-  color: var(--bs-body-color, inherit);
-  width: 100%;
-  max-width: 500px;
-  border-radius: 12px;
-  overflow: hidden;
-  box-shadow: 0 18px 50px rgba(0, 0, 0, 0.25);
-}
-
-.modal-header,
-.modal-footer {
-  padding: 12px 16px;
-  border-bottom: 1px solid var(--bs-border-color, #dee2e6);
-}
-
-.modal-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-}
-
-.modal-footer {
-  border-top: 1px solid var(--bs-border-color, #dee2e6);
-  border-bottom: none;
-  display: flex;
-  justify-content: flex-end;
-  gap: 8px;
-}
-
-.modal-body {
-  padding: 16px;
-}
 </style>
