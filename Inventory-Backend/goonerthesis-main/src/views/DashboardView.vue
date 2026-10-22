@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed, onMounted, watch, onBeforeUnmount } from "vue";
+import { ref, computed, onMounted, watch, onBeforeUnmount, nextTick } from "vue";
 import { useRouter } from "vue-router";
 import { getItems } from "../services/items";
 import StockBadge from "../components/StockBadge.vue";
@@ -628,7 +628,35 @@ watch([items, requests], () => {
   renderCharts();
 });
 
+// Calendar pop-over, opened from the header button (same idea as the bell).
+const calOpen = ref(false);
+const calRoot = ref(null);
+const calRef = ref(null);
+
+async function toggleCalendar() {
+  calOpen.value = !calOpen.value;
+  if (calOpen.value) {
+    await nextTick();
+    calRef.value?.getApi?.().updateSize();
+  }
+}
+
+function onCalDocClick(e) {
+  // Leave it open while a day's request list is showing on top of it.
+  if (showDayModal.value) return;
+  if (calOpen.value && calRoot.value && !calRoot.value.contains(e.target)) calOpen.value = false;
+}
+
+function onCalKey(e) {
+  if (e.key === "Escape" && calOpen.value && !showDayModal.value) calOpen.value = false;
+}
+
+document.addEventListener("mousedown", onCalDocClick);
+document.addEventListener("keydown", onCalKey);
+
 onBeforeUnmount(() => {
+  document.removeEventListener("mousedown", onCalDocClick);
+  document.removeEventListener("keydown", onCalKey);
   destroyCharts();
   if (clockTimer) clearInterval(clockTimer);
   if (resyncTimer) clearInterval(resyncTimer);
@@ -783,6 +811,47 @@ eventContent(arg) {
       </div>
 
       <div class="d-flex align-items-center gap-2">
+        <div v-if="isAdmin" ref="calRoot" class="cal-wrap">
+          <button
+            type="button"
+            class="btn btn-outline-secondary btn-sm"
+            :class="{ active: calOpen }"
+            title="Requests calendar"
+            aria-label="Requests calendar"
+            :aria-expanded="calOpen"
+            @click="toggleCalendar"
+          >
+            <i class="bi bi-calendar3"></i>
+          </button>
+
+          <div v-show="calOpen" class="cal-panel" role="dialog" aria-label="Requests calendar">
+            <div class="d-flex justify-content-between align-items-center mb-2">
+              <h6 class="mb-0">Requests Calendar</h6>
+              <small class="text-muted">Click a day to see its requests</small>
+            </div>
+            <!-- Legend: what each badge on a day is -->
+            <div class="calendar-legend d-flex flex-wrap align-items-center mb-1 small">
+              <span class="d-inline-flex align-items-center gap-1">
+                <span class="legend-dot bg-warning"></span> In review
+              </span>
+              <span class="d-inline-flex align-items-center gap-1">
+                <span class="legend-dot bg-success"></span> Approved
+              </span>
+              <span class="d-inline-flex align-items-center gap-1">
+                <span class="legend-dot bg-danger"></span> Rejected
+              </span>
+              <span class="d-inline-flex align-items-center gap-1">
+                <span class="legend-dot bg-info"></span> Returned
+              </span>
+            </div>
+            <div class="text-muted small mb-3">
+              Each badge is the number of requests made that day with that status.
+            </div>
+
+            <FullCalendar ref="calRef" :options="calendarOptions" />
+          </div>
+        </div>
+
         <div
           class="clock-pill d-flex align-items-center gap-2 border rounded-pill px-3 py-1 bg-body-tertiary"
           :title="clockTitle"
@@ -919,46 +988,22 @@ eventContent(arg) {
       </div>
     </div>
 
-    <!-- MAIN ROW (admin): calendar + action panels -->
+    <!-- MAIN ROW (admin): action panels (the calendar opens from the header button) -->
     <div v-if="isAdmin" class="row g-3 mb-3">
-      <div class="col-lg-8 col-md-12">
-        <div class="card shadow-sm h-100">
-          <div class="card-body">
-            <div class="d-flex justify-content-between align-items-start flex-wrap gap-2 mb-2">
-              <h6 class="mb-0">Requests Calendar</h6>
-              <small class="text-muted">Click a day to see its requests</small>
-            </div>
-
-            <!-- Legend: what each badge on a day is -->
-            <div class="calendar-legend d-flex flex-wrap align-items-center mb-1 small">
-              <span class="d-inline-flex align-items-center gap-1">
-                <span class="legend-dot bg-warning"></span> In review
-              </span>
-              <span class="d-inline-flex align-items-center gap-1">
-                <span class="legend-dot bg-success"></span> Approved
-              </span>
-              <span class="d-inline-flex align-items-center gap-1">
-                <span class="legend-dot bg-danger"></span> Rejected
-              </span>
-              <span class="d-inline-flex align-items-center gap-1">
-                <span class="legend-dot bg-info"></span> Returned
-              </span>
-            </div>
-            <div class="text-muted small mb-3">
-              Each badge is the number of requests made that day with that status.
-            </div>
-
-            <FullCalendar :options="calendarOptions" />
-          </div>
-        </div>
+      <!-- Return reports + restock panels, and Recent Activity Logs -->
+      <!-- One row. The returns panel only shows when there is something to
+           check; an empty column hides itself so the others share the width. -->
+      <div class="col-lg col-md-6 dash-col">
+        <ReturnReportsPanel v-if="isAdmin" />
       </div>
 
-      <!-- Restock panels + Recent Activity Logs (stacked in the narrow column) -->
-      <div class="col-lg-4 col-md-12">
-        <ReturnReportsPanel v-if="isAdmin" />
+      <div class="col-lg col-md-6 dash-col">
         <div id="restock-panel">
           <LowStockRestockPanel v-if="isAdmin" />
         </div>
+      </div>
+
+      <div class="col-lg col-md-6 dash-col">
 
         <div class="card shadow-sm">
           <div class="card-body">
@@ -1165,6 +1210,30 @@ eventContent(arg) {
 </template>
 
 <style scoped>
+.dash-col:empty {
+  display: none;
+}
+
+.cal-wrap {
+  position: relative;
+}
+.cal-panel {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  width: 620px;
+  max-width: 92vw;
+  max-height: 80vh;
+  overflow: auto;
+  padding: 14px 16px;
+  background: var(--bs-body-bg);
+  color: var(--bs-body-color);
+  border: 1px solid var(--bs-border-color);
+  border-radius: 12px;
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.22);
+  z-index: 1500;
+}
+
 /* keeps cards from causing sideways scroll */
 * {
   max-width: 100%;
