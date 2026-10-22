@@ -217,7 +217,6 @@ function badgeClass(action) {
           <div class="text-muted small">
             Showing <strong>{{ firstRow }}–{{ lastRow }}</strong> of
             <strong>{{ meta.total }}</strong>
-            <span v-if="loading" class="ms-2 spinner-border spinner-border-sm"></span>
           </div>
           <div class="d-flex align-items-center gap-2">
             <label class="small text-muted mb-0" for="logs-per-page">Rows per page</label>

@@ -14,6 +14,33 @@ class RoomEquipmentController extends Controller
 {
     use ActivityLogger;
 
+    // Every School Equipment item with where it has been distributed.
+    public function overview()
+    {
+        $items = Item::where('category', 'School Equipment')->orderBy('item_name')->get();
+        $byItem = RoomEquipment::with('room.building')->get()->groupBy('iditems');
+
+        return response()->json($items->map(function ($item) use ($byItem) {
+            $locations = ($byItem[$item->iditems] ?? collect())
+                ->map(fn ($e) => [
+                    'idroom' => $e->idroom,
+                    'building' => optional(optional($e->room)->building)->building_name ?? 'Unknown building',
+                    'room' => optional($e->room)->room_name ?? 'Unknown room',
+                    'quantity' => (int) $e->quantity,
+                ])
+                ->sortBy([['building', 'asc'], ['room', 'asc']])
+                ->values();
+
+            return [
+                'iditems' => $item->iditems,
+                'item_name' => $item->item_name,
+                'available' => (int) $item->quantity,
+                'distributed' => (int) $locations->sum('quantity'),
+                'locations' => $locations,
+            ];
+        })->values());
+    }
+
     public function index($roomId)
     {
         $room = Room::find($roomId);

@@ -1,11 +1,12 @@
 <script setup>
-import { ref, computed, onMounted } from "vue";
+import { ref, computed, onMounted, watch } from "vue";
 import {
   getBuildings,
   createBuilding,
   updateBuilding,
   deleteBuilding,
 } from "../services/buildings";
+import { getDistributionOverview } from "../services/roomEquipment";
 import { getRooms, createRoom, updateRoom, deleteRoom } from "../services/rooms";
 import {
   getRoomEquipment,
@@ -17,6 +18,91 @@ import { listInventory } from "../services/inventory";
 import AlertMessage from "../components/AlertMessage.vue";
 
 const loading = ref(true);
+const viewTab = ref("rooms"); // rooms | items
+const overview = ref([]);
+const overviewLoading = ref(false);
+const overviewSearch = ref("");
+
+async function openItemsTab() {
+  viewTab.value = "items";
+  overviewLoading.value = true;
+  try {
+    overview.value = await getDistributionOverview();
+  } catch (e) {
+    notify("danger", errMsg(e));
+  } finally {
+    overviewLoading.value = false;
+  }
+}
+
+const itemSortKey = ref("building"); // item | building | room | quantity
+const itemSortDir = ref("asc");
+const itemBuildingFilter = ref("");
+const itemRoomFilter = ref("");
+
+const flatRows = computed(() =>
+  overview.value.flatMap((i) =>
+    i.locations.map((l) => ({
+      key: i.iditems + "-" + l.idroom,
+      item: i.item_name,
+      building: l.building,
+      room: l.room,
+      quantity: l.quantity,
+    })),
+  ),
+);
+
+const overviewBuildings = computed(() =>
+  [...new Set(flatRows.value.map((r) => r.building))].sort((a, b) => a.localeCompare(b)),
+);
+
+// Rooms offered in the room filter: only those in the chosen building.
+const overviewRooms = computed(() =>
+  [
+    ...new Set(
+      flatRows.value
+        .filter((r) => !itemBuildingFilter.value || r.building === itemBuildingFilter.value)
+        .map((r) => r.room),
+    ),
+  ].sort((a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: "base" })),
+);
+
+watch(itemBuildingFilter, () => {
+  if (itemRoomFilter.value && !overviewRooms.value.includes(itemRoomFilter.value)) itemRoomFilter.value = "";
+});
+
+const filteredOverview = computed(() => {
+  const q = overviewSearch.value.trim().toLowerCase();
+  const dir = itemSortDir.value === "asc" ? 1 : -1;
+  const k = itemSortKey.value;
+  const cmp = (a, b) =>
+    k === "quantity"
+      ? (a.quantity - b.quantity) * dir
+      : String(a[k]).localeCompare(String(b[k]), undefined, { numeric: true, sensitivity: "base" }) * dir;
+  return flatRows.value
+    .filter((r) => !itemBuildingFilter.value || r.building === itemBuildingFilter.value)
+    .filter((r) => !itemRoomFilter.value || r.room === itemRoomFilter.value)
+    .filter((r) => !q || r.item.toLowerCase().includes(q) || r.room.toLowerCase().includes(q))
+    .sort((a, b) => cmp(a, b) || a.item.localeCompare(b.item) || a.room.localeCompare(b.room));
+});
+
+function clearItemFilters() {
+  overviewSearch.value = "";
+  itemBuildingFilter.value = "";
+  itemRoomFilter.value = "";
+}
+
+function sortItemsBy(key) {
+  if (itemSortKey.value === key) itemSortDir.value = itemSortDir.value === "asc" ? "desc" : "asc";
+  else {
+    itemSortKey.value = key;
+    itemSortDir.value = "asc";
+  }
+}
+
+function sortMark(key) {
+  return itemSortKey.value === key ? (itemSortDir.value === "asc" ? " ▲" : " ▼") : "";
+}
 const buildings = ref([]);
 const rooms = ref([]);
 const equipmentItems = ref([]); // all School Equipment items (for the "add" dropdown)
@@ -464,7 +550,103 @@ const addItemAvailable = computed(() => {
       Distributing equipment here reserves it from the general available stock.
     </p>
 
+    <div class="d-flex gap-2 mb-3">
+      <button
+        type="button"
+        class="btn"
+        :class="viewTab === 'rooms' ? 'btn-primary' : 'btn-outline-primary'"
+        @click="viewTab = 'rooms'"
+      >
+        Buildings &amp; Rooms
+      </button>
+      <button
+        type="button"
+        class="btn"
+        :class="viewTab === 'items' ? 'btn-primary' : 'btn-outline-primary'"
+        @click="openItemsTab"
+      >
+        Items
+      </button>
+    </div>
+
     <div v-if="loading" class="text-center text-muted py-4">Loading...</div>
+
+    <div v-else-if="viewTab === 'items'" class="card shadow-sm">
+      <div class="card-body">
+        <h6 class="mb-3">School Equipment &mdash; where it is</h6>
+
+        <div class="d-flex flex-wrap gap-2 align-items-center mb-3">
+          <input
+            id="dist-item-search"
+            name="dist_item_search"
+            type="search"
+            class="form-control"
+            style="flex: 1 1 220px; min-width: 180px"
+            placeholder="Search item or room..."
+            v-model="overviewSearch"
+            aria-label="Search item or room"
+          />
+          <select
+            id="dist-building-filter"
+            name="dist_building_filter"
+            class="form-select"
+            style="flex: 0 1 200px"
+            v-model="itemBuildingFilter"
+            aria-label="Filter by building"
+          >
+            <option value="">All buildings</option>
+            <option v-for="b in overviewBuildings" :key="b" :value="b">{{ b }}</option>
+          </select>
+          <select
+            id="dist-room-filter"
+            name="dist_room_filter"
+            class="form-select"
+            style="flex: 0 1 200px"
+            v-model="itemRoomFilter"
+            aria-label="Filter by room"
+          >
+            <option value="">All rooms</option>
+            <option v-for="r in overviewRooms" :key="r" :value="r">{{ r }}</option>
+          </select>
+          <button
+            type="button"
+            class="btn btn-outline-secondary"
+            :disabled="!overviewSearch && !itemBuildingFilter && !itemRoomFilter"
+            @click="clearItemFilters"
+          >
+            Clear filters
+          </button>
+        </div>
+
+        <div v-if="overviewLoading" class="text-center text-muted py-4">Loading...</div>
+
+        <div v-else class="table-responsive">
+          <table class="table table-hover align-middle mb-0">
+            <thead class="table-light">
+              <tr>
+                <th role="button" @click="sortItemsBy('item')">Item{{ sortMark("item") }}</th>
+                <th role="button" @click="sortItemsBy('building')">Building{{ sortMark("building") }}</th>
+                <th role="button" @click="sortItemsBy('room')">Room{{ sortMark("room") }}</th>
+                <th role="button" style="width: 110px" @click="sortItemsBy('quantity')">Qty{{ sortMark("quantity") }}</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-if="filteredOverview.length === 0">
+                <td colspan="4" class="text-center text-muted py-4">
+                  No distributed equipment found.
+                </td>
+              </tr>
+              <tr v-for="r in filteredOverview" :key="r.key">
+                <td class="fw-semibold">{{ r.item }}</td>
+                <td>{{ r.building }}</td>
+                <td>{{ r.room }}</td>
+                <td>{{ r.quantity }}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
 
     <div v-else class="row g-3">
       <!-- BUILDINGS PANEL -->

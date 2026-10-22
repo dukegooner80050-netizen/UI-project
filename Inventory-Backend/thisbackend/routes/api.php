@@ -230,6 +230,7 @@ Route::middleware('role:amo,department_head,admin,instructor,cashier')->group(fu
         Route::put('/rooms/{id}', [RoomController::class, 'update']);
         Route::delete('/rooms/{id}', [RoomController::class, 'destroy']);
 
+        Route::get('/equipment-distribution/items', [RoomEquipmentController::class, 'overview']);
         Route::get('/rooms/{roomId}/equipment', [RoomEquipmentController::class, 'index']);
         Route::post('/rooms/{roomId}/equipment', [RoomEquipmentController::class, 'store']);
         Route::put('/rooms/{roomId}/equipment/{id}', [RoomEquipmentController::class, 'update']);

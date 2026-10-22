@@ -2,11 +2,10 @@
 import { ref, watch, onBeforeUnmount } from "vue";
 import { isLoading } from "../services/loading";
 
-// Two signals that the app is working:
-//   - a progress bar across the very top, immediately
-//   - a "Loading..." badge with a spinner, after a short delay so quick
-//     requests don't make it flash
-const SHOW_BADGE_AFTER_MS = 300;
+// The top bar shows immediately. Pages like the Dashboard, Inventory and
+// Pending Requests have no placeholder of their own, so a small "Loading..."
+// pill appears too, but only when a load is slow enough to be noticed.
+const SHOW_BADGE_AFTER_MS = 600;
 
 const showBadge = ref(false);
 let timer = null;

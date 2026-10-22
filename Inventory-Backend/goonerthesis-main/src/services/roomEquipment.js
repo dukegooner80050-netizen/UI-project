@@ -19,3 +19,7 @@ export async function returnRoomEquipment(roomId, id, quantity) {
 export async function removeRoomEquipment(roomId, id) {
     return (await axios.delete(`/rooms/${roomId}/equipment/${id}`)).data;
 }
+
+export async function getDistributionOverview() {
+    return (await axios.get("/equipment-distribution/items")).data;
+}
