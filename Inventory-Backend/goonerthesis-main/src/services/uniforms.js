@@ -100,3 +100,22 @@ export async function releaseUniformVariant(id, quantity) {
 
   return response.data;
 }
+/* UNIFORM RESERVATIONS */
+
+export async function listUniformReservations() {
+  const response = await axios.get("/uniform-reservations");
+  return response.data;
+}
+
+export async function createUniformReservation(idUnifvariant, quantity) {
+  const response = await axios.post("/uniform-reservations", {
+    idUnifvariant: Number(idUnifvariant),
+    quantity: Number(quantity),
+  });
+  return response.data;
+}
+
+export async function cancelUniformReservation(id) {
+  const response = await axios.delete(`/uniform-reservations/${id}`);
+  return response.data;
+}

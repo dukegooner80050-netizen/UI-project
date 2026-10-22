@@ -58,6 +58,7 @@ return response()->json(
             'borrowedAt' => $request->borrowed_at,
             'releaseMethod' => $request->release_method,
             'releasedAt' => $request->released_at,
+            'releasedToStudent' => $request->released_to_student,
             'receivedAt' => $request->received_at,
             'releasedBy' => optional($request->releasedByUser)->username,
             'items' => $request->items->map(function ($item) use ($request) {
@@ -84,6 +85,7 @@ return response()->json(
         'uniformName' => optional($uniform->uniformVariant->type)->uniform_name,
         'department' => optional($uniform->uniformVariant->department)->dept_name,
         'size' => optional($uniform->uniformVariant)->size,
+        'gender' => optional($uniform->uniformVariant)->gender,
         'price' => optional($uniform->uniformVariant)->price,
     ];
 
@@ -185,6 +187,9 @@ public function consumption()
         }
 
         foreach ($r->uniforms as $u) {
+            if (is_null($r->released_at)) {
+                continue;
+            }
             $variant = $u->uniformVariant;
             $name = optional(optional($variant)->type)->uniform_name ?? 'Uniform';
             $dept = optional(optional($variant)->department)->dept_name ?? 'N/A';
@@ -196,7 +201,7 @@ public function consumption()
                 'qty' => (int) $u->quantity,
                 'requester' => $requester,
                 'requestId' => $r->idrequest,
-                'date' => $r->borrowed_at,
+                'date' => $r->released_at,
             ];
         }
     }
@@ -249,6 +254,7 @@ public function show($id)
         'borrowedAt' => $request->borrowed_at,
         'releaseMethod' => $request->release_method,
         'releasedAt' => $request->released_at,
+        'releasedToStudent' => $request->released_to_student,
         'receivedAt' => $request->received_at,
         'releasedBy' => optional($request->releasedByUser)->username,
         'items' => $request->items->map(function ($item) use ($request) {
@@ -275,6 +281,7 @@ public function show($id)
         'uniformName' => optional($uniform->uniformVariant->type)->uniform_name,
         'department' => optional($uniform->uniformVariant->department)->dept_name,
         'size' => optional($uniform->uniformVariant)->size,
+        'gender' => optional($uniform->uniformVariant)->gender,
         'price' => optional($uniform->uniformVariant)->price,
     ];
 
@@ -472,6 +479,7 @@ return response()->json([
         'uniformName' => optional($uniform->uniformVariant->type)->uniform_name,
         'department' => optional($uniform->uniformVariant->department)->dept_name,
         'size' => optional($uniform->uniformVariant)->size,
+        'gender' => optional($uniform->uniformVariant)->gender,
         'price' => optional($uniform->uniformVariant)->price,
     ];
 
@@ -524,16 +532,28 @@ public function approve(HttpRequest $httpRequest, $id)
             }
         }
 
-        // Check uniform stock
-        foreach ($request->uniforms as $requestedUniform) {
+        // Check available uniform stock, excluding quantities already reserved
+        // by other approved requests. Lock each variant to prevent two approvals
+        // from reserving the same stock concurrently.
+        $uniformTotals = $request->uniforms
+            ->groupBy('idUnifvariant')
+            ->map(fn ($lines) => (int) $lines->sum('quantity'));
+        $lockedUniforms = [];
 
-            $uniform = UniformVariant::find($requestedUniform->idUnifvariant);
+        foreach ($uniformTotals as $variantId => $requestedQty) {
+            $uniform = UniformVariant::where('idUnifvariant', $variantId)
+                ->lockForUpdate()
+                ->first();
+            $available = $uniform
+                ? (int) $uniform->quantity - (int) ($uniform->reserved_quantity ?? 0)
+                : 0;
 
-            if (!$uniform || $uniform->quantity < $requestedUniform->quantity) {
+            if (!$uniform || $available < $requestedQty) {
                 return response()->json([
-                    'message' => "Insufficient stock for uniform variant ID {$requestedUniform->idUnifvariant}."
+                    'message' => "Insufficient available stock for uniform variant ID {$variantId}. Available: {$available}; requested: {$requestedQty}."
                 ], 400);
             }
+            $lockedUniforms[$variantId] = $uniform;
         }
 
         // Deduct office supplies
@@ -554,13 +574,11 @@ public function approve(HttpRequest $httpRequest, $id)
             }
         }
 
-        // Deduct uniforms
-        foreach ($request->uniforms as $requestedUniform) {
-
-            $uniform = UniformVariant::find($requestedUniform->idUnifvariant);
-
-            $uniform->quantity -= $requestedUniform->quantity;
-
+        // Reserve uniforms on approval; do not deduct physical stock until
+        // the cashier confirms the student has actually received them.
+        foreach ($uniformTotals as $variantId => $requestedQty) {
+            $uniform = $lockedUniforms[$variantId];
+            $uniform->reserved_quantity = (int) ($uniform->reserved_quantity ?? 0) + $requestedQty;
             $uniform->save();
         }
 
@@ -600,6 +618,7 @@ public function approve(HttpRequest $httpRequest, $id)
         'approvalRemarks' => $request->approval_remarks,
         'releaseMethod' => $request->release_method,
         'releasedAt' => $request->released_at,
+        'releasedToStudent' => $request->released_to_student,
         'receivedAt' => $request->received_at,
         'items' => $request->items->map(function ($item) use ($request) {
             return [
@@ -620,6 +639,7 @@ public function approve(HttpRequest $httpRequest, $id)
         'uniformName' => optional($uniform->uniformVariant->type)->uniform_name,
         'department' => optional($uniform->uniformVariant->department)->dept_name,
         'size' => optional($uniform->uniformVariant)->size,
+        'gender' => optional($uniform->uniformVariant)->gender,
         'price' => optional($uniform->uniformVariant)->price,
     ];
 }),
@@ -686,6 +706,7 @@ return response()->json([
         'approvalRemarks' => $request->approval_remarks,
         'releaseMethod' => $request->release_method,
         'releasedAt' => $request->released_at,
+        'releasedToStudent' => $request->released_to_student,
         'receivedAt' => $request->received_at,
         'items' => $request->items->map(function ($item) use ($request) {
             return [
@@ -992,14 +1013,18 @@ public function resendNotification($id)
 // itself.
 public function release(HttpRequest $httpRequest, $id)
 {
-    $actor = request()->user();
+    $actor = $httpRequest->user();
 
     $validated = $httpRequest->validate([
         'release_method' => 'required|string|in:For Pick Up,For Delivery',
+        'released_to_student' => 'nullable|string|max:255',
     ]);
 
     return DB::transaction(function () use ($id, $validated, $actor) {
-        $r = Request::where('idrequest', $id)->lockForUpdate()->first();
+        $r = Request::with('uniforms')
+            ->where('idrequest', $id)
+            ->lockForUpdate()
+            ->first();
 
         if (!$r) {
             return response()->json(['message' => 'Request not found.'], 404);
@@ -1009,36 +1034,69 @@ public function release(HttpRequest $httpRequest, $id)
             return response()->json(['message' => 'Only Approved requests can be released.'], 422);
         }
 
-        if (!is_null($r->received_at)) {
+        $isUniformRequest = $r->uniforms->isNotEmpty();
+
+        if ($isUniformRequest && !is_null($r->released_at)) {
+            return response()->json(['message' => 'This uniform request has already been released.'], 422);
+        }
+        if (!$isUniformRequest && !is_null($r->received_at)) {
             return response()->json(['message' => 'The requester already confirmed receiving this request, so its release can no longer be changed.'], 422);
         }
 
-        $wasAlreadyReleased = !is_null($r->released_at);
+        if ($isUniformRequest) {
+            // Uniforms are handed to students by the cashier at the AMO office.
+            // The cashier submits the request, so only that cashier can record
+            // the physical handover. Uniform requests are pickup-only.
+            if (strtolower((string) $actor->role) !== 'cashier' || (int) $r->idUsers !== (int) $actor->idUsers) {
+                return response()->json(['message' => 'Only the cashier who submitted this uniform request can record its release.'], 403);
+            }
+            if ($validated['release_method'] !== 'For Pick Up') {
+                return response()->json(['message' => 'Uniforms must be picked up at the AMO office.'], 422);
+            }
+            if (empty(trim((string) ($validated['released_to_student'] ?? '')))) {
+                return response()->json(['message' => 'Enter the full name of the student collecting the uniform.'], 422);
+            }
+
+            $totals = $r->uniforms->groupBy('idUnifvariant')->map(fn ($lines) => (int) $lines->sum('quantity'));
+            $variants = [];
+            foreach ($totals as $variantId => $qty) {
+                $variant = UniformVariant::where('idUnifvariant', $variantId)->lockForUpdate()->first();
+                if (!$variant || (int) ($variant->reserved_quantity ?? 0) < $qty || (int) $variant->quantity < $qty) {
+                    return response()->json(['message' => 'The reserved uniform stock is no longer available. Please contact the AMO before releasing this request.'], 422);
+                }
+                $variants[$variantId] = $variant;
+            }
+
+            // Convert reservation to a completed stock deduction at handover.
+            foreach ($totals as $variantId => $qty) {
+                $variant = $variants[$variantId];
+                $variant->reserved_quantity = (int) $variant->reserved_quantity - $qty;
+                $variant->quantity = (int) $variant->quantity - $qty;
+                $variant->save();
+            }
+        }
 
         $r->update([
             'release_method' => $validated['release_method'],
             'released_at' => now(),
             'released_by' => $actor->idUsers,
+            ...($isUniformRequest ? ['released_to_student' => trim($validated['released_to_student'])] : []),
+            // For uniform requests the cashier records the real handover, so
+            // the student does not need a C.I.M.S. account to confirm receipt.
+            ...($isUniformRequest ? ['received_at' => now()] : []),
         ]);
 
-        $this->createRequestNotification(
-            $r,
-            (int) $r->idUsers,
-            'released',
-            'Your request #' . $r->idrequest . ' is ready: ' . $validated['release_method'] . '.'
-        );
-
-        $this->logActivity(
-            $actor->idUsers,
-            ($wasAlreadyReleased ? 'Updated release method for' : 'Released') . ' Request #' . $r->idrequest . ' (' . $validated['release_method'] . ')'
-        );
+        $message = $isUniformRequest
+            ? 'Your uniform request #' . $r->idrequest . ' has been released at the AMO office.'
+            : 'Your request #' . $r->idrequest . ' is ready: ' . $validated['release_method'] . '.';
+        $this->createRequestNotification($r, (int) $r->idUsers, 'released', $message);
+        $this->logActivity($actor->idUsers, ($isUniformRequest ? 'Released uniform request #' : 'Released Request #') . $r->idrequest . ' (' . $validated['release_method'] . ')');
 
         return response()->json([
-            'message' => $wasAlreadyReleased
-                ? 'Release method updated.'
-                : 'Request marked as released.',
+            'message' => $isUniformRequest ? 'Uniform handover recorded and stock deducted.' : 'Request marked as released.',
             'releaseMethod' => $r->release_method,
             'releasedAt' => $r->released_at,
+            'releasedToStudent' => $r->released_to_student,
             'receivedAt' => $r->received_at,
             'releasedBy' => $actor->username,
         ]);
@@ -1123,7 +1181,7 @@ private function formatWorkflowRequest($r): array
         'status' => $r->status, 'request_date' => $r->request_date,
         'coordinatorForwardedAt' => $r->coordinator_forwarded_at,
         'items' => $r->items->map(fn ($i) => ['requestItemId' => $i->idrequestItem, 'itemId' => $i->iditems, 'itemName' => optional($i->item)->item_name, 'category' => optional($i->item)->category, 'itemType' => optional($i->item)->item_type, 'qty' => $i->quantity]),
-        'uniforms' => $r->uniforms->map(fn ($u) => ['requestUniformId' => $u->idrequestUniform, 'uniformVariantId' => $u->idUnifvariant, 'quantity' => $u->quantity, 'uniformName' => optional($u->uniformVariant->type)->uniform_name, 'department' => optional($u->uniformVariant->department)->dept_name, 'size' => optional($u->uniformVariant)->size]),
+        'uniforms' => $r->uniforms->map(fn ($u) => ['requestUniformId' => $u->idrequestUniform, 'uniformVariantId' => $u->idUnifvariant, 'quantity' => $u->quantity, 'uniformName' => optional($u->uniformVariant->type)->uniform_name, 'department' => optional($u->uniformVariant->department)->dept_name, 'size' => optional($u->uniformVariant)->size, 'gender' => optional($u->uniformVariant)->gender ?? 'Unisex']),
     ];
 }
 

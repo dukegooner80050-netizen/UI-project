@@ -1,0 +1,120 @@
+<?php
+
+namespace App\Http\Controllers;
+
+use App\Models\UniformReservation;
+use App\Models\UniformVariant;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
+use App\Traits\ActivityLogger;
+
+class UniformReservationController extends Controller
+{
+    use ActivityLogger;
+
+    public function index()
+    {
+        $user = request()->user();
+        $query = UniformReservation::with(['user', 'variant.type', 'variant.department'])
+            ->orderBy('created_at');
+
+        if (strtolower((string) $user->role) !== 'amo') {
+            $query->where('idUsers', $user->idUsers);
+        }
+
+        return response()->json($query->get()->map(fn ($r) => $this->format($r)));
+    }
+
+    public function store(Request $request)
+    {
+        $user = $request->user();
+        if (strtolower((string) $user->role) !== 'cashier') {
+            return response()->json(['message' => 'Only the cashier can reserve uniforms.'], 403);
+        }
+
+        $validated = $request->validate([
+            'idUnifvariant' => 'required|integer|exists:uniformvariant,idUnifvariant',
+            'quantity' => 'required|integer|min:1|max:1000',
+        ]);
+
+        $variant = UniformVariant::with(['type', 'department'])
+            ->findOrFail($validated['idUnifvariant']);
+
+        if (((int) $variant->quantity - (int) ($variant->reserved_quantity ?? 0)) > 0) {
+            return response()->json([
+                'message' => 'This uniform has stock available. Add it to a regular request instead.'
+            ], 422);
+        }
+
+        $existing = UniformReservation::where('idUsers', $user->idUsers)
+            ->where('idUnifvariant', $variant->idUnifvariant)
+            ->whereIn('status', ['Waiting', 'Ready'])
+            ->first();
+
+        if ($existing) {
+            $existing->quantity = (int) $existing->quantity + (int) $validated['quantity'];
+            $existing->status = 'Waiting';
+            $existing->notified_at = null;
+            $existing->save();
+            $reservation = $existing;
+        } else {
+            $reservation = UniformReservation::create([
+                'idUsers' => $user->idUsers,
+                'idUnifvariant' => $variant->idUnifvariant,
+                'quantity' => $validated['quantity'],
+                'status' => 'Waiting',
+            ]);
+        }
+
+        $this->logActivity(
+            $user->idUsers,
+            "Reserved {$validated['quantity']} {$variant->type->uniform_name} ({$variant->department->dept_name} - {$variant->gender} - {$variant->size})"
+        );
+
+        return response()->json([
+            'message' => 'Uniform reservation added to the queue.',
+            'reservation' => $this->format($reservation->fresh(['user', 'variant.type', 'variant.department'])),
+        ], 201);
+    }
+
+    public function cancel($id)
+    {
+        $user = request()->user();
+        $reservation = UniformReservation::find($id);
+
+        if (!$reservation) {
+            return response()->json(['message' => 'Reservation not found.'], 404);
+        }
+        if ((int) $reservation->idUsers !== (int) $user->idUsers) {
+            return response()->json(['message' => 'You can only cancel your own reservations.'], 403);
+        }
+        if (!in_array($reservation->status, ['Waiting', 'Ready'], true)) {
+            return response()->json(['message' => 'This reservation can no longer be cancelled.'], 422);
+        }
+
+        $reservation->update(['status' => 'Cancelled']);
+        $this->logActivity($user->idUsers, "Cancelled uniform reservation #{$reservation->idreservation}");
+
+        return response()->json(['message' => 'Reservation cancelled.']);
+    }
+
+    private function format(UniformReservation $r): array
+    {
+        $variant = $r->variant;
+        return [
+            'id' => $r->idreservation,
+            'idUsers' => $r->idUsers,
+            'cashier' => optional($r->user)->username,
+            'uniformVariantId' => $r->idUnifvariant,
+            'uniformName' => optional(optional($variant)->type)->uniform_name ?? 'Uniform',
+            'department' => optional(optional($variant)->department)->dept_name ?? 'N/A',
+            'gender' => optional($variant)->gender ?? 'Unisex',
+            'size' => optional($variant)->size ?? 'N/A',
+            'stock' => (int) (optional($variant)->quantity ?? 0),
+            'quantity' => (int) $r->quantity,
+            'status' => $r->status,
+            'notifiedAt' => optional($r->notified_at)->toDateTimeString(),
+            'createdAt' => optional($r->created_at)->toDateTimeString(),
+        ];
+    }
+}

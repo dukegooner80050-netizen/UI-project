@@ -300,6 +300,7 @@ const variantConfirmModalOpen = ref(false);
 const variantTypeId = ref("");
 const variantDepartmentId = ref("");
 const variantSize = ref("");
+const variantGender = ref("Unisex");
 const variantPrice = ref(0);
 const variantQuantity = ref(1);
 
@@ -349,6 +350,7 @@ function confirmAddVariant() {
   const typeId = variantTypeId.value;
   const departmentId = variantDepartmentId.value;
   const size = variantSize.value.trim();
+  const gender = variantGender.value;
   const price = Number(variantPrice.value) || 0;
   const quantity = Number(variantQuantity.value) || 0;
 
@@ -380,6 +382,7 @@ async function createConfirmedVariant() {
       idUniftype: Number(variantTypeId.value),
       iddept: Number(variantDepartmentId.value),
       size: variantSize.value.trim(),
+      gender: variantGender.value,
       price: Number(variantPrice.value) || 0,
       quantity: Number(variantQuantity.value) || 0,
     });
@@ -406,6 +409,7 @@ async function createConfirmedVariant() {
 const editVariantModalOpen = ref(false);
 const editingVariant = ref(null);
 const editVariantPrice = ref(0);
+const editVariantGender = ref("Unisex");
 
 /* const editVariantTypeId = ref("");
 const editVariantDepartmentId = ref("");
@@ -415,6 +419,7 @@ const editVariantQuantity = ref(0); */
 function openEditVariant(variant) {
   editingVariant.value = variant;
   editVariantPrice.value = Number(variant.price) || 0;
+  editVariantGender.value = variant.gender || "Unisex";
   editVariantModalOpen.value = true;
 }
 
@@ -422,6 +427,7 @@ function closeEditVariant() {
   editVariantModalOpen.value = false;
   editingVariant.value = null;
   editVariantPrice.value = 0;
+  editVariantGender.value = "Unisex";
 }
 
 function saveVariantEdit() {
@@ -546,6 +552,7 @@ async function confirmAction() {
         idUniftype: variant.idUniftype,
         iddept: variant.iddept,
         size: variant.size,
+        gender: editVariantGender.value,
         price: newPrice,
         quantity: variant.quantity,
       });
@@ -608,11 +615,11 @@ function confirmStockAction() {
   /* Prevents releasing more than available stock */
   if (
     stockMode.value === "release" &&
-    quantity > Number(stockVariant.value.quantity)
+    quantity > Math.max(0, Number(stockVariant.value.quantity) - Number(stockVariant.value.reserved_quantity || 0))
   ) {
     notify(
       "warning",
-      `Cannot release ${quantity} unit(s). Only ${stockVariant.value.quantity} unit(s) are available.`,
+      `Cannot release ${quantity} unit(s). Only ${Math.max(0, Number(stockVariant.value.quantity) - Number(stockVariant.value.reserved_quantity || 0))} unreserved unit(s) are available.`,
     );
     return;
   }
@@ -685,6 +692,7 @@ const visibleTypes = computed(() => {
             <tr>
               <th>Uniform</th>
               <th>Department</th>
+              <th>Gender</th>
               <th>Size</th>
               <th style="width: 120px">Price</th>
               <th>Status</th>
@@ -706,6 +714,9 @@ const visibleTypes = computed(() => {
               <td>
                 {{ getDepartmentName(variant) }}
               </td>
+
+              <!-- GENDER -->
+              <td>{{ variant.gender || "Unisex" }}</td>
 
               <!-- SIZE -->
               <td>
@@ -928,6 +939,13 @@ const visibleTypes = computed(() => {
           <label for="un-variant-size" class="form-label"> Size </label>
           <input class="form-control mb-3" v-model="variantSize" placeholder="e.g. Small, Medium, Large" id="un-variant-size" name="variant-size" />
 
+          <label for="un-variant-gender" class="form-label">Gender</label>
+          <select class="form-select mb-3" v-model="variantGender" id="un-variant-gender" name="variant-gender">
+            <option value="Male">Male</option>
+            <option value="Female">Female</option>
+            <option value="Unisex">Unisex</option>
+          </select>
+
           <!-- PRICE -->
 
           <label for="un-variant-price" class="form-label"> Price </label>
@@ -971,12 +989,14 @@ const visibleTypes = computed(() => {
           <div class="mb-2">
             <strong>Size:</strong>{{ variantSize }}</div>
           <div class="mb-2">
+            <strong>Gender:</strong>{{ variantGender }}</div>
+          <div class="mb-2">
             <strong>Price:</strong>₱{{ Number(variantPrice || 0).toFixed(2) }}</div>
           <div class="mb-3"><strong>Quantity:</strong>{{ variantQuantity }}</div>
           <div class="alert alert-warning mb-0">
             <strong>Please confirm.</strong>
             Once this uniform variant is created, make sure that the uniform
-            type, department, size, price, and quantity are correct.
+            type, department, size, gender, price, and quantity are correct.
           </div>
         </div>
 
@@ -1156,6 +1176,7 @@ const visibleTypes = computed(() => {
               <strong> Size: </strong>
               {{ actionConfirmVariant.size }}
             </div>
+            <div class="mb-2"><strong>Gender:</strong> {{ actionConfirmVariant.gender || "Unisex" }}</div>
           </div>
 
           <!-- RELEASE / RESTOCK -->
@@ -1178,11 +1199,19 @@ const visibleTypes = computed(() => {
               ₱{{ Number(actionConfirmVariant?.price || 0).toFixed(2) }}
             </div>
             <div class="mb-3">
+              <label for="edit-variant-gender" class="form-label"><strong>Gender</strong></label>
+              <select id="edit-variant-gender" class="form-select" v-model="editVariantGender">
+                <option value="Male">Male</option>
+                <option value="Female">Female</option>
+                <option value="Unisex">Unisex</option>
+              </select>
+            </div>
+            <div class="mb-3">
               <strong>New Price:</strong>
               ₱{{ Number(editVariantPrice || 0).toFixed(2) }}
             </div>
             <div class="alert alert-warning mb-0">
-              Only the price will be changed. Uniform type, department, size,
+              Only the price and gender will be changed. Uniform type, department, size,
               and quantity will remain unchanged.
             </div>
           </div>

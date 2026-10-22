@@ -1,8 +1,14 @@
 <script setup>
 import { printBorrowerForm, hasBorrowedItems } from "../services/borrowerForm";
 import { ref, watch, computed, onMounted, nextTick } from "vue";
-import { createRequestBatch, getRequests, confirmReceived } from "../services/requests";
-import { listUniformTypes, listUniformVariants } from "../services/uniforms";
+import { createRequestBatch, getRequests, confirmReceived, releaseRequest } from "../services/requests";
+import {
+  listUniformTypes,
+  listUniformVariants,
+  listUniformReservations,
+  createUniformReservation,
+  cancelUniformReservation,
+} from "../services/uniforms";
 import { getCurrentUser } from "../services/storage";
 import { getItems } from "../services/items";
 import { TYPE_B, OFFICE_TYPE_OPTIONS } from "../services/itemTypes";
@@ -31,6 +37,8 @@ const requestItems = ref([]);
 const requestUniforms = ref([]);
 const uniformTypes = ref([]);
 const uniformVariants = ref([]);
+const uniformReservations = ref([]);
+const reservationBusy = ref(false);
 const selectedUniformTypeId = ref("");
 const selectedUniformVariantId = ref("");
 const warningModal = ref(false);
@@ -91,6 +99,38 @@ function startReport(item) {
 // from the confirmation modal (doReport).
 const receiveConfirmOpen = ref(false);
 const receiveBusy = ref(false);
+const uniformReleaseBusy = ref(false);
+
+async function releaseUniformRequest() {
+  const request = selected.value;
+  if (!request?.id || userRole !== "cashier") return;
+  if ((request.status || "").toLowerCase() !== "approved" || request.releasedAt) return;
+  if (!(request.uniforms || []).length || (request.items || []).length) return;
+  const studentName = window.prompt(
+    `Enter the full name of the student collecting the uniform for request #${request.id}:`,
+    request.releasedToStudent || "",
+  );
+  if (studentName === null) return;
+  const confirmedStudentName = studentName.trim();
+  if (!confirmedStudentName) {
+    showWarning("Student Name Required", "Enter the student's full name before confirming pickup.");
+    return;
+  }
+  if (!window.confirm(`Confirm that ${confirmedStudentName} has physically received all uniforms in request #${request.id}? Stock will be deducted now.`)) return;
+
+  uniformReleaseBusy.value = true;
+  try {
+    await releaseRequest(request.id, "For Pick Up", confirmedStudentName);
+    await loadMyRequests();
+    selected.value = myRequests.value.find((r) => Number(r.id) === Number(request.id)) || null;
+    await loadUniforms();
+    showWarning("Uniform Released", "Handover recorded. Uniform stock has now been deducted.");
+  } catch (e) {
+    showWarning("Uniform Release", e.response?.data?.message || "Unable to record the uniform handover.");
+  } finally {
+    uniformReleaseBusy.value = false;
+  }
+}
 
 async function doConfirmReceived() {
   const id = selected.value?.id;
@@ -187,6 +227,46 @@ async function loadUniforms() {
   } catch (err) {
     console.error("Failed to load uniforms:", err);
     showWarning("Uniform Error", "Unable to load uniforms.");
+  }
+}
+
+async function loadReservations() {
+  if (userRole !== "cashier") return;
+  try {
+    uniformReservations.value = await listUniformReservations();
+  } catch (err) {
+    console.error("Failed to load uniform reservations:", err);
+    showWarning("Reservation Error", "Unable to load uniform reservations.");
+  }
+}
+
+async function reserveOutOfStockUniform() {
+  if (userRole !== "cashier" || !selectedUniformVariant.value) return;
+  const quantity = Number(qty.value);
+  if (!Number.isInteger(quantity) || quantity < 1) {
+    error.value = "Reservation quantity must be at least 1.";
+    return;
+  }
+  reservationBusy.value = true;
+  error.value = "";
+  try {
+    await createUniformReservation(selectedUniformVariant.value.idUnifvariant, quantity);
+    await loadReservations();
+    showWarning("Reservation Added", "This uniform is out of stock. Your reservation has been added to the queue. The reservation status will change to Ready when stock is replenished.");
+    activeTab.value = "reservations";
+  } catch (err) {
+    showWarning("Reservation Failed", err.response?.data?.message || "Unable to reserve this uniform.");
+  } finally {
+    reservationBusy.value = false;
+  }
+}
+
+async function cancelReservation(reservation) {
+  try {
+    await cancelUniformReservation(reservation.id);
+    await loadReservations();
+  } catch (err) {
+    showWarning("Cancel Reservation", err.response?.data?.message || "Unable to cancel this reservation.");
   }
 }
 
@@ -394,6 +474,7 @@ async function loadMyRequests() {
         borrowedAt: request.borrowedAt,
         releaseMethod: request.releaseMethod,
         releasedAt: request.releasedAt,
+        releasedToStudent: request.releasedToStudent || "",
         receivedAt: request.receivedAt,
         location: request.location,
         room: request.room,
@@ -507,6 +588,7 @@ async function addToList() {
         uniformName:
           selectedUniformVariant.value.type?.uniform_name || "Uniform",
         department: selectedUniformVariant.value.department?.dept_name || "N/A",
+        gender: selectedUniformVariant.value.gender || "Unisex",
         size: selectedUniformVariant.value.size,
         price: Number(selectedUniformVariant.value.price) || 0,
         quantity,
@@ -666,12 +748,12 @@ async function submitRequest(confirmed = false) {
         return;
       }
 
-      const stock = Number(uniform.quantity) || 0;
+      const stock = Math.max(0, (Number(uniform.quantity) || 0) - (Number(uniform.reserved_quantity) || 0));
 
       if (Number(requestUniform.quantity) > stock) {
         showWarning(
           "Insufficient Uniform Stock",
-          `Not enough stock available for ${requestUniform.uniformName} (${requestUniform.size}).`,
+          `Only ${stock} unreserved unit(s) are available for ${requestUniform.uniformName} (${requestUniform.size}).`,
         );
 
         return;
@@ -767,6 +849,17 @@ watch(activeTab, async () => {
         "
       >
         My Requests
+      </button>
+      <button
+        v-if="canRequestUniforms"
+        class="btn"
+        :class="activeTab === 'reservations' ? 'btn-primary' : 'btn-outline-primary'"
+        @click="loadReservations(); activeTab = 'reservations'"
+      >
+        Uniform Reservations
+        <span v-if="uniformReservations.some((r) => r.status === 'Ready')" class="badge bg-success ms-1">
+          {{ uniformReservations.filter((r) => r.status === 'Ready').length }} Ready
+        </span>
       </button>
     </div>
 
@@ -907,7 +1000,7 @@ watch(activeTab, async () => {
                 :key="variant.idUnifvariant"
                 :value="String(variant.idUnifvariant)"
               >
-                {{ variant.size }}
+                {{ variant.gender || "Unisex" }} — {{ variant.size }}
                 —
                 {{ variant.department?.dept_name || "N/A" }}
                 (Qty: {{ Number(variant.quantity) || 0 }})
@@ -952,6 +1045,15 @@ watch(activeTab, async () => {
             @click="addToList"
           >
             Add Item
+          </button>
+          <button
+            v-if="category === 'Uniforms' && selectedUniformVariant && uniformMaxQty <= 0"
+            type="button"
+            class="btn btn-outline-primary"
+            :disabled="reservationBusy || Number(qty) < 1"
+            @click="reserveOutOfStockUniform"
+          >
+            {{ reservationBusy ? "Reserving..." : "Reserve Out-of-Stock Uniform" }}
           </button>
         </div>
       </div>
@@ -1013,7 +1115,7 @@ watch(activeTab, async () => {
 
                     <small class="text-muted">
                       {{ uniform.department }}
-                      — Size {{ uniform.size }}
+                      — {{ uniform.gender || "Unisex" }} — Size {{ uniform.size }}
                     </small>
                   </td>
 
@@ -1100,8 +1202,43 @@ watch(activeTab, async () => {
       </div>
     </div>
 
+    <!-- UNIFORM RESERVATIONS -->
+    <div v-else-if="activeTab === 'reservations' && canRequestUniforms" class="card shadow-sm">
+      <div class="card-body">
+        <div class="d-flex justify-content-between align-items-center mb-3">
+          <h5 class="mb-0">Uniform Reservation Queue</h5>
+          <button class="btn btn-sm btn-outline-primary" @click="loadReservations">Refresh</button>
+        </div>
+        <div class="alert alert-info py-2">
+          Reservations are processed in queue order when stock is replenished. A Ready status means stock was found for the requested quantity; submit a regular uniform request to complete the request.
+        </div>
+        <div class="table-responsive">
+          <table class="table table-hover align-middle">
+            <thead class="table-light">
+              <tr><th>Uniform</th><th>Gender</th><th>Size</th><th>Qty</th><th>Stock</th><th>Status</th><th>Date</th><th>Action</th></tr>
+            </thead>
+            <tbody>
+              <tr v-for="reservation in uniformReservations" :key="reservation.id">
+                <td>{{ reservation.uniformName }} <small class="text-muted">({{ reservation.department }})</small></td>
+                <td>{{ reservation.gender }}</td>
+                <td>{{ reservation.size }}</td>
+                <td>{{ reservation.quantity }}</td>
+                <td>{{ reservation.stock }}</td>
+                <td><span class="badge" :class="reservation.status === 'Ready' ? 'bg-success' : reservation.status === 'Waiting' ? 'bg-warning text-dark' : 'bg-secondary'">{{ reservation.status }}</span>
+                  <div v-if="reservation.status === 'Ready'" class="small text-success">Stock replenished — ready to request</div>
+                </td>
+                <td>{{ formatDate(reservation.createdAt) }}</td>
+                <td><button v-if="['Waiting','Ready'].includes(reservation.status)" class="btn btn-sm btn-outline-danger" @click="cancelReservation(reservation)">Cancel</button></td>
+              </tr>
+              <tr v-if="uniformReservations.length === 0"><td colspan="8" class="text-center text-muted py-4">No uniform reservations yet.</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
     <!-- MY REQUESTS + RECEIPT -->
-    <div v-else>
+    <div v-else-if="activeTab === 'mine'">
       <!-- Receipt -->
       <div v-if="lastReceipt" class="alert alert-success">
         <div class="fw-semibold mb-2">Request Receipt</div>
@@ -1136,7 +1273,7 @@ watch(activeTab, async () => {
               <strong>{{ uniform.uniformName || "Uniform" }}</strong>
               —
               {{ uniform.department || "N/A" }}
-              — Size {{ uniform.size || "N/A" }} — Qty: {{ uniform.quantity }}
+              — {{ uniform.gender || "Unisex" }} — Size {{ uniform.size || "N/A" }} — Qty: {{ uniform.quantity }}
             </li>
           </ul>
         </div>
@@ -1181,7 +1318,7 @@ watch(activeTab, async () => {
                       >
                         {{ uniform.uniformName || "Uniform" }}
                         <small class="text-muted">
-                          ({{ uniform.department || "N/A" }}, Size
+                          ({{ uniform.department || "N/A" }}, {{ uniform.gender || "Unisex" }}, Size
                           {{ uniform.size || "N/A" }})
                         </small>
                       </div>
@@ -1333,7 +1470,7 @@ watch(activeTab, async () => {
                   :key="'uniform-' + i"
                 >
                   {{ uniform.uniformName || "Uniform" }} —
-                  {{ uniform.department || "N/A" }} — Size
+                  {{ uniform.department || "N/A" }} — {{ uniform.gender || "Unisex" }} — Size
                   {{ uniform.size || "N/A" }} (Qty: {{ uniform.quantity }})
                 </li>
               </ul>
@@ -1350,6 +1487,9 @@ watch(activeTab, async () => {
               </div>
 
               <div v-if="selected.releasedAt" class="mt-1">
+                <div v-if="(selected.uniforms || []).length > 0">
+                  <strong>Student who collected:</strong> {{ selected.releasedToStudent || "Not recorded" }}
+                </div>
                 <strong>Release:</strong>
                 <span class="badge bg-info text-dark">{{ selected.releaseMethod }}</span>
                 <div class="text-muted small">
@@ -1361,6 +1501,22 @@ watch(activeTab, async () => {
                 class="mt-1 text-muted small"
               >
                 Approved — awaiting release.
+              </div>
+              <button
+                v-if="userRole === 'cashier' && (selected.uniforms || []).length > 0 && (selected.items || []).length === 0 && (selected.status || '').toLowerCase() === 'approved' && !selected.releasedAt"
+                type="button"
+                class="btn btn-sm btn-success mt-2"
+                :disabled="uniformReleaseBusy"
+                @click="releaseUniformRequest"
+              >
+                <span v-if="uniformReleaseBusy" class="spinner-border spinner-border-sm me-1"></span>
+                Confirm Student Pickup
+              </button>
+              <div
+                v-if="userRole === 'cashier' && (selected.uniforms || []).length > 0 && selected.releasedAt"
+                class="small text-success mt-2"
+              >
+                <strong>Handover recorded.</strong> Stock was deducted at pickup.
               </div>
 
               <div v-if="selected.releasedAt" class="mt-1">

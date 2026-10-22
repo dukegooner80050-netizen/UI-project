@@ -542,6 +542,7 @@ function statusBadgeClass(status) {
                           <span v-if="r.releasedAt">
                             {{ r.releaseMethod }} —
                             {{ new Date(r.releasedAt).toLocaleString("en-PH") }}
+                            <span v-if="r.releasedToStudent && (r.uniforms || []).length" class="d-block"><strong>Student collected:</strong> {{ r.releasedToStudent }}</span>
                             <span v-if="r.releasedBy" class="text-muted">
                               (by {{ r.releasedBy }})
                             </span>

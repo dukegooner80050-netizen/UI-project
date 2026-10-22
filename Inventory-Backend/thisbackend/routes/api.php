@@ -9,6 +9,7 @@ use App\Http\Controllers\DepartmentController;
 use App\Http\Controllers\ItemController;
 use App\Http\Controllers\UniformTypeController;
 use App\Http\Controllers\UniformVariantController;
+use App\Http\Controllers\UniformReservationController;
 use App\Http\Controllers\RequestController;
 use App\Http\Controllers\LogController;
 use App\Http\Controllers\DashboardController;
@@ -162,6 +163,14 @@ Route::middleware('role:amo,department_head,admin,instructor,cashier')->group(fu
 
     Route::get('/uniformvariants', [UniformVariantController::class, 'index']);
     Route::get('/uniformvariants/{id}', [UniformVariantController::class, 'show']);
+
+    Route::middleware('role:amo,cashier')->group(function () {
+        Route::get('/uniform-reservations', [UniformReservationController::class, 'index']);
+    });
+    Route::middleware('role:cashier')->group(function () {
+        Route::post('/uniform-reservations', [UniformReservationController::class, 'store']);
+        Route::delete('/uniform-reservations/{id}', [UniformReservationController::class, 'cancel']);
+    });
 
 });
 

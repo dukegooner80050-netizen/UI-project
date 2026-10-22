@@ -14,8 +14,10 @@ protected $fillable = [
     'idUniftype',
     'iddept',
     'size',
+    'gender',
     'price',
     'quantity',
+    'reserved_quantity',
 ];
 
 public $timestamps = false;

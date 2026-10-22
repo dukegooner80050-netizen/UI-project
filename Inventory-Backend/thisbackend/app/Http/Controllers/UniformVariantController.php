@@ -37,6 +37,7 @@ class UniformVariantController extends Controller
             'idUniftype' => 'required|exists:uniformType,idUniftype',
             'iddept'     => 'required|exists:dept,iddept',
             'size'       => 'required|string|max:50',
+            'gender'     => 'required|in:Male,Female,Unisex',
             'price'      => 'required|numeric|min:0',
             'quantity'   => 'required|integer|min:0',
         ]);
@@ -70,6 +71,7 @@ class UniformVariantController extends Controller
             'idUniftype' => 'required|exists:uniformType,idUniftype',
             'iddept'     => 'required|exists:dept,iddept',
             'size'       => 'required|string|max:50',
+            'gender'     => 'required|in:Male,Female,Unisex',
             'price'      => 'required|numeric|min:0',
             'quantity'   => 'required|integer|min:0',
         ]);
@@ -144,6 +146,22 @@ class UniformVariantController extends Controller
         $variant->quantity += $validated['quantity'];
         $variant->save();
 
+        // Notify the oldest waiting reservations that can be fulfilled by
+        // the newly available stock. The stock remains in inventory until
+        // the cashier submits the normal uniform request.
+        $available = max(0, (int) $variant->quantity - (int) ($variant->reserved_quantity ?? 0));
+        $waiting = \App\Models\UniformReservation::where('idUnifvariant', $variant->idUnifvariant)
+            ->where('status', 'Waiting')
+            ->orderBy('created_at')
+            ->orderBy('idreservation')
+            ->get();
+        foreach ($waiting as $reservation) {
+            if ((int) $reservation->quantity <= $available) {
+                $reservation->update(['status' => 'Ready', 'notified_at' => now()]);
+                $available -= (int) $reservation->quantity;
+            }
+        }
+
         $variant->load(['department', 'type']);
 
         $this->logActivity(
@@ -177,9 +195,9 @@ class UniformVariantController extends Controller
             ], 404);
         }
 
-        if ($variant->quantity < $validated['quantity']) {
+        if (((int) $variant->quantity - (int) ($variant->reserved_quantity ?? 0)) < $validated['quantity']) {
             return response()->json([
-                'message' => 'Insufficient uniform stock.'
+                'message' => 'Insufficient unreserved uniform stock. Some units are reserved for approved requests.'
             ], 400);
         }
 
