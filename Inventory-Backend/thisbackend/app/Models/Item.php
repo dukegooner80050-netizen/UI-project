@@ -17,6 +17,7 @@ class Item extends Model
 
     // stock_level values (roadmap #6)
     public const LEVEL_OUT = 'Out of Stock';
+    public const LEVEL_DEPLOYED = 'Deployed';
     public const LEVEL_CRITICAL = 'Critical';
     public const LEVEL_MINIMUM = 'Minimum';
     public const LEVEL_ADEQUATE = 'Adequate';
@@ -63,12 +64,44 @@ class Item extends Model
         return $this->hasMany(RequestItem::class, 'iditems', 'iditems');
     }
 
+    /**
+     * School Equipment with nothing on the shelf but units placed in rooms is
+     * not "out of stock": it is deployed. Only checked when the shelf is
+     * empty, so listing items costs no extra queries in the normal case.
+     */
+    public function isFullyDeployed(): bool
+    {
+        if ($this->category !== 'School Equipment' || (int) $this->quantity > 0) {
+            return false;
+        }
+
+        return (int) \Illuminate\Support\Facades\DB::table('room_equipment')
+            ->where('iditems', $this->iditems)
+            ->sum('quantity') > 0;
+    }
+
+    // Shown instead of "Borrowed" when the empty shelf is because the units
+    // are in rooms, and nobody is borrowing any of them.
+    public function getStatusAttribute($value)
+    {
+        if ($value === 'Borrowed' && $this->isFullyDeployed()) {
+            $borrowed = \App\Models\RequestItem::where('iditems', $this->iditems)
+                ->whereHas('request', fn ($q) => $q->where('status', 'Approved'))
+                ->get()
+                ->sum(fn ($ri) => (int) $ri->quantity - (int) $ri->returned_quantity);
+
+            return $borrowed > 0 ? $value : self::LEVEL_DEPLOYED;
+        }
+
+        return $value;
+    }
+
     public function getStockLevelAttribute(): string
     {
         $qty = (int) $this->quantity;
 
         if ($qty <= 0) {
-            return self::LEVEL_OUT;
+            return $this->isFullyDeployed() ? self::LEVEL_DEPLOYED : self::LEVEL_OUT;
         }
         if ($qty <= (int) $this->critical_stock) {
             return self::LEVEL_CRITICAL;

@@ -340,6 +340,20 @@ const overdueBorrowers = computed(
   () => new Set(overdueLines.value.map((l) => l.requester)).size,
 );
 
+// School Equipment placed in rooms (Equipment Distribution), so it is not
+// mistaken for stock that went missing from the shelf.
+const deployedUnits = computed(() =>
+  items.value
+    .filter((i) => i.category === "School Equipment")
+    .reduce((sum, i) => sum + (Number(i.deployedQty) || 0), 0),
+);
+const deployedTypes = computed(
+  () =>
+    items.value.filter(
+      (i) => i.category === "School Equipment" && Number(i.deployedQty) > 0,
+    ).length,
+);
+
 const kpiCards = computed(() => {
   if (isAdmin.value) {
     return [
@@ -388,6 +402,17 @@ const kpiCards = computed(() => {
         icon: "bi-box-seam",
         tone: "text-primary",
         onClick: null,
+      },
+      {
+        key: "deployed",
+        label: "Deployed Equipment",
+        value: deployedUnits.value,
+        sub: deployedUnits.value
+          ? `${deployedTypes.value} equipment type${deployedTypes.value === 1 ? "" : "s"} in rooms`
+          : "none placed in rooms",
+        icon: "bi-building",
+        tone: "text-info",
+        onClick: () => router.push("/equipment-distribution"),
       },
     ];
   }
@@ -512,6 +537,7 @@ const STATUS_COLORS = {
   "Low Stock": "#ffc107",
   "Out of Stock": "#dc3545",
   Borrowed: "#0d6efd",
+  Deployed: "#6f42c1",
   Unknown: "#6c757d",
 };
 const FALLBACK_COLORS = ["#0d6efd", "#6f42c1", "#20c997", "#fd7e14", "#d63384"];
@@ -845,7 +871,7 @@ eventContent(arg) {
 
     <!-- KPI CARDS -->
     <div class="row g-3 mb-3">
-      <div v-for="c in kpiCards" :key="c.key" class="col-6 col-lg-3">
+      <div v-for="c in kpiCards" :key="c.key" class="col-6 col-lg">
         <div
           class="card shadow-sm h-100 kpi-card"
           :class="{ 'kpi-click': c.onClick }"

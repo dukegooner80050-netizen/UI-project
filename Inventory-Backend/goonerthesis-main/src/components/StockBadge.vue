@@ -19,6 +19,8 @@ const badgeClass = computed(() => {
       return "bg-info text-dark";
     case "Optimal":
       return "bg-success";
+    case "Deployed":
+      return "bg-primary";
     default:
       return "bg-secondary";
   }
