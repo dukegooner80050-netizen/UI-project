@@ -229,6 +229,7 @@ async function load() {
       name: i.name,
       qty: i.qty,
       borrowedQty: 0,
+      deployedQty: Number(i.deployedQty) || 0,
       requestItems: [],
     }));
   requests.forEach((request) => {
@@ -425,6 +426,11 @@ async function confirmModal() {
 
   <!-- TABLE -->
   <div v-if="activeTab === 'inventory'">
+    <p class="small text-muted mb-2">
+      <strong>Available</strong> = on the shelf &middot;
+      <strong>Borrowed</strong> = out on loan, must be returned &middot;
+      <strong>Deployed</strong> = placed in a room (see Equipment Distribution), stays there.
+    </p>
     <div class="card shadow-sm">
       <div class="table-responsive table-scroll">
         <table class="table table-hover align-middle mb-0">
@@ -433,8 +439,9 @@ async function confirmModal() {
               <th>Name</th>
               <th>Status</th>
               <th>Stock Level</th>
-              <th style="width: 120px">Available</th>
-              <th style="width: 120px">Borrowed</th>
+              <th style="width: 110px" title="On the shelf, ready to be borrowed or deployed">Available</th>
+              <th style="width: 110px" title="Out on loan to a requester. It must be returned.">Borrowed</th>
+              <th style="width: 110px" title="Placed in a building room. It stays there until the AMO returns it.">Deployed</th>
               <th>Return Period</th>
               <th style="width: 110px">Per-Head Limit</th>
               <th style="width: 110px">Type</th>
@@ -454,6 +461,7 @@ async function confirmModal() {
               </td>
               <td>{{ e.qty }}</td>
               <td>{{ Number(e.borrowedQty) || 0 }}</td>
+              <td>{{ Number(e.deployedQty) || 0 }}</td>
               <td>
                 <span v-if="e.return_days">{{ e.return_days }} days</span>
                 <span v-else-if="e.effective_return_days" class="text-muted">
@@ -499,7 +507,7 @@ async function confirmModal() {
             </tr>
 
             <tr v-if="!equipments.length">
-              <td colspan="9" class="text-center text-muted">
+              <td colspan="10" class="text-center text-muted">
                 No school equipment found.
               </td>
             </tr>

@@ -2,25 +2,29 @@ import { createRouter, createWebHistory } from "vue-router";
 import { getCurrentUser } from "../services/storage";
 import AppLayout from "../layouts/AppLayout.vue";
 
+// Every page is loaded the first time it is opened (not all up front), so
+// the login screen and the first page appear much sooner.
+
 // Views
-import DashboardView from "../views/DashboardView.vue";
-import InventoryView from "../views/InventoryView.vue";
-import UniformsView from "../views/UniformsView.vue";
-import OfficeSuppliesView from "../views/OfficeSuppliesView.vue";
-import SchoolEquipmentView from "../views/SchoolEquipmentView.vue";
-import RequestView from "../views/RequestView.vue";
-import PendingRequestsView from "../views/PendingRequestsView.vue";
-import CoordinatorRequestsView from "../views/CoordinatorRequestsView.vue";
-import ReportsView from "../views/ReportsView.vue";
-import ActiveLogsView from "../views/ActiveLogsView.vue";
-import ConsumptionReportView from "../views/ConsumptionReportView.vue";
-import ChangePasswordView from "../views/ChangePasswordView.vue";
-import EquipmentDistributionView from "../views/EquipmentDistributionView.vue";
-import PendingInspectionView from "../views/PendingInspectionView.vue";
-import EquipmentReportsView from "../views/EquipmentReportsView.vue";
-import SettingsView from "../views/SettingsView.vue";
-import LoginView from "../views/LoginView.vue";
-import SignupView from "../views/SignupView.vue";
+const DashboardView = () => import("../views/DashboardView.vue");
+const InventoryView = () => import("../views/InventoryView.vue");
+const DisposalRecordsView = () => import("../views/DisposalRecordsView.vue");
+const UniformsView = () => import("../views/UniformsView.vue");
+const OfficeSuppliesView = () => import("../views/OfficeSuppliesView.vue");
+const SchoolEquipmentView = () => import("../views/SchoolEquipmentView.vue");
+const RequestView = () => import("../views/RequestView.vue");
+const PendingRequestsView = () => import("../views/PendingRequestsView.vue");
+const CoordinatorRequestsView = () => import("../views/CoordinatorRequestsView.vue");
+const ReportsView = () => import("../views/ReportsView.vue");
+const ActiveLogsView = () => import("../views/ActiveLogsView.vue");
+const ConsumptionReportView = () => import("../views/ConsumptionReportView.vue");
+const ChangePasswordView = () => import("../views/ChangePasswordView.vue");
+const EquipmentDistributionView = () => import("../views/EquipmentDistributionView.vue");
+const PendingInspectionView = () => import("../views/PendingInspectionView.vue");
+const EquipmentReportsView = () => import("../views/EquipmentReportsView.vue");
+const SettingsView = () => import("../views/SettingsView.vue");
+const LoginView = () => import("../views/LoginView.vue");
+const SignupView = () => import("../views/SignupView.vue");
 
 // Routes
 const routes = [
@@ -91,6 +95,15 @@ const routes = [
       {
         path: "inventory",
         component: InventoryView,
+        meta: {
+          requiresAuth: true,
+          roles: ["amo"],
+        },
+      },
+
+      {
+        path: "disposal-records",
+        component: DisposalRecordsView,
         meta: {
           requiresAuth: true,
           roles: ["amo"],

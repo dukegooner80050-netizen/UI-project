@@ -16,8 +16,27 @@ class ItemController extends Controller
 {
     $items = Item::all();
 
-    $items->each(function ($item) {
-        $item->borrowedQty = $this->getBorrowedQuantity($item->iditems);
+    // Units placed in rooms (Equipment Distribution), one query for all items.
+    $deployed = DB::table('room_equipment')
+        ->select('iditems', DB::raw('SUM(quantity) as total'))
+        ->groupBy('iditems')
+        ->pluck('total', 'iditems');
+
+    // Units out on approved requests, per item, in ONE grouped query. This used
+    // to run two queries for every single item on every page that lists items.
+    $borrowed = DB::table('requestitem')
+        ->join('request', 'request.idrequest', '=', 'requestitem.idrequest')
+        ->where('request.status', 'Approved')
+        ->groupBy('requestitem.iditems')
+        ->selectRaw('requestitem.iditems AS iditems, SUM(requestitem.quantity - requestitem.returned_quantity) AS total')
+        ->pluck('total', 'iditems');
+
+    $items->each(function ($item) use ($deployed, $borrowed) {
+        // Issued items (Consumable / Type A) are never borrowed.
+        $item->borrowedQty = $item->isReturnable()
+            ? (int) ($borrowed[$item->iditems] ?? 0)
+            : 0;
+        $item->deployedQty = (int) ($deployed[$item->iditems] ?? 0);
     });
 
     return response()->json($items);
@@ -32,7 +51,8 @@ class ItemController extends Controller
                 'message' => 'Item not found.'
             ], 404);
         }
-        $item->borrowedQty = $this->getBorrowedQuantity($item->iditems);
+        $item->borrowedQty = $this->getBorrowedQuantity($item->iditems, $item);
+        $item->deployedQty = (int) DB::table('room_equipment')->where('iditems', $item->iditems)->sum('quantity');
         return response()->json($item);
     }
 
@@ -164,7 +184,7 @@ class ItemController extends Controller
             }
 
             // Becoming issued: units still out on loan would have no way back.
-            if (!$willBeReturnable && $wasReturnable && $this->getBorrowedQuantity($item->iditems) > 0) {
+            if (!$willBeReturnable && $wasReturnable && $this->getBorrowedQuantity($item->iditems, $item) > 0) {
                 return response()->json([
                     'message' => 'Cannot switch to an issued type while units are still borrowed. Have them returned first.'
                 ], 422);
@@ -371,11 +391,11 @@ $item->save();
     return response()->json($item);
 }
 
-private function getBorrowedQuantity($itemId)
+private function getBorrowedQuantity($itemId, ?Item $item = null)
 {
     // Issued items (Consumable / Type A) are never returned, so they are
     // never "borrowed".
-    $item = Item::find($itemId);
+    $item = $item ?? Item::find($itemId);
     if ($item && !$item->isReturnable()) {
         return 0;
     }

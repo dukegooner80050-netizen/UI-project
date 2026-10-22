@@ -61,7 +61,7 @@ onBeforeUnmount(() =>
   window.removeEventListener("cims:restock-changed", load),
 );
 // Refresh when moving between pages (stock changes elsewhere).
-watch(() => route.fullPath, load);
+watch(() => route.fullPath, load); // answers are shared for 15s, so this is cheap
 
 const signature = computed(() =>
   items.value

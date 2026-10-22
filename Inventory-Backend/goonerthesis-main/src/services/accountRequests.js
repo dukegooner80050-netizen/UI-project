@@ -1,8 +1,13 @@
 import axios from "../axios";
+import { cached } from "./sharedCache";
 
 // Admin side of account approval (people who signed up and are waiting).
 
 export async function listAccountRequests() {
+  return cached("account-requests", fetchAccountRequests);
+}
+
+async function fetchAccountRequests() {
   return (await axios.get("/account-requests")).data;
 }
 

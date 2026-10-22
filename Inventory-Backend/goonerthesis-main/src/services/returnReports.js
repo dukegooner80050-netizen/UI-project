@@ -1,4 +1,5 @@
 import axios from "../axios";
+import { cached } from "./sharedCache";
 
 // Borrower: "I returned this" for a line of one of their own approved
 // requests. quantity = how many units are being reported.
@@ -12,6 +13,10 @@ export async function reportReturn(requestItemId, quantity) {
 
 // AMO: reports waiting to be checked, oldest first.
 export async function listReturnReports() {
+  return cached("return-reports", fetchReturnReports);
+}
+
+async function fetchReturnReports() {
   const { data } = await axios.get("/return-reports", { silent: true });
   return Array.isArray(data) ? data : [];
 }

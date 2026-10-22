@@ -150,6 +150,11 @@ watch(() => route.fullPath, refreshSoon)
       <span class="label" v-if="!props.collapsed">Inventory</span>
     </RouterLink>
 
+    <RouterLink v-if="isAdmin" class="sidebar-link" :class="{ active: active('/disposal-records') }" to="/disposal-records">
+      <span class="icon">🗑️</span>
+      <span class="label" v-if="!props.collapsed">Disposal Records</span>
+    </RouterLink>
+
 <!-- Uniforms dropdown (CLICK VERSION) -->
 <div v-if="isAdmin" class="sidebar-item">
 

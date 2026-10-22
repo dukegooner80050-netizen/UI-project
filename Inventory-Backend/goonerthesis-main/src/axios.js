@@ -1,6 +1,7 @@
 import axios from "axios";
 import { loadingStarted, loadingFinished } from "./services/loading";
 import { getCurrentUser, setCurrentUser, clearCurrentUser } from "./services/storage";
+import { clearSharedCache } from "./services/sharedCache";
 
 axios.defaults.baseURL = import.meta.env.VITE_API_URL;
 
@@ -23,6 +24,13 @@ axios.interceptors.request.use(config => {
 axios.interceptors.response.use(
     (response) => {
         loadingFinished(response.config);
+
+        // Something changed on the server: forget the short-lived copies of
+        // the shared lists so the next look is fresh.
+        if ((response.config?.method || "get").toLowerCase() !== "get") {
+            clearSharedCache();
+        }
+
         return response;
     },
     (error) => {

@@ -1,4 +1,5 @@
 import axios from "../axios";
+import { cached } from "./sharedCache";
 
 export async function listRequests() {
     const response = await axios.get("/requests");
@@ -28,6 +29,10 @@ export async function getConsumption() {
 
 // The signed-in user's own borrowed lines that are past their due date.
 export async function getMyOverdue() {
+  return cached("my-overdue", fetchMyOverdue);
+}
+
+async function fetchMyOverdue() {
     const response = await axios.get("/requests/overdue/mine", { silent: true });
     return response.data;
 }

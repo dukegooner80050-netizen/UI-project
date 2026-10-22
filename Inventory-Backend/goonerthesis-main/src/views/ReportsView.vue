@@ -1,6 +1,5 @@
 <script setup>
 import { ref, computed, onMounted } from "vue";
-import * as XLSX from "xlsx";
 import { listInventory } from "../services/inventory";
 import { getRequests } from "../services/requests";
 import { getLogs } from "../services/logs";
@@ -22,9 +21,15 @@ onMounted(async () => {
 });
 
 async function refresh() {
-  items.value = await listInventory();
-  requests.value = await getRequests();
-  logs.value = await getLogs();
+  // The three lists are independent: load them together.
+  const [inv, reqs, activity] = await Promise.all([
+    listInventory(),
+    getRequests(),
+    getLogs(),
+  ]);
+  items.value = inv;
+  requests.value = reqs;
+  logs.value = activity;
 }
 
 function setRange(days) {
@@ -245,7 +250,10 @@ function autoSizeColumns(sheet, rows, minWidth = 12, maxWidth = 50) {
   });
 }
 
-function exportToExcel() {
+async function exportToExcel() {
+  // The Excel library is large; it is only fetched when someone exports.
+  const XLSX = await import("xlsx");
+
   const rangeLabel = rangeDays.value === DAYS_WEEKLY ? "Weekly" : "Monthly";
 
   const wb = XLSX.utils.book_new();

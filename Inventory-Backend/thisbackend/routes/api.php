@@ -21,6 +21,7 @@ use App\Http\Controllers\SettingController;
 use App\Http\Controllers\RestockRequestController;
 use App\Http\Controllers\EquipmentReportController;
 use App\Http\Controllers\InspectionController;
+use App\Http\Controllers\DisposalController;
 use App\Http\Controllers\AccountRequestController;
 use App\Http\Middleware\AdminSessionTimeoutMiddleware;
 
@@ -248,6 +249,10 @@ Route::middleware('role:amo,department_head,admin,instructor,cashier')->group(fu
 
         Route::put('/items/{id}/restock', [ItemController::class, 'restock']);
         Route::post('/items/{id}/adjust-stock', [ItemController::class, 'adjustStock']);
+
+        // Disposal step + permanent disposal records (AMO only)
+        Route::post('/items/{id}/dispose', [DisposalController::class, 'dispose']);
+        Route::get('/disposal-records', [DisposalController::class, 'index']);
 
         /*
         | Low-stock restock workflow (roadmap #12)

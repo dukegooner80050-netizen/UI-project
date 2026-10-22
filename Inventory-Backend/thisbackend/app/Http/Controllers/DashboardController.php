@@ -20,9 +20,16 @@ class DashboardController extends Controller
         $levels = Item::all()->countBy('stock_level');
 
         // Borrowed lines still out past their due date (roadmap #8).
-        $overdue = Request::where('status', 'Approved')
+        $approved = Request::where('status', 'Approved')
             ->with('items.item')
-            ->get()
+            ->get();
+
+        // One query for every line's "waiting to be checked" quantity instead
+        // of one per line.
+        ReturnPolicy::preloadPending($approved->flatMap(fn ($r) => $r->items->pluck('idrequestItem')));
+        app()->terminating(fn () => ReturnPolicy::forgetPending());
+
+        $overdue = $approved
             ->sum(fn ($request) => $request->items
                 ->filter(fn ($line) => ReturnPolicy::dueInfo($request, $line)['overdue'])
                 ->count());

@@ -3,6 +3,7 @@ import { ref, computed, onMounted } from "vue";
 import { getItems } from "../services/items";
 import { getRequests } from "../services/requests";
 import { returnToService } from "../services/inspections";
+import { disposeItem, DISPOSAL_METHODS } from "../services/disposals";
 import AlertMessage from "../components/AlertMessage.vue";
 import StockBadge from "../components/StockBadge.vue";
 import DueBadge from "../components/DueBadge.vue";
@@ -55,6 +56,77 @@ const alertType = ref("success");
 const alertMessage = ref("");
 
 const confirmModalOpen = ref(false);
+
+// Disposal step: formally dispose of units flagged for disposal at inspection.
+// Each disposal is saved as a permanent record (see Disposal Records).
+const disposeTarget = ref(null);
+const disposeForm = ref({ quantity: 1, method: "Discarded", disposed_on: "", notes: "" });
+const disposeError = ref("");
+const disposing = ref(false);
+
+function todayISO() {
+  const d = new Date();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${d.getFullYear()}-${m}-${day}`;
+}
+
+function openDispose(item) {
+  disposeTarget.value = item;
+  disposeForm.value = {
+    quantity: Number(item.damaged_quantity) || 1,
+    method: "Discarded",
+    disposed_on: todayISO(),
+    notes: "",
+  };
+  disposeError.value = "";
+}
+
+function closeDispose() {
+  disposeTarget.value = null;
+  disposeError.value = "";
+}
+
+async function confirmDispose() {
+  const item = disposeTarget.value;
+  const f = disposeForm.value;
+  const qty = Number(f.quantity);
+  const waiting = Number(item.damaged_quantity) || 0;
+
+  if (!Number.isInteger(qty) || qty < 1) {
+    disposeError.value = "Enter a quantity of at least 1.";
+    return;
+  }
+  if (qty > waiting) {
+    disposeError.value = `Only ${waiting} unit(s) are waiting for disposal.`;
+    return;
+  }
+  if (f.method === "Other" && !f.notes.trim()) {
+    disposeError.value = "Add a note explaining the disposal method.";
+    return;
+  }
+  if (f.disposed_on && f.disposed_on > todayISO()) {
+    disposeError.value = "The disposal date can't be in the future.";
+    return;
+  }
+
+  disposing.value = true;
+  try {
+    await disposeItem(item.id, {
+      quantity: qty,
+      method: f.method,
+      disposed_on: f.disposed_on || undefined,
+      notes: f.notes.trim() || undefined,
+    });
+    notify("success", `${qty} × ${item.name} disposed of and recorded.`);
+    closeDispose();
+    await loadData();
+  } catch (e) {
+    disposeError.value = errMsg(e);
+  } finally {
+    disposing.value = false;
+  }
+}
 const pendingReturnItem = ref(null);
 const pendingReturnQty = ref(0);
 
@@ -531,6 +603,17 @@ function formatDate(date) {
 
     <div class="card shadow-sm">
 
+      <div v-if="isDamagedView" class="alert alert-light border d-flex justify-content-between align-items-center flex-wrap gap-2 m-3 mb-0">
+        <span>
+          Units flagged for disposal at inspection are listed here. Use
+          <strong>Dispose</strong> once they're actually gone: the disposal is
+          recorded permanently.
+        </span>
+        <RouterLink to="/disposal-records" class="btn btn-outline-secondary btn-sm">
+          View Disposal Records
+        </RouterLink>
+      </div>
+
       <div class="card-body table-scroll">
 
         <table class="table table-hover align-middle">
@@ -586,6 +669,10 @@ function formatDate(date) {
 
                 <th>
                   Available Qty
+                </th>
+
+                <th style="width: 130px">
+                  Action
                 </th>
 
               </template>
@@ -708,11 +795,17 @@ function formatDate(date) {
                   {{ item.qty }}
                 </td>
 
+                <td>
+                  <button class="btn btn-outline-danger btn-sm" @click="openDispose(item)">
+                    Dispose
+                  </button>
+                </td>
+
               </tr>
 
               <tr v-if="filteredDamagedItems.length === 0">
-                <td colspan="4" class="text-center text-muted py-4">
-                  No damaged items on record.
+                <td colspan="5" class="text-center text-muted py-4">
+                  No units are waiting for disposal.
                 </td>
               </tr>
 
@@ -837,6 +930,74 @@ function formatDate(date) {
             @click="confirmReturnToService"
           >
             Confirm
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- DISPOSE -->
+    <div v-if="disposeTarget" class="modal-backdrop-custom">
+      <div class="modal-custom">
+        <div class="modal-header">
+          <h5 class="mb-0">Dispose of units</h5>
+          <button type="button" class="btn-close" @click="closeDispose"></button>
+        </div>
+
+        <div class="modal-body">
+          <p class="mb-3">
+            <strong>{{ disposeTarget.name }}</strong>
+            <span class="text-muted">
+              — {{ disposeTarget.damaged_quantity }} unit(s) waiting for disposal
+            </span>
+          </p>
+
+          <label class="form-label" for="disp-qty">Quantity to dispose</label>
+          <input
+            id="disp-qty"
+            v-model.number="disposeForm.quantity"
+            type="number"
+            min="1"
+            :max="disposeTarget.damaged_quantity"
+            class="form-control mb-3"
+          />
+
+          <label class="form-label" for="disp-method">Method</label>
+          <select id="disp-method" v-model="disposeForm.method" class="form-select mb-3">
+            <option v-for="m in DISPOSAL_METHODS" :key="m" :value="m">{{ m }}</option>
+          </select>
+
+          <label class="form-label" for="disp-date">Date disposed</label>
+          <input
+            id="disp-date"
+            v-model="disposeForm.disposed_on"
+            type="date"
+            :max="todayISO()"
+            class="form-control mb-3"
+          />
+
+          <label class="form-label" for="disp-notes">
+            Notes<span v-if="disposeForm.method === 'Other'"> (required)</span>
+          </label>
+          <textarea
+            id="disp-notes"
+            v-model="disposeForm.notes"
+            rows="2"
+            maxlength="255"
+            class="form-control"
+            placeholder="e.g. Beyond repair, hauled away by the junk dealer"
+          ></textarea>
+
+          <div v-if="disposeError" class="alert alert-danger py-2 mt-3 mb-0">
+            {{ disposeError }}
+          </div>
+        </div>
+
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" :disabled="disposing" @click="closeDispose">
+            Cancel
+          </button>
+          <button type="button" class="btn btn-danger" :disabled="disposing" @click="confirmDispose">
+            {{ disposing ? "Saving..." : "Record disposal" }}
           </button>
         </div>
       </div>

@@ -1,6 +1,11 @@
 import axios from "../axios";
+import { cached } from "./sharedCache";
 
 export async function getLowStock() {
+  return cached("low-stock", fetchLowStock);
+}
+
+async function fetchLowStock() {
   return (await axios.get("/restock/low-stock", { silent: true })).data;
 }
 

@@ -66,9 +66,8 @@ const requestsThisMonth = computed(() => {
 });
 
 onMounted(async () => {
-  await loadInventory();
-  await loadUniforms();
-  await loadMyRequests();
+  // Independent lists: load them together instead of one after another.
+  await Promise.all([loadInventory(), loadUniforms(), loadMyRequests()]);
 
   if (user?.role !== "amo") {
     try {
