@@ -53,7 +53,7 @@ onMounted(refresh)
       <table class="table table-hover align-middle mb-0">
         <thead class="table-light"><tr><th>Request</th><th>Requester</th><th>Date</th><th>Items / uniforms</th><th>Purpose / location</th><th>Status</th><th>Action</th></tr></thead>
         <tbody><tr v-for="r in requests" :key="r.id">
-          <td class="fw-semibold">#{{ r.id }}</td><td>{{ r.requester || 'Unknown' }}</td><td>{{ r.request_date ? new Date(r.request_date).toLocaleDateString() : '—' }}</td>
+          <td class="fw-semibold">#{{ r.id }}</td><td>{{ r.requester || 'Unknown' }}</td><td>{{ r.request_date ? new Date(r.request_date).toLocaleString('en-PH') : '—' }}</td>
           <td class="request-summary">{{ summary(r) }}</td><td><div>{{ r.purpose || '—' }}</div><small class="text-muted">{{ r.location || '—' }} / {{ r.room || '—' }}</small></td>
           <td><span class="badge text-bg-warning">With Coordinator</span></td>
           <td><button class="btn btn-sm btn-success" :disabled="busyId === r.id" @click="forward(r)">{{ busyId === r.id ? 'Forwarding…' : 'Forward to Inventory' }}</button></td>

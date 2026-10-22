@@ -59,6 +59,9 @@ return response()->json(
             'releaseMethod' => $request->release_method,
             'releasedAt' => $request->released_at,
             'releasedToStudent' => $request->released_to_student,
+            'releasedStudentId' => $request->released_student_id,
+            'studentName' => $request->student_name,
+            'studentNumber' => $request->student_number,
             'receivedAt' => $request->received_at,
             'releasedBy' => optional($request->releasedByUser)->username,
             'items' => $request->items->map(function ($item) use ($request) {
@@ -255,6 +258,9 @@ public function show($id)
         'releaseMethod' => $request->release_method,
         'releasedAt' => $request->released_at,
         'releasedToStudent' => $request->released_to_student,
+        'releasedStudentId' => $request->released_student_id,
+        'studentName' => $request->student_name,
+        'studentNumber' => $request->student_number,
         'receivedAt' => $request->received_at,
         'releasedBy' => optional($request->releasedByUser)->username,
         'items' => $request->items->map(function ($item) use ($request) {
@@ -293,11 +299,13 @@ public function show($id)
 public function store(HttpRequest $request)
 {
     $validated = $request->validate([
-        'request_date' => 'required|date',
+        'request_date' => 'nullable|date',
         'items' => 'nullable|array',
         'items.*.iditems' => 'required|exists:items,iditems',
         'items.*.quantity' => 'required|integer|min:1',
         'uniforms' => 'nullable|array',
+        'student_name' => 'nullable|string|max:255',
+        'student_number' => 'nullable|string|max:50',
         'uniforms.*.idUnifvariant' => 'required|exists:uniformvariant,idUnifvariant',
         'uniforms.*.quantity' => 'required|integer|min:1',
         'location' => 'required|string|max:255',
@@ -321,6 +329,22 @@ if (
     if (!empty($validated['uniforms']) && !empty($validated['items'])) {
         return response()->json([
             'message' => 'A uniform request cannot include office supplies or school equipment. Submit them as separate requests.'
+        ], 422);
+    }
+
+    // A cashier's uniform request is made for a specific student, so the AMO
+    // knows who is coming to collect it.
+    if (strtolower((string) $role) === 'cashier' && !empty($validated['uniforms']) && trim((string) ($validated['student_name'] ?? '')) === '') {
+        return response()->json([
+            'message' => 'Enter the full name of the student this uniform request is for.',
+            'errors' => ['student_name' => ['The student name is required.']],
+        ], 422);
+    }
+
+    if (strtolower((string) $role) === 'cashier' && !empty($validated['uniforms']) && trim((string) ($validated['student_number'] ?? '')) === '') {
+        return response()->json([
+            'message' => 'Enter the student ID number this uniform request is for.',
+            'errors' => ['student_number' => ['The student ID is required.']],
         ], 422);
     }
 
@@ -357,13 +381,16 @@ if (
         $newRequest = Request::create([
             'idUsers' => $idUsers,
             'approved_by' => null,
-            'request_date' => $validated['request_date'],
+            // Server time, with the time of day (the browser used to send only a date).
+            'request_date' => now(),
             // Only instructors go through the Department Head. Everyone else
             // (Department Head, Admin, Cashier, AMO) goes straight to the AMO.
             'status' => strtolower((string) request()->user()->role) === 'instructor' ? 'With Coordinator' : 'With Inventory',
             'location' => $validated['location'],
             'room' => $validated['room'],
             'purpose' => $validated['purpose'],
+            'student_number' => !empty($validated['uniforms']) ? trim((string) ($validated['student_number'] ?? '')) ?: null : null,
+            'student_name' => !empty($validated['uniforms']) ? trim((string) ($validated['student_name'] ?? '')) ?: null : null,
         ]);
 
 $requestedPerItem = [];
@@ -539,13 +566,28 @@ public function approve(HttpRequest $httpRequest, $id)
             ->groupBy('idUnifvariant')
             ->map(fn ($lines) => (int) $lines->sum('quantity'));
         $lockedUniforms = [];
+        $holds = [];
+        $heldUsed = [];
 
         foreach ($uniformTotals as $variantId => $requestedQty) {
             $uniform = UniformVariant::where('idUnifvariant', $variantId)
                 ->lockForUpdate()
                 ->first();
+            // Stock being held for this cashier's own "Ready" reservations
+            // counts as available to this request (oldest first, whole
+            // reservations only).
+            $holds[$variantId] = [];
+            $heldQty = 0;
+            foreach (\App\Models\UniformReservation::where('idUsers', $request->idUsers)
+                ->where('idUnifvariant', $variantId)->where('status', 'Ready')
+                ->orderBy('idreservation')->get() as $res) {
+                if ($heldQty + (int) $res->quantity > $requestedQty) break;
+                $holds[$variantId][] = $res;
+                $heldQty += (int) $res->quantity;
+            }
+            $heldUsed[$variantId] = $heldQty;
             $available = $uniform
-                ? (int) $uniform->quantity - (int) ($uniform->reserved_quantity ?? 0)
+                ? (int) $uniform->quantity - (int) ($uniform->reserved_quantity ?? 0) + $heldQty
                 : 0;
 
             if (!$uniform || $available < $requestedQty) {
@@ -578,8 +620,12 @@ public function approve(HttpRequest $httpRequest, $id)
         // the cashier confirms the student has actually received them.
         foreach ($uniformTotals as $variantId => $requestedQty) {
             $uniform = $lockedUniforms[$variantId];
-            $uniform->reserved_quantity = (int) ($uniform->reserved_quantity ?? 0) + $requestedQty;
+            // Units already held for this cashier are converted, not added again.
+            $uniform->reserved_quantity = (int) ($uniform->reserved_quantity ?? 0) + $requestedQty - ($heldUsed[$variantId] ?? 0);
             $uniform->save();
+            foreach ($holds[$variantId] ?? [] as $res) {
+                $res->update(['status' => 'Submitted', 'submitted_at' => now()]);
+            }
         }
 
         $request->update([
@@ -619,6 +665,9 @@ public function approve(HttpRequest $httpRequest, $id)
         'releaseMethod' => $request->release_method,
         'releasedAt' => $request->released_at,
         'releasedToStudent' => $request->released_to_student,
+        'releasedStudentId' => $request->released_student_id,
+        'studentName' => $request->student_name,
+        'studentNumber' => $request->student_number,
         'receivedAt' => $request->received_at,
         'items' => $request->items->map(function ($item) use ($request) {
             return [
@@ -707,6 +756,9 @@ return response()->json([
         'releaseMethod' => $request->release_method,
         'releasedAt' => $request->released_at,
         'releasedToStudent' => $request->released_to_student,
+        'releasedStudentId' => $request->released_student_id,
+        'studentName' => $request->student_name,
+        'studentNumber' => $request->student_number,
         'receivedAt' => $request->received_at,
         'items' => $request->items->map(function ($item) use ($request) {
             return [
@@ -1018,6 +1070,7 @@ public function release(HttpRequest $httpRequest, $id)
     $validated = $httpRequest->validate([
         'release_method' => 'required|string|in:For Pick Up,For Delivery',
         'released_to_student' => 'nullable|string|max:255',
+        'released_student_id' => 'nullable|string|max:50',
     ]);
 
     return DB::transaction(function () use ($id, $validated, $actor) {
@@ -1044,17 +1097,20 @@ public function release(HttpRequest $httpRequest, $id)
         }
 
         if ($isUniformRequest) {
-            // Uniforms are handed to students by the cashier at the AMO office.
-            // The cashier submits the request, so only that cashier can record
-            // the physical handover. Uniform requests are pickup-only.
-            if (strtolower((string) $actor->role) !== 'cashier' || (int) $r->idUsers !== (int) $actor->idUsers) {
-                return response()->json(['message' => 'Only the cashier who submitted this uniform request can record its release.'], 403);
+            // Uniforms are handed to the student at the AMO office, so the AMO
+            // (who physically gives them out) records the handover. The cashier
+            // is notified automatically. Uniform requests are pickup-only.
+            if (strtolower((string) $actor->role) !== 'amo') {
+                return response()->json(['message' => 'Only the AMO can record a uniform handover.'], 403);
             }
             if ($validated['release_method'] !== 'For Pick Up') {
                 return response()->json(['message' => 'Uniforms must be picked up at the AMO office.'], 422);
             }
             if (empty(trim((string) ($validated['released_to_student'] ?? '')))) {
                 return response()->json(['message' => 'Enter the full name of the student collecting the uniform.'], 422);
+            }
+            if (empty(trim((string) ($validated['released_student_id'] ?? '')))) {
+                return response()->json(['message' => 'Enter the student ID you checked.'], 422);
             }
 
             $totals = $r->uniforms->groupBy('idUnifvariant')->map(fn ($lines) => (int) $lines->sum('quantity'));
@@ -1080,14 +1136,14 @@ public function release(HttpRequest $httpRequest, $id)
             'release_method' => $validated['release_method'],
             'released_at' => now(),
             'released_by' => $actor->idUsers,
-            ...($isUniformRequest ? ['released_to_student' => trim($validated['released_to_student'])] : []),
-            // For uniform requests the cashier records the real handover, so
-            // the student does not need a C.I.M.S. account to confirm receipt.
+            ...($isUniformRequest ? ['released_to_student' => trim($validated['released_to_student']), 'released_student_id' => trim($validated['released_student_id'])] : []),
+            // For uniform requests the AMO records the real handover, so the
+            // student does not need a C.I.M.S. account to confirm receipt.
             ...($isUniformRequest ? ['received_at' => now()] : []),
         ]);
 
         $message = $isUniformRequest
-            ? 'Your uniform request #' . $r->idrequest . ' has been released at the AMO office.'
+            ? 'Uniform request #' . $r->idrequest . ' was picked up at the AMO office by ' . trim($validated['released_to_student']) . ' (ID ' . trim($validated['released_student_id']) . ').'
             : 'Your request #' . $r->idrequest . ' is ready: ' . $validated['release_method'] . '.';
         $this->createRequestNotification($r, (int) $r->idUsers, 'released', $message);
         $this->logActivity($actor->idUsers, ($isUniformRequest ? 'Released uniform request #' : 'Released Request #') . $r->idrequest . ' (' . $validated['release_method'] . ')');
@@ -1097,6 +1153,9 @@ public function release(HttpRequest $httpRequest, $id)
             'releaseMethod' => $r->release_method,
             'releasedAt' => $r->released_at,
             'releasedToStudent' => $r->released_to_student,
+            'releasedStudentId' => $r->released_student_id,
+            'studentName' => $r->student_name,
+            'studentNumber' => $r->student_number,
             'receivedAt' => $r->received_at,
             'releasedBy' => $actor->username,
         ]);

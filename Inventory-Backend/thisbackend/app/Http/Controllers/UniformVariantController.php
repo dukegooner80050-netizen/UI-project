@@ -159,8 +159,22 @@ class UniformVariantController extends Controller
             if ((int) $reservation->quantity <= $available) {
                 $reservation->update(['status' => 'Ready', 'notified_at' => now()]);
                 $available -= (int) $reservation->quantity;
+                // Hold the stock for this cashier until they submit the
+                // request (or cancel), so nobody else can take it.
+                $variant->reserved_quantity = (int) ($variant->reserved_quantity ?? 0) + (int) $reservation->quantity;
+                $variant->load(['type', 'department']);
+                $label = $variant->type->uniform_name . ' (' . $variant->department->dept_name . ' - ' . ($variant->gender ?? 'Unisex') . ' - ' . $variant->size . ')';
+                \Illuminate\Support\Facades\DB::table('request_notifications')->insert([
+                    'idrequest' => null,
+                    'recipient_idUsers' => (int) $reservation->idUsers,
+                    'created_by' => request()->user()->idUsers ?? null,
+                    'event_type' => 'reservation_ready',
+                    'message' => mb_substr("Your reserved uniform is back in stock: {$reservation->quantity} x {$label}. It is being held for you; submit a uniform request to claim it.", 0, 500),
+                    'created_at' => now(),
+                ]);
             }
         }
+        $variant->save();
 
         $variant->load(['department', 'type']);
 

@@ -70,10 +70,11 @@ export async function confirmReceived(id) {
 }
 
 // releaseMethod: "For Pick Up" | "For Delivery" (roadmap #15 / #19).
-export async function releaseRequest(id, releaseMethod, studentName = "") {
+export async function releaseRequest(id, releaseMethod, studentName = "", studentId = "") {
   const payload = { release_method: releaseMethod };
   if (studentName) payload.released_to_student = studentName;
-  const { data } = await api.put(`/requests/${id}/release`, payload);
+  if (studentId) payload.released_student_id = studentId;
+  const { data } = await axios.put(`/requests/${id}/release`, payload);
   return data;
 }
 

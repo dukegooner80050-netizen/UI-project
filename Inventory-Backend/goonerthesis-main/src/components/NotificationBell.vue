@@ -214,7 +214,7 @@ function goRestock() {
 // ---- display helpers ----
 function noteLabel(n) {
   if (n.event_type === "forwarded") return "Forwarded";
-  if (n.event_type === "released") return "Ready";
+  if (n.event_type === "released" || n.event_type === "reservation_ready") return "Ready";
   if (n.event_type === "received") return "Received";
   if (n.event_type === "inventory_review") return "To approve";
   if (n.event_type === "coordinator_review") return "To review";

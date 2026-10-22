@@ -257,22 +257,43 @@ async function executeConfirm() {
 const releaseModal = ref(false);
 const releaseTargetId = ref(null);
 const releaseMethod = ref("For Pick Up");
+const releaseStudent = ref("");
+const releaseStudentId = ref("");
+
+// Uniform requests are handed to a student at the AMO office: the AMO checks
+// the student's ID and records who collected it. Stock is deducted then.
+const releaseIsUniform = computed(() => {
+  const t = requests.value.find((r) => r.id === releaseTargetId.value);
+  return !!t && (t.uniforms || []).length > 0;
+});
 
 function openReleaseModal(id) {
   const target = requests.value.find((r) => r.id === id);
   releaseTargetId.value = id;
   releaseMethod.value = target?.releaseMethod || "For Pick Up";
+  releaseStudent.value = target?.studentName || "";
+  releaseStudentId.value = target?.studentNumber || "";
   releaseModal.value = true;
 }
 
 async function confirmRelease() {
   const id = releaseTargetId.value;
   const method = releaseMethod.value;
+  const uniform = releaseIsUniform.value;
+
+  if (uniform && (!releaseStudent.value.trim() || !releaseStudentId.value.trim())) {
+    notify("danger", "Enter the student's full name and the student ID you checked.");
+    return;
+  }
 
   releaseModal.value = false;
 
   try {
-    await releaseRequest(id, method);
+    if (uniform) {
+      await releaseRequest(id, "For Pick Up", releaseStudent.value.trim(), releaseStudentId.value.trim());
+    } else {
+      await releaseRequest(id, method);
+    }
     notify("success", `Request marked as released: ${method}.`);
     await refresh();
   } catch (e) {
@@ -531,6 +552,7 @@ function statusBadgeClass(status) {
                       <div class="col-md-5">
                         <div class="fw-semibold small text-muted mb-1">Details</div>
                         <div class="small mb-1"><strong>Purpose:</strong> {{ r.purpose || "—" }}</div>
+                        <div v-if="r.studentName" class="small mb-1"><strong>Student:</strong> {{ r.studentName }}<span v-if="r.studentNumber"> (ID {{ r.studentNumber }})</span></div>
                         <div class="small mb-1"><strong>Location:</strong> {{ r.location || "—" }}</div>
                         <div class="small mb-1"><strong>Room:</strong> {{ r.room || "—" }}</div>
 
@@ -542,7 +564,7 @@ function statusBadgeClass(status) {
                           <span v-if="r.releasedAt">
                             {{ r.releaseMethod }} —
                             {{ new Date(r.releasedAt).toLocaleString("en-PH") }}
-                            <span v-if="r.releasedToStudent && (r.uniforms || []).length" class="d-block"><strong>Student collected:</strong> {{ r.releasedToStudent }}</span>
+                            <span v-if="r.releasedToStudent && (r.uniforms || []).length" class="d-block"><strong>Picked up by:</strong> {{ r.releasedToStudent }}<span v-if="r.releasedStudentId"> (ID {{ r.releasedStudentId }})</span></span>
                             <span v-if="r.releasedBy" class="text-muted">
                               (by {{ r.releasedBy }})
                             </span>
@@ -630,7 +652,19 @@ function statusBadgeClass(status) {
       <button class="btn-close" @click="releaseModal = false"></button>
     </div>
 
-    <div class="modal-body">
+    <div class="modal-body" v-if="releaseIsUniform">
+      <p class="small text-muted">
+        Hand the uniform to the student at the office. Check their ID first;
+        stock is deducted when you confirm and the cashier is notified.
+      </p>
+      <label class="form-label" for="release-student-name">Student's full name</label>
+      <input id="release-student-name" name="release_student_name" type="text" class="form-control mb-2" v-model="releaseStudent" maxlength="255" autocomplete="off" />
+      <label class="form-label" for="release-student-id">Student ID checked</label>
+      <div v-if="releaseStudentId" class="form-text mt-0 mb-1">Prefilled from the cashier's request; correct it if the ID shown is different.</div>
+      <input id="release-student-id" name="release_student_id" type="text" class="form-control" v-model="releaseStudentId" maxlength="50" autocomplete="off" />
+    </div>
+
+    <div class="modal-body" v-else>
       <label class="form-label">How are these items going out?</label>
 
       <div class="form-check">

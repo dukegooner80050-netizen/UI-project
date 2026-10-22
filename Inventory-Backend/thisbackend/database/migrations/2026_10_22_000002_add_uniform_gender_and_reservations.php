@@ -16,18 +16,17 @@ return new class extends Migration
 
         if (!Schema::hasTable('uniform_reservations')) {
             Schema::create('uniform_reservations', function (Blueprint $table) {
-                $table->bigIncrements('id');
+                $table->bigIncrements('idreservation');
                 $table->unsignedBigInteger('idUsers');
                 $table->unsignedInteger('idUnifvariant');
                 $table->unsignedInteger('quantity');
                 $table->string('status', 20)->default('Waiting');
-                $table->dateTime('notified_at')->nullable();
                 $table->dateTime('created_at')->useCurrent();
-                $table->dateTime('updated_at')->nullable();
+                $table->dateTime('notified_at')->nullable();
+                $table->dateTime('cancelled_at')->nullable();
+                $table->dateTime('submitted_at')->nullable();
                 $table->foreign('idUsers')->references('idUsers')->on('users')->onDelete('cascade');
-                $table->foreign('idUnifvariant')->references('idUnifvariant')->on('uniformvariant')->onDelete('cascade');
                 $table->index(['idUnifvariant', 'status', 'created_at']);
-                $table->index(['idUsers', 'status']);
             });
         }
     }

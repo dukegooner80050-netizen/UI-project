@@ -48,13 +48,11 @@ class UniformReservationController extends Controller
 
         $existing = UniformReservation::where('idUsers', $user->idUsers)
             ->where('idUnifvariant', $variant->idUnifvariant)
-            ->whereIn('status', ['Waiting', 'Ready'])
+            ->where('status', 'Waiting')
             ->first();
 
         if ($existing) {
             $existing->quantity = (int) $existing->quantity + (int) $validated['quantity'];
-            $existing->status = 'Waiting';
-            $existing->notified_at = null;
             $existing->save();
             $reservation = $existing;
         } else {
@@ -92,7 +90,16 @@ class UniformReservationController extends Controller
             return response()->json(['message' => 'This reservation can no longer be cancelled.'], 422);
         }
 
-        $reservation->update(['status' => 'Cancelled']);
+        if ($reservation->status === 'Ready') {
+            // Free the stock that was being held for this reservation.
+            $variant = UniformVariant::where('idUnifvariant', $reservation->idUnifvariant)->lockForUpdate()->first();
+            if ($variant) {
+                $variant->reserved_quantity = max(0, (int) $variant->reserved_quantity - (int) $reservation->quantity);
+                $variant->save();
+            }
+        }
+
+        $reservation->update(['status' => 'Cancelled', 'cancelled_at' => now()]);
         $this->logActivity($user->idUsers, "Cancelled uniform reservation #{$reservation->idreservation}");
 
         return response()->json(['message' => 'Reservation cancelled.']);

@@ -1,7 +1,7 @@
 <script setup>
 import { printBorrowerForm, hasBorrowedItems } from "../services/borrowerForm";
 import { ref, watch, computed, onMounted, nextTick } from "vue";
-import { createRequestBatch, getRequests, confirmReceived, releaseRequest } from "../services/requests";
+import { createRequestBatch, getRequests, confirmReceived } from "../services/requests";
 import {
   listUniformTypes,
   listUniformVariants,
@@ -99,38 +99,9 @@ function startReport(item) {
 // from the confirmation modal (doReport).
 const receiveConfirmOpen = ref(false);
 const receiveBusy = ref(false);
-const uniformReleaseBusy = ref(false);
 
-async function releaseUniformRequest() {
-  const request = selected.value;
-  if (!request?.id || userRole !== "cashier") return;
-  if ((request.status || "").toLowerCase() !== "approved" || request.releasedAt) return;
-  if (!(request.uniforms || []).length || (request.items || []).length) return;
-  const studentName = window.prompt(
-    `Enter the full name of the student collecting the uniform for request #${request.id}:`,
-    request.releasedToStudent || "",
-  );
-  if (studentName === null) return;
-  const confirmedStudentName = studentName.trim();
-  if (!confirmedStudentName) {
-    showWarning("Student Name Required", "Enter the student's full name before confirming pickup.");
-    return;
-  }
-  if (!window.confirm(`Confirm that ${confirmedStudentName} has physically received all uniforms in request #${request.id}? Stock will be deducted now.`)) return;
-
-  uniformReleaseBusy.value = true;
-  try {
-    await releaseRequest(request.id, "For Pick Up", confirmedStudentName);
-    await loadMyRequests();
-    selected.value = myRequests.value.find((r) => Number(r.id) === Number(request.id)) || null;
-    await loadUniforms();
-    showWarning("Uniform Released", "Handover recorded. Uniform stock has now been deducted.");
-  } catch (e) {
-    showWarning("Uniform Release", e.response?.data?.message || "Unable to record the uniform handover.");
-  } finally {
-    uniformReleaseBusy.value = false;
-  }
-}
+const studentName = ref("");
+const studentNumber = ref("");
 
 async function doConfirmReceived() {
   const id = selected.value?.id;
@@ -475,6 +446,9 @@ async function loadMyRequests() {
         releaseMethod: request.releaseMethod,
         releasedAt: request.releasedAt,
         releasedToStudent: request.releasedToStudent || "",
+        releasedStudentId: request.releasedStudentId || "",
+        studentName: request.studentName || "",
+        studentNumber: request.studentNumber || "",
         receivedAt: request.receivedAt,
         location: request.location,
         room: request.room,
@@ -675,6 +649,14 @@ async function submitRequest(confirmed = false) {
     );
     return;
   }
+  if (uniformOnly.value && !studentName.value.trim()) {
+    showWarning("Student Name Required", "Enter the full name of the student this uniform request is for.");
+    return;
+  }
+  if (uniformOnly.value && !studentNumber.value.trim()) {
+    showWarning("Student ID Required", "Enter the student ID number this uniform request is for.");
+    return;
+  }
   if (!uniformOnly.value && !location.value) {
     showWarning(
       "Location Required",
@@ -764,10 +746,10 @@ async function submitRequest(confirmed = false) {
   // Payload
 
   const payload = {
-    request_date: new Date().toISOString().slice(0, 10),
     location: uniformOnly.value ? AMO_OFFICE : location.value,
     room: uniformOnly.value ? "N/A" : room.value,
     purpose: requestPurpose.value.trim(),
+    ...(uniformOnly.value ? { student_name: studentName.value.trim(), student_number: studentNumber.value.trim() } : {}),
     items: requestItems.value.map((item) => ({
       iditems: item.itemId,
       quantity: Number(item.qty),
@@ -793,6 +775,8 @@ async function submitRequest(confirmed = false) {
     activeTab.value = "mine";
     requestItems.value = [];
     requestUniforms.value = [];
+    studentName.value = "";
+    studentNumber.value = "";
     requestPurpose.value = "";
     location.value = "";
     room.value = "";
@@ -1155,6 +1139,35 @@ watch(activeTab, async () => {
           building or room is needed.
         </div>
 
+        <div v-if="uniformOnly" class="mb-3">
+          <label for="rq-student-name" class="form-label">Student's full name</label>
+          <input
+            id="rq-student-name"
+            name="student_name"
+            type="text"
+            class="form-control"
+            v-model="studentName"
+            maxlength="255"
+            autocomplete="off"
+            placeholder="Who will collect the uniform?"
+          />
+        </div>
+
+        <div v-if="uniformOnly" class="mb-3">
+          <label for="rq-student-number" class="form-label">Student ID number</label>
+          <input
+            id="rq-student-number"
+            name="student_number"
+            type="text"
+            class="form-control"
+            v-model="studentNumber"
+            maxlength="50"
+            autocomplete="off"
+            placeholder="Student ID"
+          />
+          <div class="form-text">The AMO will see this and check the student's ID at pickup.</div>
+        </div>
+
         <div v-else class="row">
           <div class="col-md-6">
             <label for="rq-location" class="form-label">Location</label>
@@ -1477,6 +1490,7 @@ watch(activeTab, async () => {
               <div><strong>Location:</strong> {{ selected.location }}</div>
               <div><strong>Room:</strong> {{ selected.room }}</div>
               <div><strong>Purpose:</strong> {{ selected.purpose }}</div>
+              <div v-if="selected.studentName"><strong>Student:</strong> {{ selected.studentName }}<span v-if="selected.studentNumber"> (ID {{ selected.studentNumber }})</span></div>
               <div><strong>Status:</strong> {{ selected.status }}</div>
               <div>
                 <strong>Request Date:</strong> {{ formatDate(selected.date) }}
@@ -1488,7 +1502,8 @@ watch(activeTab, async () => {
 
               <div v-if="selected.releasedAt" class="mt-1">
                 <div v-if="(selected.uniforms || []).length > 0">
-                  <strong>Student who collected:</strong> {{ selected.releasedToStudent || "Not recorded" }}
+                  <strong>Picked up by:</strong> {{ selected.releasedToStudent || "Not recorded" }}
+                  <span v-if="selected.releasedStudentId">(ID {{ selected.releasedStudentId }})</span>
                 </div>
                 <strong>Release:</strong>
                 <span class="badge bg-info text-dark">{{ selected.releaseMethod }}</span>
@@ -1500,25 +1515,8 @@ watch(activeTab, async () => {
                 v-else-if="(selected.status || '').toLowerCase() === 'approved'"
                 class="mt-1 text-muted small"
               >
-                Approved — awaiting release.
+                Approved — awaiting release.<span v-if="(selected.uniforms || []).length > 0"> The AMO will hand it over to the student at the office.</span>
               </div>
-              <button
-                v-if="userRole === 'cashier' && (selected.uniforms || []).length > 0 && (selected.items || []).length === 0 && (selected.status || '').toLowerCase() === 'approved' && !selected.releasedAt"
-                type="button"
-                class="btn btn-sm btn-success mt-2"
-                :disabled="uniformReleaseBusy"
-                @click="releaseUniformRequest"
-              >
-                <span v-if="uniformReleaseBusy" class="spinner-border spinner-border-sm me-1"></span>
-                Confirm Student Pickup
-              </button>
-              <div
-                v-if="userRole === 'cashier' && (selected.uniforms || []).length > 0 && selected.releasedAt"
-                class="small text-success mt-2"
-              >
-                <strong>Handover recorded.</strong> Stock was deducted at pickup.
-              </div>
-
               <div v-if="selected.releasedAt" class="mt-1">
                 <template v-if="selected.receivedAt">
                   <strong>Received:</strong>

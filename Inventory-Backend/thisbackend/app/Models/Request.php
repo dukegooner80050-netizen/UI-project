@@ -30,6 +30,9 @@ protected $fillable = [
     'released_at',
     'released_by',
     'released_to_student',
+    'released_student_id',
+    'student_name',
+    'student_number',
 ];
 
 public $timestamps = false;
