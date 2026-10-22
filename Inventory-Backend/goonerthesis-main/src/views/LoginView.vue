@@ -7,7 +7,18 @@ const router = useRouter();
 
 const username = ref("");
 const password = ref("");
-const error = ref("");
+// Set by the axios handler when a session ended on its own.
+const error = ref(readSessionNote());
+
+function readSessionNote() {
+  try {
+    const note = sessionStorage.getItem("sessionEndedMessage") || "";
+    sessionStorage.removeItem("sessionEndedMessage");
+    return note;
+  } catch {
+    return "";
+  }
+}
 
 async function submit() {
   error.value = "";
@@ -20,7 +31,9 @@ async function submit() {
 
     router.push(user?.must_change_password ? "/change-password" : "/dashboard");
   } catch (e) {
-    if (e.response?.status === 429) {
+    // 429 is also what the server answers when the two Admin session slots are
+    // taken; that one has its own message, so only treat the rest as throttling.
+    if (e.response?.status === 429 && e.response.data?.code !== "admin_session_limit") {
       const wait = Number(e.response.headers?.["retry-after"]) || 60;
       error.value = `Too many login attempts. Please wait ${wait} seconds and try again.`;
     } else if (e.response?.data?.message) {

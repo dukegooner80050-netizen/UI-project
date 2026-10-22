@@ -33,7 +33,12 @@ function notify(message, type = "success") {
   showAlert.value = true
 }
 
+// Only the newest request may fill the table: a slow earlier answer (fast
+// typing, quick clicks) must not overwrite a newer one.
+let requestSeq = 0
+
 async function load() {
+  const seq = ++requestSeq
   loading.value = true
   try {
     const res = await getLogsPage({
@@ -46,6 +51,7 @@ async function load() {
       from: dateFrom.value || undefined,
       to: dateTo.value || undefined,
     })
+    if (seq !== requestSeq) return
     logs.value = res.data
     meta.value = res.meta
     // Filters can shrink the result below the page we were on.
@@ -53,9 +59,9 @@ async function load() {
       page.value = res.meta.last_page
     }
   } catch (e) {
-    notify("Failed to load logs.", "danger")
+    if (seq === requestSeq) notify("Failed to load logs.", "danger")
   } finally {
-    loading.value = false
+    if (seq === requestSeq) loading.value = false
   }
 }
 
@@ -100,8 +106,10 @@ function sortBy(key) {
     sortKey.value = key
     sortDir.value = key === "time" ? "desc" : "asc"
   }
-  page.value = 1
-  load()
+  // Moving to page 1 already reloads (the page watcher); only reload by hand
+  // when we are on it already.
+  if (page.value !== 1) page.value = 1
+  else load()
 }
 
 function sortMark(key) {

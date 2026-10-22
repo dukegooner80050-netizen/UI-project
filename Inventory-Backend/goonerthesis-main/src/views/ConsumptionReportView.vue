@@ -7,7 +7,9 @@ import AlertMessage from "../components/AlertMessage.vue";
 const loading = ref(true);
 const viewMode = ref("item"); // "item" | "requester" | "records"
 const sortBy = ref("time-desc"); // time-desc | time-asc | user-asc | user-desc
-const selectedMonth = ref(""); // "YYYY-MM"
+// Optional date range ("YYYY-MM-DD"), shared by every tab. Empty = all dates.
+const dateFrom = ref("");
+const dateTo = ref("");
 const currentUser = getCurrentUser();
 const isInventoryManagement =
   String(currentUser?.role || "").toLowerCase() === "amo";
@@ -42,33 +44,13 @@ function formatDate(date) {
   });
 }
 
-function monthKey(date) {
-  const d = new Date(date);
-  const year = d.getFullYear();
-  const month = String(d.getMonth() + 1).padStart(2, "0");
-  return `${year}-${month}`;
-}
-
-function monthLabel(key) {
-  const [year, month] = key.split("-");
-  const d = new Date(Number(year), Number(month) - 1, 1);
-  return d.toLocaleDateString("en-PH", { year: "numeric", month: "long" });
-}
-
 async function load() {
   loading.value = true;
 
   try {
     // The server already limits non-AMO users to their own records.
     const rows = await getConsumption();
-    const records = rows
-      .filter((r) => r.date)
-      .map((r) => ({ ...r, month: monthKey(r.date) }));
-
-    consumptionRecords.value = records;
-
-    const months = [...new Set(records.map((r) => r.month))].sort().reverse();
-    selectedMonth.value = months[0] || monthKey(new Date());
+    consumptionRecords.value = rows.filter((r) => r.date);
   } catch (e) {
     showNotification("danger", errMsg(e));
   } finally {
@@ -78,15 +60,59 @@ async function load() {
 
 onMounted(load);
 
-const availableMonths = computed(() => {
-  const months = new Set(consumptionRecords.value.map((r) => r.month));
-  months.add(monthKey(new Date())); // always allow picking the current month
-  return [...months].sort().reverse();
+// Local calendar day ("YYYY-MM-DD") of a record.
+function dayKey(date) {
+  const d = new Date(String(date).replace(" ", "T"));
+  if (Number.isNaN(d.getTime())) return "";
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${d.getFullYear()}-${m}-${day}`;
+}
+
+function dayLabel(iso) {
+  return new Date(`${iso}T00:00:00`).toLocaleDateString("en-PH", {
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+  });
+}
+
+const hasRange = computed(() => !!(dateFrom.value || dateTo.value));
+const rangeInvalid = computed(
+  () => !!(dateFrom.value && dateTo.value && dateFrom.value > dateTo.value),
+);
+
+function clearDates() {
+  dateFrom.value = "";
+  dateTo.value = "";
+}
+
+// Small note shown next to each heading.
+const periodNote = computed(() => {
+  if (!hasRange.value) return "All dates";
+  if (dateFrom.value && dateTo.value)
+    return `${dayLabel(dateFrom.value)} to ${dayLabel(dateTo.value)}`;
+  if (dateFrom.value) return `From ${dayLabel(dateFrom.value)} onward`;
+  return `Up to ${dayLabel(dateTo.value)}`;
 });
 
-const filteredRecords = computed(() =>
-  consumptionRecords.value.filter((r) => r.month === selectedMonth.value),
+const emptyText = computed(() =>
+  hasRange.value
+    ? "No consumption recorded in this date range."
+    : "No consumption recorded yet.",
 );
+
+const filteredRecords = computed(() => {
+  if (rangeInvalid.value) return [];
+
+  return consumptionRecords.value.filter((r) => {
+    const day = dayKey(r.date);
+    if (!day) return false;
+    if (dateFrom.value && day < dateFrom.value) return false;
+    if (dateTo.value && day > dateTo.value) return false;
+    return true;
+  });
+});
 
 // ITEM-FOCUSED: group by item/uniform name
 const byItem = computed(() => {
@@ -191,13 +217,38 @@ function toggleExpand(key) {
           </div>
 
           <div>
-            <label class="form-label mb-1">Month</label>
-            <select class="form-select" v-model="selectedMonth">
-              <option v-for="m in availableMonths" :key="m" :value="m">
-                {{ monthLabel(m) }}
-              </option>
-            </select>
+            <label class="form-label mb-1">From</label>
+            <input
+              v-model="dateFrom"
+              type="date"
+              class="form-control"
+              :max="dateTo || undefined"
+            />
           </div>
+
+          <div>
+            <label class="form-label mb-1">To</label>
+            <input
+              v-model="dateTo"
+              type="date"
+              class="form-control"
+              :min="dateFrom || undefined"
+            />
+          </div>
+
+          <div>
+            <button
+              class="btn btn-outline-secondary"
+              :disabled="!dateFrom && !dateTo"
+              @click="clearDates"
+            >
+              Clear dates
+            </button>
+          </div>
+        </div>
+
+        <div v-if="rangeInvalid" class="text-danger small mt-2">
+          The "From" date is after the "To" date. Change one of them or clear the dates.
         </div>
       </div>
     </div>
@@ -208,8 +259,9 @@ function toggleExpand(key) {
     <div v-else-if="viewMode === 'records'" class="card shadow-sm">
       <div class="card-body">
         <h5 class="mb-3">
-          {{ isInventoryManagement ? "All records" : "My records" }} in
-          {{ monthLabel(selectedMonth) }} ({{ sortedRecords.length }})
+          {{ isInventoryManagement ? "All records" : "My records" }}
+          ({{ sortedRecords.length }})
+          <small class="text-muted fs-6 fw-normal ms-1">{{ periodNote }}</small>
         </h5>
         <div class="table-responsive">
           <table class="table table-striped table-hover align-middle mb-0">
@@ -234,7 +286,7 @@ function toggleExpand(key) {
               </tr>
               <tr v-if="sortedRecords.length === 0">
                 <td :colspan="isInventoryManagement ? 6 : 5" class="text-center text-muted py-4">
-                  No consumption recorded for this month.
+                  {{ emptyText }}
                 </td>
               </tr>
             </tbody>
@@ -247,9 +299,8 @@ function toggleExpand(key) {
     <div v-else-if="viewMode === 'item'" class="card shadow-sm">
       <div class="card-body">
         <h5 class="mb-3">
-          Consumed in {{ monthLabel(selectedMonth) }} ({{ byItem.length }} item{{
-            byItem.length === 1 ? "" : "s"
-          }})
+          Consumed ({{ byItem.length }} item{{ byItem.length === 1 ? "" : "s" }})
+          <small class="text-muted fs-6 fw-normal ms-1">{{ periodNote }}</small>
         </h5>
         <div class="table-responsive">
           <table class="table table-striped table-hover align-middle mb-0">
@@ -292,7 +343,7 @@ function toggleExpand(key) {
               </template>
               <tr v-if="byItem.length === 0">
                 <td colspan="4" class="text-center text-muted py-4">
-                  No consumption recorded for this month.
+                  {{ emptyText }}
                 </td>
               </tr>
             </tbody>
@@ -305,8 +356,9 @@ function toggleExpand(key) {
     <div v-else class="card shadow-sm">
       <div class="card-body">
         <h5 class="mb-3">
-          Requested in {{ monthLabel(selectedMonth) }} ({{ byRequester.length }}
+          Requested ({{ byRequester.length }}
           requester{{ byRequester.length === 1 ? "" : "s" }})
+          <small class="text-muted fs-6 fw-normal ms-1">{{ periodNote }}</small>
         </h5>
         <div class="table-responsive">
           <table class="table table-striped table-hover align-middle mb-0">
@@ -347,7 +399,7 @@ function toggleExpand(key) {
               </template>
               <tr v-if="byRequester.length === 0">
                 <td colspan="3" class="text-center text-muted py-4">
-                  No consumption recorded for this month.
+                  {{ emptyText }}
                 </td>
               </tr>
             </tbody>

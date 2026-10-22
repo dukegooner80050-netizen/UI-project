@@ -84,6 +84,13 @@ const clockStatus = ref("syncing"); // "syncing" | "synced" | "offline"
 let clockTimer = null;
 let resyncTimer = null;
 
+// Philippine time without trusting the device clock: ask a time service once
+// (and every 10 minutes), remember how far the device is off, and read the
+// device clock plus that offset every second. The clock shows straight away
+// and keeps running even when the service is unreachable (a school network
+// may have no internet), and a request that hangs is cut off after 4 seconds.
+let clockOffsetMs = 0;
+
 async function fetchPHTime() {
   const urls = [
     "https://worldtimeapi.org/api/timezone/Asia/Manila",
@@ -91,56 +98,68 @@ async function fetchPHTime() {
   ];
 
   for (const url of urls) {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 4000);
+
     try {
-      const res = await fetch(url, { cache: "no-store" });
+      const started = Date.now();
+      const res = await fetch(url, { cache: "no-store", signal: controller.signal });
       if (!res.ok) continue;
 
       const data = await res.json();
       const iso = data.datetime || data.dateTime;
       if (!iso) continue;
 
-      now.value = new Date(iso);
+      // Half the round trip is how old the answer already is.
+      const latency = (Date.now() - started) / 2;
+      clockOffsetMs = new Date(iso).getTime() + latency - Date.now();
       clockStatus.value = "synced";
+      tickPH();
       return true;
     } catch (e) {
-      // try next URL
+      // timed out or unreachable: try the next URL
+    } finally {
+      clearTimeout(timeout);
     }
   }
 
-  // If both APIs fail, mark offline and fall back (optional)
   clockStatus.value = "offline";
-  if (!now.value) now.value = new Date();
   return false;
 }
 
 function tickPH() {
-  if (!now.value) return;
-  now.value = new Date(now.value.getTime() + 1000);
+  now.value = new Date(Date.now() + clockOffsetMs);
 }
 /* LOAD */
 async function loadAll() {
-  items.value = await getItems();
-  requests.value = await getRequests();
-  if (isAdmin.value) {
-    logs.value = await getLogs({ limit: 5 });
-    myOverdue.value = [];
+  // Each part loads on its own and in parallel, so one failing request can't
+  // blank the whole dashboard.
+  const run = async (label, job) => {
     try {
-      const low = await getLowStock();
-      criticalStock.value = low
-        .filter((r) => r.level === "Critical")
-        .sort((a, b) => a.quantity - b.quantity);
+      await job();
     } catch (e) {
-      criticalStock.value = [];
+      console.error(`Failed to load ${label}:`, e);
     }
-  } else {
-    logs.value = [];
-    try {
-      myOverdue.value = await getMyOverdue();
-    } catch (e) {
-      console.error("Failed to load overdue items:", e);
-      myOverdue.value = [];
-    }
-  }
+  };
+
+  await Promise.all([
+    run("items", async () => (items.value = await getItems())),
+    run("requests", async () => (requests.value = await getRequests())),
+    isAdmin.value
+      ? run("activity logs", async () => (logs.value = await getLogs({ limit: 5 })))
+      : run("overdue items", async () => (myOverdue.value = await getMyOverdue())),
+    isAdmin.value
+      ? run("critical stock", async () => {
+          const low = await getLowStock();
+          criticalStock.value = low
+            .filter((r) => r.level === "Critical")
+            .sort((a, b) => a.quantity - b.quantity);
+        })
+      : Promise.resolve(),
+  ]);
+
+  if (isAdmin.value) myOverdue.value = [];
+  else logs.value = [];
 
   lastUpdated.value = new Date().toLocaleString();
 }
@@ -151,16 +170,16 @@ async function refresh() {
 }
 
 onMounted(async () => {
-  await loadAll();
-
-  renderCharts();
-
-  await fetchPHTime();
-
+  // Clock first: it must not wait for the data (or for a slow time service).
+  tickPH();
   clockTimer = setInterval(tickPH, 1000);
 
-  // The clock ticks locally every second; re-checking the time service every
-  // 10 minutes is plenty.
+  await loadAll();
+  renderCharts();
+
+  fetchPHTime();
+
+  // Re-checking the time service every 10 minutes is plenty.
   resyncTimer = setInterval(fetchPHTime, 600000);
 });
 
@@ -414,8 +433,9 @@ const kpiCards = computed(() => {
 });
 
 /*  LISTS (CARDS)  */
+// All of them: the list in the modal scrolls, and it must agree with the count.
 const lowStockItems = computed(() =>
-  items.value.filter((i) => LOW_LEVELS.includes(i.stockLevel)).slice(0, 20),
+  items.value.filter((i) => LOW_LEVELS.includes(i.stockLevel)),
 );
 
 // A request can hold items, uniforms, or both. Uniform-only requests (the

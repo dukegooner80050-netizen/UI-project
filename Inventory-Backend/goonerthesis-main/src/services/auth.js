@@ -45,11 +45,15 @@ export async function changePassword({ current_password, password, password_conf
 /** LOGOUT */
 export async function logout(){
 
-    await axios.post("/logout");
+    // Leave even if the server can't be reached or the session already
+    // ended: the local sign-out must always happen.
+    try {
+        await axios.post("/logout");
+    } finally {
+        localStorage.removeItem("token");
 
-    localStorage.removeItem("token");
-
-    clearCurrentUser();
+        clearCurrentUser();
+    }
 }
 
 /** HELPERS */
