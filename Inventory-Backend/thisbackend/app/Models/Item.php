@@ -18,6 +18,7 @@ class Item extends Model
     // stock_level values (roadmap #6)
     public const LEVEL_OUT = 'Out of Stock';
     public const LEVEL_DEPLOYED = 'Deployed';
+    public const LEVEL_BORROWED = 'Borrowed';
     public const LEVEL_CRITICAL = 'Critical';
     public const LEVEL_MINIMUM = 'Minimum';
     public const LEVEL_ADEQUATE = 'Adequate';
@@ -65,32 +66,48 @@ class Item extends Model
     }
 
     /**
-     * School Equipment with nothing on the shelf but units placed in rooms is
-     * not "out of stock": it is deployed. Only checked when the shelf is
-     * empty, so listing items costs no extra queries in the normal case.
+     * School Equipment and Type B office supplies are lent or placed somewhere
+     * and come back, so an empty shelf is not "out of stock" while units are
+     * out on loan (Borrowed) or placed in rooms (Deployed). Returns
+     * ['borrowed' => n, 'deployed' => n] when the shelf is empty for one of
+     * those items, else null. Only queries when the shelf is empty, so normal
+     * item lists cost nothing extra.
      */
-    public function isFullyDeployed(): bool
+    public function awayUnits(): ?array
     {
-        if ($this->category !== 'School Equipment' || (int) $this->quantity > 0) {
-            return false;
+        if ((int) $this->quantity > 0) {
+            return null;
+        }
+        $isEquipment = $this->category === 'School Equipment';
+        $isTypeB = $this->category === 'Office Supplies' && $this->item_type === self::TYPE_B;
+        if (!$isEquipment && !$isTypeB) {
+            return null;
         }
 
-        return (int) \Illuminate\Support\Facades\DB::table('room_equipment')
-            ->where('iditems', $this->iditems)
-            ->sum('quantity') > 0;
+        $borrowed = \App\Models\RequestItem::where('iditems', $this->iditems)
+            ->whereHas('request', fn ($q) => $q->where('status', 'Approved'))
+            ->get()
+            ->sum(fn ($ri) => (int) $ri->quantity - (int) $ri->returned_quantity);
+
+        $deployed = $isEquipment
+            ? (int) \Illuminate\Support\Facades\DB::table('room_equipment')->where('iditems', $this->iditems)->sum('quantity')
+            : 0;
+
+        return ['borrowed' => max(0, (int) $borrowed), 'deployed' => $deployed];
     }
 
-    // Shown instead of "Borrowed" when the empty shelf is because the units
-    // are in rooms, and nobody is borrowing any of them.
+    public function isFullyDeployed(): bool
+    {
+        $away = $this->awayUnits();
+        return $away !== null && $away['borrowed'] === 0 && $away['deployed'] > 0;
+    }
+
+    // Stored status is "Borrowed" whenever the shelf is empty; say "Deployed"
+    // when the empty shelf is only because the units are in rooms.
     public function getStatusAttribute($value)
     {
         if ($value === 'Borrowed' && $this->isFullyDeployed()) {
-            $borrowed = \App\Models\RequestItem::where('iditems', $this->iditems)
-                ->whereHas('request', fn ($q) => $q->where('status', 'Approved'))
-                ->get()
-                ->sum(fn ($ri) => (int) $ri->quantity - (int) $ri->returned_quantity);
-
-            return $borrowed > 0 ? $value : self::LEVEL_DEPLOYED;
+            return self::LEVEL_DEPLOYED;
         }
 
         return $value;
@@ -101,7 +118,15 @@ class Item extends Model
         $qty = (int) $this->quantity;
 
         if ($qty <= 0) {
-            return $this->isFullyDeployed() ? self::LEVEL_DEPLOYED : self::LEVEL_OUT;
+            $away = $this->awayUnits();
+            if ($away && $away['borrowed'] > 0) {
+                return self::LEVEL_BORROWED;
+            }
+            if ($away && $away['deployed'] > 0) {
+                return self::LEVEL_DEPLOYED;
+            }
+
+            return self::LEVEL_OUT;
         }
         if ($qty <= (int) $this->critical_stock) {
             return self::LEVEL_CRITICAL;

@@ -26,3 +26,13 @@ export async function updateMonthlyRequestLimit(limit) {
         })
     ).data;
 }
+
+// Default stock levels (Critical / Minimum / Optimal) for School Equipment
+// and Type B office supplies. AMO only.
+export async function getStockLevels() {
+    return (await axios.get("/settings/stock-levels")).data;
+}
+
+export async function updateStockLevels(payload) {
+    return (await axios.put("/settings/stock-levels", payload)).data;
+}

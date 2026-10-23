@@ -332,6 +332,8 @@ Route::middleware('role:amo,department_head,admin,instructor,cashier')->group(fu
 
         Route::put('/settings/monthly-request-limit', [SettingController::class, 'updateMonthlyRequestLimit']);
         Route::put('/settings/return-periods', [SettingController::class, 'updateReturnPeriods']);
+        Route::get('/settings/stock-levels', [SettingController::class, 'stockLevels']);
+        Route::put('/settings/stock-levels', [SettingController::class, 'updateStockLevels']);
 
 
         /*

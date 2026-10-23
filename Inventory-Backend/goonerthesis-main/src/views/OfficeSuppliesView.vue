@@ -3,7 +3,8 @@ const modalOpen = ref(false);
 const modalMode = ref("");
 const modalQty = ref(1);
 
-import { ref, computed, onMounted } from "vue";
+import { ref, computed, onMounted, watch } from "vue";
+import { getStockLevels } from "../services/settings";
 import {
   listInventory,
   addItem,
@@ -95,15 +96,31 @@ function thresholdProblem(critical, minimum, optimal) {
 }
 const confirmAction = ref(false);
 
+// Type B items start from the stock levels set in Settings.
+const typeBDefaults = ref({ critical: 2, minimum: 5, optimal: 20 });
+onMounted(async () => {
+  try {
+    typeBDefaults.value = (await getStockLevels()).type_b;
+  } catch (e) {
+    /* keep the built-in 2 / 5 / 20 */
+  }
+});
+
+function applyAddLevels() {
+  const d = addSubCategory.value === TYPE_B ? typeBDefaults.value : { critical: 2, minimum: 5, optimal: 20 };
+  addCritical.value = d.critical;
+  addMinimum.value = d.minimum;
+  addOptimal.value = d.optimal;
+}
+watch(addSubCategory, applyAddLevels);
+
 function openAdd() {
   addSubCategory.value = TYPE_CONSUMABLE;
   addReturnDays.value = "";
   addPerHeadLimit.value = "";
   addName.value = "";
   addQty.value = 1;
-  addCritical.value = 2;
-  addMinimum.value = 5;
-  addOptimal.value = 20;
+  applyAddLevels();
   addError.value = "";
   addOpen.value = true;
 }
@@ -273,7 +290,7 @@ const typeBItems = computed(() =>
 );
 
 // ---- One table: search, filter by type / stock level, sort by column ----
-const LEVELS = ["Out of Stock", "Critical", "Minimum", "Adequate", "Optimal"];
+const LEVELS = ["Out of Stock", "Borrowed", "Critical", "Minimum", "Adequate", "Optimal"];
 const LEVEL_ORDER = Object.fromEntries(LEVELS.map((l, n) => [l, n]));
 
 const search = ref("");

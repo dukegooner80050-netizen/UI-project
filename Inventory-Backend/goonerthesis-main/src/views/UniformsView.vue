@@ -741,13 +741,8 @@ const visibleTypes = computed(() => {
 
               <td class="text-center">
                 <div class="d-flex justify-content-center gap-2 flex-wrap">
-                  <!-- RELEASE -->
-                  <button v-if="isAllView" class="btn btn-primary btn-sm"
-                    @click="openStockModal('release', variant)">
-                    Release</button>
-
-                  <!-- RESTOCK -->
-                  <button v-else class="btn btn-success btn-sm"
+                  <!-- RESTOCK (uniforms go out through requests, so there is no manual release) -->
+                  <button class="btn btn-success btn-sm"
                     @click="openStockModal('restock', variant)">
                     Restock</button>
 

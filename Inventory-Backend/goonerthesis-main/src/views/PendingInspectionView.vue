@@ -43,6 +43,37 @@ async function load() {
 
 onMounted(load);
 
+// Date filter on "Returned On" (inclusive, local dates).
+const dateFrom = ref("");
+const dateTo = ref("");
+
+function localYmd(value) {
+  const d = new Date(value);
+  if (isNaN(d)) return "";
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${d.getFullYear()}-${m}-${day}`;
+}
+
+const rangeInvalid = computed(
+  () => !!(dateFrom.value && dateTo.value && dateFrom.value > dateTo.value),
+);
+
+const filteredInspections = computed(() => {
+  if (rangeInvalid.value) return [];
+  return inspections.value.filter((i) => {
+    const day = localYmd(i.returned_at);
+    if (dateFrom.value && (!day || day < dateFrom.value)) return false;
+    if (dateTo.value && (!day || day > dateTo.value)) return false;
+    return true;
+  });
+});
+
+function clearDates() {
+  dateFrom.value = "";
+  dateTo.value = "";
+}
+
 function formatDate(date) {
   if (!date) return "-";
   return new Date(date).toLocaleString("en-PH", {
@@ -138,9 +169,24 @@ async function confirmInspection() {
 
     <div v-else class="card shadow-sm">
       <div class="card-body">
-        <div class="table-responsive">
+        <div class="d-flex flex-wrap gap-2 align-items-end mb-3">
+          <div>
+            <label class="form-label small mb-0" for="pi-from">Returned from</label>
+            <input id="pi-from" name="pi_from" type="date" class="form-control" v-model="dateFrom" :max="dateTo || undefined" />
+          </div>
+          <div>
+            <label class="form-label small mb-0" for="pi-to">To</label>
+            <input id="pi-to" name="pi_to" type="date" class="form-control" v-model="dateTo" :min="dateFrom || undefined" />
+          </div>
+          <button type="button" class="btn btn-outline-secondary" :disabled="!dateFrom && !dateTo" @click="clearDates">
+            Clear dates
+          </button>
+          <span v-if="rangeInvalid" class="text-danger small">"From" is after "To".</span>
+        </div>
+
+        <div class="table-responsive table-scroll">
           <table class="table table-striped table-hover align-middle mb-0">
-            <thead class="table-light">
+            <thead class="table-light sticky-top">
               <tr>
                 <th>Item</th>
                 <th>Qty Returned</th>
@@ -151,7 +197,7 @@ async function confirmInspection() {
               </tr>
             </thead>
             <tbody>
-              <tr v-for="i in inspections" :key="i.idinspection">
+              <tr v-for="i in filteredInspections" :key="i.idinspection">
                 <td>
                   {{ i.item_name }}
                   <div v-if="i.report" class="small mt-1">
@@ -192,9 +238,9 @@ async function confirmInspection() {
                   </button>
                 </td>
               </tr>
-              <tr v-if="inspections.length === 0">
+              <tr v-if="filteredInspections.length === 0">
                 <td colspan="6" class="text-center text-muted py-4">
-                  Nothing waiting for inspection right now.
+                  {{ inspections.length ? "No inspections in this date range." : "Nothing waiting for inspection right now." }}
                 </td>
               </tr>
             </tbody>
@@ -342,3 +388,10 @@ async function confirmInspection() {
     </div>
   </div>
 </template>
+
+<style scoped>
+.table-scroll {
+  max-height: 520px;
+  overflow: auto;
+}
+</style>

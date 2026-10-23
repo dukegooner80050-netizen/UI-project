@@ -362,8 +362,9 @@ const kpiCards = computed(() => {
         label: "Pending Requests",
         value: pendingRequests.value,
         sub: pendingRequests.value ? "waiting for a decision" : "nothing waiting",
-        icon: "bi-list-check",
+        icon: pendingRequests.value ? "bi-list-check" : "bi-check-circle",
         tone: pendingRequests.value ? "text-warning" : "text-success",
+        level: pendingRequests.value ? "warning" : "ok",
         onClick: () => (showPendingRequestsModal.value = true),
       },
       {
@@ -373,8 +374,9 @@ const kpiCards = computed(() => {
         sub: overdueLines.value.length
           ? `from ${overdueBorrowers.value} borrower${overdueBorrowers.value === 1 ? "" : "s"}`
           : "all returns on time",
-        icon: "bi-clock-history",
+        icon: overdueLines.value.length ? "bi-clock-history" : "bi-check-circle",
         tone: overdueLines.value.length ? "text-danger" : "text-success",
+        level: overdueLines.value.length ? "danger" : "ok",
         onClick: () => (overdueModal.value = true),
       },
       {
@@ -386,7 +388,8 @@ const kpiCards = computed(() => {
           : lowStockCount.value
             ? "at or below minimum"
             : "stock levels are fine",
-        icon: "bi-exclamation-triangle",
+        icon: lowStockCount.value ? "bi-exclamation-triangle" : "bi-check-circle",
+        level: !lowStockCount.value ? "ok" : criticalStock.value.length ? "danger" : "warning",
         tone: criticalStock.value.length
           ? "text-danger"
           : lowStockCount.value
@@ -943,13 +946,14 @@ eventContent(arg) {
       <div v-for="c in kpiCards" :key="c.key" class="col-6 col-lg">
         <div
           class="card shadow-sm h-100 kpi-card"
-          :class="{ 'kpi-click': c.onClick }"
+          :class="[{ 'kpi-click': c.onClick }, c.level ? 'kpi-' + c.level : '']"
           :role="c.onClick ? 'button' : undefined"
           :tabindex="c.onClick ? 0 : undefined"
           @click="c.onClick && c.onClick()"
           @keyup.enter="c.onClick && c.onClick()"
         >
-          <div class="card-body d-flex justify-content-between align-items-center gap-2">
+          <div class="card-body d-flex justify-content-between align-items-center gap-2 position-relative">
+            <span v-if="c.level === 'danger'" class="kpi-pulse" aria-hidden="true"></span>
             <div>
               <div class="text-muted small">{{ c.label }}</div>
               <div class="fs-2 fw-bold lh-1 my-1" :class="c.tone">{{ c.value }}</div>
@@ -1216,6 +1220,54 @@ eventContent(arg) {
 </template>
 
 <style scoped>
+/* KPI urgency: red / amber cards need action, a count of 0 goes quiet. */
+.kpi-card {
+  border-left: 4px solid transparent;
+}
+.kpi-danger {
+  border-left-color: var(--bs-danger);
+  background-color: var(--bs-danger-bg-subtle);
+}
+.kpi-warning {
+  border-left-color: var(--bs-warning);
+  background-color: var(--bs-warning-bg-subtle);
+}
+.kpi-ok {
+  opacity: 0.78;
+}
+.kpi-pulse {
+  position: absolute;
+  top: 10px;
+  right: 12px;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--bs-danger);
+}
+.kpi-pulse::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  background: var(--bs-danger);
+  animation: kpi-ping 1.6s ease-out infinite;
+}
+@keyframes kpi-ping {
+  0% {
+    transform: scale(1);
+    opacity: 0.7;
+  }
+  100% {
+    transform: scale(2.8);
+    opacity: 0;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .kpi-pulse::after {
+    animation: none;
+  }
+}
+
 .dash-col:empty {
   display: none;
 }

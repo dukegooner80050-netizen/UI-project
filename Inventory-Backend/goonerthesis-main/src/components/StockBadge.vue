@@ -19,8 +19,10 @@ const badgeClass = computed(() => {
       return "bg-info text-dark";
     case "Optimal":
       return "bg-success";
-    case "Deployed":
+    case "Borrowed":
       return "bg-primary";
+    case "Deployed":
+      return "badge-deployed";
     default:
       return "bg-secondary";
   }
@@ -30,3 +32,10 @@ const badgeClass = computed(() => {
 <template>
   <span class="badge" :class="badgeClass">{{ level || "-" }}</span>
 </template>
+
+<style scoped>
+.badge-deployed {
+  background-color: #6f42c1;
+  color: #fff;
+}
+</style>

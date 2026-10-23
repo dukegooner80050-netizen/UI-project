@@ -86,9 +86,15 @@ class ItemController extends Controller
         }
 
         $validated['price'] = $validated['price'] ?? 0;
-        $validated['critical_stock'] = $validated['critical_stock'] ?? Item::DEFAULT_CRITICAL;
-        $validated['minimum_stock']  = $validated['minimum_stock']  ?? Item::DEFAULT_MINIMUM;
-        $validated['optimal_stock']  = $validated['optimal_stock']  ?? Item::DEFAULT_OPTIMAL;
+        // Levels left blank fall back to the Settings defaults for this kind of
+        // item (School Equipment / Type B), else the built-in 2 / 5 / 20.
+        $group = \App\Http\Controllers\SettingController::stockGroupFor($validated['category'], $validated['item_type']);
+        $defaults = $group
+            ? \App\Http\Controllers\SettingController::stockLevelsFor($group)
+            : ['critical' => Item::DEFAULT_CRITICAL, 'minimum' => Item::DEFAULT_MINIMUM, 'optimal' => Item::DEFAULT_OPTIMAL];
+        $validated['critical_stock'] = $validated['critical_stock'] ?? $defaults['critical'];
+        $validated['minimum_stock']  = $validated['minimum_stock']  ?? $defaults['minimum'];
+        $validated['optimal_stock']  = $validated['optimal_stock']  ?? $defaults['optimal'];
 
         if ($error = $this->thresholdError($validated)) {
             return $error;

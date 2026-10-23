@@ -7,6 +7,7 @@ import {
   restockItem,
 } from "../services/items";
 import { getRequests, returnEquipment } from "../services/requests";
+import { getStockLevels } from "../services/settings";
 import AlertMessage from "../components/AlertMessage.vue";
 import StockBadge from "../components/StockBadge.vue";
 import DueBadge from "../components/DueBadge.vue";
@@ -114,12 +115,22 @@ function formatDate(date) {
   });
 }
 
+// Starting stock levels for a new item come from Settings.
+const stockDefaults = ref({ critical: 2, minimum: 5, optimal: 20 });
+onMounted(async () => {
+  try {
+    stockDefaults.value = (await getStockLevels()).school_equipment;
+  } catch (e) {
+    /* keep the built-in 2 / 5 / 20 */
+  }
+});
+
 function openAdd() {
   addName.value = "";
   addQty.value = 1;
-  addCritical.value = 2;
-  addMinimum.value = 5;
-  addOptimal.value = 20;
+  addCritical.value = stockDefaults.value.critical;
+  addMinimum.value = stockDefaults.value.minimum;
+  addOptimal.value = stockDefaults.value.optimal;
   addReturnDays.value = "";
   addPerHeadLimit.value = "";
   addIsLimitable.value = true;
@@ -452,7 +463,17 @@ async function confirmModal() {
           <tbody>
             <tr v-for="e in equipments" :key="e.iditems">
               <td>{{ e.name }}</td>
-              <td>{{ e.status }}</td>
+              <td>
+                <div class="d-flex flex-wrap gap-1">
+                  <span v-if="e.qty > 0" class="badge bg-success">Available</span>
+                  <span v-if="Number(e.borrowedQty) > 0" class="badge bg-primary">Borrowed</span>
+                  <span v-if="Number(e.deployedQty) > 0" class="badge badge-deployed">Deployed</span>
+                  <span
+                    v-if="!(e.qty > 0) && !(Number(e.borrowedQty) > 0) && !(Number(e.deployedQty) > 0)"
+                    class="badge bg-dark"
+                  >Out of Stock</span>
+                </div>
+              </td>
               <td>
                 <StockBadge
                   :level="e.stock_level"
@@ -907,6 +928,11 @@ async function confirmModal() {
 </template>
 
 <style scoped>
+.badge-deployed {
+  background-color: #6f42c1;
+  color: #fff;
+}
+
 .table-scroll {
   max-height: 420px;
   overflow-y: auto;
