@@ -965,8 +965,10 @@ eventContent(arg) {
     <div v-if="isAdmin" class="row g-3 mb-3">
       <div class="col-md-6">
         <div class="card shadow-sm h-100">
+          <div class="card-header d-flex flex-wrap justify-content-between align-items-center gap-2">
+            <h6 class="mb-0">Items by Status</h6>
+          </div>
           <div class="card-body">
-            <h6 class="mb-1">Items by Status</h6>
             <div class="text-muted small mb-2">Number of item types in each status</div>
             <div class="chart-wrap">
               <canvas ref="statusCanvas"></canvas>
@@ -977,8 +979,10 @@ eventContent(arg) {
 
       <div class="col-md-6">
         <div class="card shadow-sm h-100">
+          <div class="card-header d-flex flex-wrap justify-content-between align-items-center gap-2">
+            <h6 class="mb-0">Units by Category</h6>
+          </div>
           <div class="card-body">
-            <h6 class="mb-1">Units by Category</h6>
             <div class="text-muted small mb-2">Total units currently in stock</div>
             <div class="chart-wrap">
               <canvas ref="categoryCanvas"></canvas>
@@ -1006,8 +1010,10 @@ eventContent(arg) {
       <div class="col-lg col-md-6 dash-col">
 
         <div class="card shadow-sm">
+          <div class="card-header d-flex flex-wrap justify-content-between align-items-center gap-2">
+            <h6 class="mb-0">Recent Activity Logs</h6>
+          </div>
           <div class="card-body">
-            <h6 class="mb-3">Recent Activity Logs</h6>
             <ul class="list-group list-group-flush">
               <li v-if="recentLogsList.length === 0" class="list-group-item text-muted">
                 No activity logs yet
@@ -1212,6 +1218,35 @@ eventContent(arg) {
 <style scoped>
 .dash-col:empty {
   display: none;
+}
+
+/* The panels in this row share one height (the tallest, up to a cap);
+   anything longer scrolls inside its own card. */
+.dash-col:not(:empty) {
+  display: flex;
+  flex-direction: column;
+}
+.dash-col > #restock-panel {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+.dash-col :deep(.card) {
+  flex: 1 1 auto;
+  min-height: 0;
+  max-height: 460px;
+  margin-bottom: 0 !important;
+  display: flex;
+  flex-direction: column;
+}
+.dash-col :deep(.card-body) {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+}
+.dash-col :deep(.panel-scroll) {
+  max-height: none;
 }
 
 .cal-wrap {
