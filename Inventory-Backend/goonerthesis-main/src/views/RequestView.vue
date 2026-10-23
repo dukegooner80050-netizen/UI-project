@@ -321,6 +321,13 @@ const uniformOptions = computed(() => {
 
 // SELECTED ITEM //
 
+// The chosen uniform type, so its description can be shown under the picker.
+const selectedUniformType = computed(() =>
+  uniformTypes.value.find(
+    (t) => String(t.idUniftype) === String(selectedUniformTypeId.value),
+  ),
+);
+
 const selectedItem = computed(() => {
   return (
     itemOptions.value.find(
@@ -966,6 +973,9 @@ watch(activeTab, async () => {
                 {{ type.uniform_name }}
               </option>
             </select>
+            <div v-if="selectedUniformType?.description" class="form-text">
+              {{ selectedUniformType.description }}
+            </div>
           </div>
 
           <!-- Uniform Variant -->

@@ -739,7 +739,6 @@ onMounted(async () => {
                       v-model="arRoleChoice[r.idUsers]"
                       :aria-label="'Role for ' + r.full_name"
                     >
-                      <option value="amo">AMO</option>
                       <option value="department_head">Department Head</option>
                       <option value="admin">Admin</option>
                       <option value="instructor">Instructor</option>

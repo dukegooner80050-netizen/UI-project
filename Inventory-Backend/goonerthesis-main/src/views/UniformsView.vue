@@ -185,26 +185,11 @@ async function proceedAddType() {
 
 /* EDIT UNIFORM TYPE */
 
-const editTypeModalOpen = ref(false);
 const editTypeConfirm = ref(false);
 const editingType = ref(null);
 
 const editTypeName = ref("");
 const editTypeDescription = ref("");
-
-function openEditType(type) {
-  editingType.value = type;
-  editTypeName.value = type.uniform_name || "";
-  editTypeDescription.value = type.description || "";
-  editTypeConfirm.value = false;
-  editTypeModalOpen.value = true;
-}
-
-function closeEditType() {
-  editTypeModalOpen.value = false;
-  editTypeConfirm.value = false;
-  editingType.value = null;
-}
 
 // Step 1: validate, then show the confirmation screen.
 function requestTypeEdit() {
@@ -232,7 +217,7 @@ async function saveTypeEdit() {
       description: description,
     });
     await loadAll();
-    closeEditType();
+    closeEditVariant();
   } catch (e) {
     console.error("Failed to update uniform type:", e);
     editTypeConfirm.value = false;
@@ -298,6 +283,11 @@ async function confirmDeleteUniformType() {
 const variantModalOpen = ref(false);
 const variantConfirmModalOpen = ref(false);
 const variantTypeId = ref("");
+
+// The type picked in the Add Variant dialog, to show its description.
+const variantType = computed(() =>
+  uniformTypes.value.find((t) => String(t.idUniftype) === String(variantTypeId.value)),
+);
 const variantDepartmentId = ref("");
 const variantSize = ref("");
 const variantGender = ref("Unisex");
@@ -416,10 +406,22 @@ const editVariantDepartmentId = ref("");
 const editVariantSize = ref("");
 const editVariantQuantity = ref(0); */
 
+// One Edit dialog for both: the "Variant" tab edits this size/department's
+// price, the "Type" tab edits the uniform type it belongs to (name and
+// description, shared by every variant of that type).
+const editTab = ref("variant"); // "variant" | "type"
+
 function openEditVariant(variant) {
   editingVariant.value = variant;
   editVariantPrice.value = Number(variant.price) || 0;
   editVariantGender.value = variant.gender || "Unisex";
+
+  editTab.value = "variant";
+  editingType.value = variant.type || null;
+  editTypeName.value = variant.type?.uniform_name || "";
+  editTypeDescription.value = variant.type?.description || "";
+  editTypeConfirm.value = false;
+
   editVariantModalOpen.value = true;
 }
 
@@ -428,7 +430,39 @@ function closeEditVariant() {
   editingVariant.value = null;
   editVariantPrice.value = 0;
   editVariantGender.value = "Unisex";
+
+  editTab.value = "variant";
+  editingType.value = null;
+  editTypeConfirm.value = false;
 }
+
+function switchEditTab(tab) {
+  editTab.value = tab;
+  editTypeConfirm.value = false;
+}
+
+// A dot on a tab means it has changes that are not saved yet.
+const variantDirty = computed(
+  () =>
+    !!editingVariant.value &&
+    Number(editVariantPrice.value) !== Number(editingVariant.value.price || 0),
+);
+
+const typeDirty = computed(
+  () =>
+    !!editingType.value &&
+    (editTypeName.value.trim() !== (editingType.value.uniform_name || "") ||
+      editTypeDescription.value.trim() !== (editingType.value.description || "")),
+);
+
+// How many variants share the type being edited (the change applies to all).
+const typeVariantCount = computed(() =>
+  editingType.value
+    ? uniformVariants.value.filter(
+        (v) => String(v.idUniftype) === String(editingType.value.idUniftype),
+      ).length
+    : 0,
+);
 
 function saveVariantEdit() {
   if (!editingVariant.value) {
@@ -707,6 +741,12 @@ const visibleTypes = computed(() => {
                 <strong>
                   {{ getTypeName(variant) }}
                 </strong>
+                <div
+                  v-if="variant.type?.description"
+                  class="small text-muted type-description"
+                >
+                  {{ variant.type.description }}
+                </div>
               </td>
 
               <!-- DEPARTMENT -->
@@ -846,57 +886,6 @@ const visibleTypes = computed(() => {
       </div>
     </div>
 
-    <!-- EDIT UNIFORM TYPE MODAL -->
-
-    <div v-if="editTypeModalOpen" class="modal-backdrop-custom">
-      <div class="modal-custom">
-        <div class="modal-header">
-          <h5 class="mb-0">Edit Uniform Type</h5>
-
-          <button type="button" class="btn-close" @click="closeEditType"></button>
-        </div>
-
-        <div class="modal-body">
-          <template v-if="!editTypeConfirm">
-            <label for="un-edit-type-name" class="form-label"> Uniform Name </label>
-            <input class="form-control mb-3" v-model="editTypeName" id="un-edit-type-name" name="edit-type-name" />
-            <label for="un-edit-type-description" class="form-label"> Description </label>
-            <textarea class="form-control" rows="3" v-model="editTypeDescription" id="un-edit-type-description" name="edit-type-description"></textarea>
-          </template>
-
-          <!-- CONFIRMATION SCREEN -->
-          <div v-else class="alert alert-warning mb-0">
-            <h6 class="mb-3">Confirm Action</h6>
-            Save changes to
-            <strong>{{ editingType?.uniform_name }}</strong>?
-            <div v-if="editTypeName.trim() !== editingType?.uniform_name" class="mt-2">
-              New name: <strong>{{ editTypeName.trim() }}</strong>
-            </div>
-          </div>
-        </div>
-
-        <div class="modal-footer">
-          <button
-            class="btn btn-secondary"
-            @click="editTypeConfirm ? (editTypeConfirm = false) : closeEditType()"
-          >
-            {{ editTypeConfirm ? "Back" : "Cancel" }}
-          </button>
-
-          <button
-            v-if="!editTypeConfirm"
-            class="btn btn-primary"
-            @click="requestTypeEdit"
-          >
-            Save Changes
-          </button>
-          <button v-else class="btn btn-success" @click="saveTypeEdit">
-            Confirm
-          </button>
-        </div>
-      </div>
-    </div>
-
     <!-- ADD VARIANT MODAL -->
 
     <div v-if="variantModalOpen" class="modal-backdrop-custom">
@@ -917,6 +906,9 @@ const visibleTypes = computed(() => {
               {{ type.uniform_name }}
             </option>
           </select>
+          <div v-if="variantType?.description" class="form-text mb-3">
+            {{ variantType.description }}
+          </div>
 
           <!-- DEPARTMENT -->
 
@@ -1006,17 +998,46 @@ const visibleTypes = computed(() => {
       </div>
     </div>
 
-    <!-- EDIT VARIANT MODAL -->
+    <!-- EDIT UNIFORM MODAL: "Variant" and "Type" tabs -->
 
     <div v-if="editVariantModalOpen" class="modal-backdrop-custom">
       <div class="modal-custom">
         <div class="modal-header">
-          <h5 class="mb-0">Edit Uniform Variant</h5>
+          <h5 class="mb-0">Edit Uniform</h5>
 
           <button type="button" class="btn-close" @click="closeEditVariant"></button>
         </div>
 
+        <!-- TABS -->
+        <div class="px-3 pt-3">
+          <div class="btn-group w-100" role="tablist" aria-label="What to edit">
+            <button
+              type="button"
+              class="btn"
+              :class="editTab === 'variant' ? 'btn-primary' : 'btn-outline-primary'"
+              role="tab"
+              :aria-selected="editTab === 'variant'"
+              @click="switchEditTab('variant')"
+            >
+              Variant<span v-if="variantDirty"> •</span>
+            </button>
+            <button
+              type="button"
+              class="btn"
+              :class="editTab === 'type' ? 'btn-primary' : 'btn-outline-primary'"
+              role="tab"
+              :aria-selected="editTab === 'type'"
+              :disabled="!editingType"
+              @click="switchEditTab('type')"
+            >
+              Type<span v-if="typeDirty"> •</span>
+            </button>
+          </div>
+        </div>
+
         <div class="modal-body">
+          <!-- VARIANT TAB -->
+          <template v-if="editTab === 'variant'">
           <!-- TYPE -->
           <label for="un-input" class="form-label"> Uniform Type </label>
           <input class="form-control mb-3" :value="editingVariant ? getTypeName(editingVariant) : ''" disabled id="un-input" name="input" />
@@ -1036,16 +1057,69 @@ const visibleTypes = computed(() => {
           <!-- QUANTITY -->
           <label for="un-input-4" class="form-label"> Quantity </label>
           <input type="number" class="form-control" :value="editingVariant ? editingVariant.quantity : 0" disabled id="un-input-4" name="input" />
+          </template>
+
+          <!-- TYPE TAB -->
+          <template v-else-if="!editTypeConfirm">
+            <div class="alert alert-info py-2 small">
+              This is the uniform type, shared by
+              <strong>{{ typeVariantCount }}</strong>
+              variant{{ typeVariantCount === 1 ? "" : "s" }}. Changes here apply to all of them.
+            </div>
+
+            <label for="un-edit-type-name" class="form-label"> Uniform Name </label>
+            <input class="form-control mb-3" v-model="editTypeName" id="un-edit-type-name" name="edit-type-name" />
+
+            <label for="un-edit-type-description" class="form-label"> Description </label>
+            <textarea class="form-control" rows="3" maxlength="255" v-model="editTypeDescription" id="un-edit-type-description" name="edit-type-description"></textarea>
+          </template>
+
+          <!-- TYPE CONFIRMATION -->
+          <div v-else class="alert alert-warning mb-0">
+            <h6 class="mb-3">Confirm Action</h6>
+            Save changes to
+            <strong>{{ editingType?.uniform_name }}</strong>
+            for all {{ typeVariantCount }} of its variants?
+            <div v-if="editTypeName.trim() !== editingType?.uniform_name" class="mt-2">
+              New name: <strong>{{ editTypeName.trim() }}</strong>
+            </div>
+          </div>
         </div>
 
         <div class="modal-footer">
-          <button type="button" class="btn btn-secondary" @click="closeEditVariant">
-            Cancel
-          </button>
+          <!-- VARIANT TAB -->
+          <template v-if="editTab === 'variant'">
+            <button type="button" class="btn btn-secondary" @click="closeEditVariant">
+              Cancel
+            </button>
 
-          <button type="button" class="btn btn-primary" @click="saveVariantEdit">
-            Save Changes
-          </button>
+            <button type="button" class="btn btn-primary" @click="saveVariantEdit">
+              Save Changes
+            </button>
+          </template>
+
+          <!-- TYPE TAB -->
+          <template v-else>
+            <button
+              type="button"
+              class="btn btn-secondary"
+              @click="editTypeConfirm ? (editTypeConfirm = false) : closeEditVariant()"
+            >
+              {{ editTypeConfirm ? "Back" : "Cancel" }}
+            </button>
+
+            <button
+              v-if="!editTypeConfirm"
+              type="button"
+              class="btn btn-primary"
+              @click="requestTypeEdit"
+            >
+              Save Changes
+            </button>
+            <button v-else type="button" class="btn btn-success" @click="saveTypeEdit">
+              Confirm
+            </button>
+          </template>
         </div>
       </div>
     </div>
