@@ -40,6 +40,7 @@ class Item extends Model
         'category',
         'item_type',
         'quantity',
+        'reserved_quantity',
         'damaged_quantity',
         'critical_stock',
         'minimum_stock',
@@ -85,7 +86,7 @@ class Item extends Model
         }
 
         $borrowed = \App\Models\RequestItem::where('iditems', $this->iditems)
-            ->whereHas('request', fn ($q) => $q->where('status', 'Approved'))
+            ->whereHas('request', fn ($q) => $q->where('status', 'Approved')->where('stock_held', false))
             ->get()
             ->sum(fn ($ri) => (int) $ri->quantity - (int) $ri->returned_quantity);
 

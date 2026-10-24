@@ -2,6 +2,7 @@
 import { printBorrowerForm, hasBorrowedItems } from "../services/borrowerForm";
 import { ref, watch, computed, onMounted, nextTick } from "vue";
 import { createRequestBatch, getRequests, confirmReceived } from "../services/requests";
+import { fulfilmentState } from "../services/requestState";
 import {
   listUniformTypes,
   listUniformVariants,
@@ -101,6 +102,7 @@ const receiveBusy = ref(false);
 
 const studentName = ref("");
 const studentNumber = ref("");
+const studentPaid = ref(false);
 
 async function doConfirmReceived() {
   const id = selected.value?.id;
@@ -303,7 +305,7 @@ const itemOptions = computed(() => {
       return false;
     })
     .filter((item) => {
-      const stock = Number(item.qty) || 0;
+      const stock = (Number(item.qty) || 0) - (Number(item.reservedQty) || 0);
       const reserved = reservedStockMap.value[item.id] || 0;
       const alreadyRequested = totalRequestedMap.value[item.id] || 0;
       return stock - reserved - alreadyRequested > 0;
@@ -318,6 +320,57 @@ const uniformOptions = computed(() => {
     return String(variant.idUniftype) === String(typeId);
   });
 });
+
+// CASHIER: pick Course, Gender and Size one by one instead of one long list.
+// Each choice only offers what exists for the choices before it; once all three
+// are set, the matching variant is selected.
+const pickCourse = ref("");
+const pickGender = ref("");
+const pickSize = ref("");
+const genderOf = (v) => v.gender || "Unisex";
+const courseOf = (v) => v.department?.dept_name || "N/A";
+const courseChoices = computed(() => [
+  ...new Set(uniformOptions.value.map(courseOf)),
+].sort());
+const genderChoices = computed(() => [
+  ...new Set(
+    uniformOptions.value
+      .filter((v) => courseOf(v) === pickCourse.value)
+      .map(genderOf),
+  ),
+].sort());
+const sizeChoices = computed(() => {
+  const seen = new Map();
+  uniformOptions.value
+    .filter(
+      (v) =>
+        courseOf(v) === pickCourse.value && genderOf(v) === pickGender.value,
+    )
+    .forEach((v) => seen.set(String(v.size), v));
+  return [...seen.keys()];
+});
+function syncPickedVariant() {
+  const v = uniformOptions.value.find(
+    (x) =>
+      courseOf(x) === pickCourse.value &&
+      genderOf(x) === pickGender.value &&
+      String(x.size) === String(pickSize.value),
+  );
+  selectedUniformVariantId.value = v ? String(v.idUnifvariant) : "";
+}
+watch(selectedUniformTypeId, () => {
+  pickCourse.value = "";
+  pickGender.value = "";
+  pickSize.value = "";
+});
+watch(pickCourse, () => {
+  pickGender.value = "";
+  pickSize.value = "";
+});
+watch(pickGender, () => {
+  pickSize.value = "";
+});
+watch([pickCourse, pickGender, pickSize], syncPickedVariant);
 
 // SELECTED ITEM //
 
@@ -357,7 +410,9 @@ const maxQty = computed(() => {
   if (!selectedItem.value) {
     return 0;
   }
-  const stock = Number(selectedItem.value.qty) || 0;
+  const stock =
+    (Number(selectedItem.value.qty) || 0) -
+    (Number(selectedItem.value.reservedQty) || 0);
   const reserved = reservedStockMap.value[selectedItem.value.id] || 0;
   const alreadyRequested = totalRequestedMap.value[selectedItem.value.id] || 0;
   const available = Math.max(stock - reserved - alreadyRequested, 0);
@@ -456,6 +511,8 @@ async function loadMyRequests() {
         studentName: request.studentName || "",
         studentNumber: request.studentNumber || "",
         receivedAt: request.receivedAt,
+        paidAt: request.paidAt,
+        stockHeld: !!request.stockHeld,
         location: request.location,
         room: request.room,
         purpose: request.purpose,
@@ -612,6 +669,7 @@ async function addToList() {
   selectedItemId.value = "";
   selectedUniformVariantId.value = "";
   selectedUniformTypeId.value = "";
+  pickCourse.value = "";
   qty.value = 1;
 
   await nextTick();
@@ -661,6 +719,10 @@ async function submitRequest(confirmed = false) {
   }
   if (uniformOnly.value && !studentNumber.value.trim()) {
     showWarning("Student ID Required", "Enter the student ID number this uniform request is for.");
+    return;
+  }
+  if (requestUniforms.value.length > 0 && !studentPaid.value) {
+    showWarning("Payment Not Confirmed", "Tick the box to confirm the student already paid for the uniforms at the cashier.");
     return;
   }
   if (!uniformOnly.value && !location.value) {
@@ -755,6 +817,7 @@ async function submitRequest(confirmed = false) {
     location: uniformOnly.value ? AMO_OFFICE : location.value,
     room: uniformOnly.value ? "N/A" : room.value,
     purpose: requestPurpose.value.trim(),
+    ...(requestUniforms.value.length > 0 ? { paid: studentPaid.value } : {}),
     ...(uniformOnly.value ? { student_name: studentName.value.trim(), student_number: studentNumber.value.trim() } : {}),
     items: requestItems.value.map((item) => ({
       iditems: item.itemId,
@@ -783,6 +846,7 @@ async function submitRequest(confirmed = false) {
     requestUniforms.value = [];
     studentName.value = "";
     studentNumber.value = "";
+    studentPaid.value = false;
     requestPurpose.value = "";
     location.value = "";
     room.value = "";
@@ -979,7 +1043,34 @@ watch(activeTab, async () => {
           </div>
 
           <!-- Uniform Variant -->
-          <div class="mb-3">
+          <div v-if="userRole === 'cashier'" class="row g-2 mb-3">
+            <div class="col-12 col-md-4">
+              <label for="rq-pick-course" class="form-label">Course</label>
+              <select v-model="pickCourse" class="form-select" id="rq-pick-course" :disabled="!selectedUniformTypeId">
+                <option value="">Select course</option>
+                <option v-for="c in courseChoices" :key="c" :value="c">{{ c }}</option>
+              </select>
+            </div>
+            <div class="col-6 col-md-4">
+              <label for="rq-pick-gender" class="form-label">Gender</label>
+              <select v-model="pickGender" class="form-select" id="rq-pick-gender" :disabled="!pickCourse">
+                <option value="">Select gender</option>
+                <option v-for="g in genderChoices" :key="g" :value="g">{{ g }}</option>
+              </select>
+            </div>
+            <div class="col-6 col-md-4">
+              <label for="rq-pick-size" class="form-label">Size</label>
+              <select v-model="pickSize" class="form-select" id="rq-pick-size" :disabled="!pickGender">
+                <option value="">Select size</option>
+                <option v-for="z in sizeChoices" :key="z" :value="z">{{ z }}</option>
+              </select>
+            </div>
+            <div v-if="selectedUniformVariant" class="form-text">
+              Available: {{ Number(selectedUniformVariant.quantity) || 0 }}
+            </div>
+          </div>
+
+          <div v-else class="mb-3">
             <label for="rq-selected-uniform-variant-id" class="form-label"> Uniform Variant </label>
 
             <select
@@ -1175,6 +1266,13 @@ watch(activeTab, async () => {
             placeholder="Student ID"
           />
           <div class="form-text">The AMO will see this and check the student's ID at pickup.</div>
+        </div>
+
+        <div v-if="requestUniforms.length > 0" class="form-check mb-3">
+          <input id="rq-student-paid" name="paid" type="checkbox" class="form-check-input" v-model="studentPaid" />
+          <label for="rq-student-paid" class="form-check-label">
+            The student has already paid for these uniforms at the cashier
+          </label>
         </div>
 
         <div v-else class="row">
@@ -1383,6 +1481,9 @@ watch(activeTab, async () => {
                       <div v-if="r.releasedAt" class="badge bg-info text-dark mt-1">
                         {{ r.releaseMethod }}
                       </div>
+                      <div v-if="fulfilmentState(r)" class="badge mt-1" :class="fulfilmentState(r).cls">
+                        {{ fulfilmentState(r).text }}
+                      </div>
                     </td>
                     <td>{{ formatDate(r.date) }}</td>
                     <td>
@@ -1525,6 +1626,9 @@ watch(activeTab, async () => {
                 class="mt-1 text-muted small"
               >
                 Approved — awaiting release.<span v-if="(selected.uniforms || []).length > 0"> The AMO will hand it over to the student at the office.</span>
+                <div v-if="fulfilmentState(selected)" class="badge mt-1" :class="fulfilmentState(selected).cls">
+                  {{ fulfilmentState(selected).text }}
+                </div>
               </div>
               <div v-if="selected.releasedAt" class="mt-1">
                 <template v-if="selected.receivedAt">

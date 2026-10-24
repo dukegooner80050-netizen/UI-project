@@ -98,14 +98,17 @@ onBeforeUnmount(() => stopPolling && stopPolling());
 </script>
 
 <template>
-  <div v-if="rows.length || message.text" class="card shadow-sm mb-3">
+  <div class="card shadow-sm mb-3">
     <div class="card-header d-flex flex-wrap justify-content-between align-items-center gap-2">
       <h6 class="mb-0">Returns to check</h6>
-      <span class="badge bg-warning text-dark">{{ rows.length }}</span>
+      <span class="badge" :class="rows.length ? 'bg-warning text-dark' : 'bg-secondary'">{{ rows.length }}</span>
     </div>
     <div class="card-body">
-      <p class="text-muted small mb-2">
+      <p v-if="rows.length" class="text-muted small mb-2">
         Borrowers say they returned these. Please check the items and confirm.
+      </p>
+      <p v-else-if="!loading" class="text-muted small mb-0">
+        Nothing to check. Returns that borrowers report will show up here.
       </p>
 
       <div

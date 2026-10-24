@@ -8,6 +8,7 @@ import DueBadge from "../components/DueBadge.vue";
 import { getErrorMessage } from "../services/errors";
 import { isReturnableType } from "../services/itemTypes";
 import { printBorrowerForm, hasBorrowedItems } from "../services/borrowerForm";
+import { fulfilmentState } from "../services/requestState";
 
 const showAlert = ref(false);
 const alertType = ref("success");
@@ -419,6 +420,9 @@ function statusBadgeClass(status) {
                     class="badge bg-info text-dark mt-1"
                   >
                     {{ releaseBadgeText(r) }}
+                  </div>
+                  <div v-if="fulfilmentState(r)" class="badge mt-1" :class="fulfilmentState(r).cls">
+                    {{ fulfilmentState(r).text }}
                   </div>
                   <div v-if="r.receivedAt" class="badge bg-success mt-1">
                     Received

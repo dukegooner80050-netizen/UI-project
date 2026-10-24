@@ -212,6 +212,12 @@ const clockTitle = computed(() =>
 );
 
 /*  CARD MODALS  */
+function goTo(path) {
+  lowStockModal.value = false;
+  showPendingRequestsModal.value = false;
+  router.push(path);
+}
+
 function openLowStockModal() {
   lowStockModal.value = true;
 }
@@ -1128,7 +1134,8 @@ eventContent(arg) {
         <ul class="list-group">
           <!-- Item rows -->
           <li v-for="item in lowStockItems" :key="item.id"
-            class="list-group-item d-flex justify-content-between align-items-start">
+            class="list-group-item d-flex justify-content-between align-items-start row-link"
+            role="link" tabindex="0" @click="goTo('/inventory')" @keydown.enter="goTo('/inventory')">
             <div>
               <strong>{{ item.name }}</strong><br />
               <small class="text-muted">{{ item.category }}</small>
@@ -1202,7 +1209,8 @@ eventContent(arg) {
           </li>
 
           <li v-for="r in recentRequestsList" :key="r.id"
-            class="list-group-item d-flex justify-content-between align-items-start">
+            class="list-group-item d-flex justify-content-between align-items-start row-link"
+            role="link" tabindex="0" @click="goTo('/pending-requests')" @keydown.enter="goTo('/pending-requests')">
             <div>
               <strong>{{ requestTitle(r) }}</strong><br />
               <small class="text-muted">
@@ -1233,7 +1241,16 @@ eventContent(arg) {
   background-color: var(--bs-warning-bg-subtle);
 }
 .kpi-ok {
-  opacity: 0.78;
+  border-left-color: var(--bs-success);
+  background-color: var(--bs-success-bg-subtle);
+}
+.row-link {
+  cursor: pointer;
+}
+.row-link:hover,
+.row-link:focus-visible {
+  background-color: var(--bs-tertiary-bg);
+  outline: none;
 }
 .kpi-pulse {
   position: absolute;

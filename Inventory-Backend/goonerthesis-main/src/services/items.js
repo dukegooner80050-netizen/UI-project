@@ -9,6 +9,8 @@ function normalize(item) {
     description: item.description,
     price: Number(item.price),
     qty: Number(item.quantity),
+    // Units approved requests are holding until the AMO releases them.
+    reservedQty: Number(item.reserved_quantity || 0),
     subCategory: item.item_type,
     stockLevel: item.stock_level,
     criticalStock: Number(item.critical_stock),

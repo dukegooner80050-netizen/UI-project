@@ -27,6 +27,7 @@ class ItemController extends Controller
     $borrowed = DB::table('requestitem')
         ->join('request', 'request.idrequest', '=', 'requestitem.idrequest')
         ->where('request.status', 'Approved')
+        ->where('request.stock_held', false)
         ->groupBy('requestitem.iditems')
         ->selectRaw('requestitem.iditems AS iditems, SUM(requestitem.quantity - requestitem.returned_quantity) AS total')
         ->pluck('total', 'iditems');
@@ -408,7 +409,7 @@ private function getBorrowedQuantity($itemId, ?Item $item = null)
 
     return RequestItem::where('iditems', $itemId)
         ->whereHas('request', function ($query) {
-            $query->where('status', 'Approved');
+            $query->where('status', 'Approved')->where('stock_held', false);
         })
         ->get()
         ->sum(function ($requestItem) {

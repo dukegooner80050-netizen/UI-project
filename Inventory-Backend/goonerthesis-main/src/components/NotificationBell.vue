@@ -206,6 +206,24 @@ function goSignups() {
   router.push({ path: "/settings", query: { tab: "ACCOUNT_REQUESTS" } });
 }
 
+function goRequests() {
+  closePanel();
+  router.push("/request");
+}
+
+// Where a request update leads, by who it is for:
+//   AMO review / return report  -> the page that handles it
+//   everything else (decisions, released, reservation ready...) -> My Requests
+function openNote(n) {
+  const t = n.event_type;
+  let to = "/request";
+  if (t === "inventory_review") to = "/pending-requests";
+  else if (t === "coordinator_review") to = "/coordinator-requests";
+  else if (t === "return_reported") to = "/dashboard";
+  closePanel();
+  router.push(to);
+}
+
 function goRestock() {
   closePanel();
   router.push("/dashboard");
@@ -308,8 +326,12 @@ watch(() => route.fullPath, throttled(load, 15000));
             <li
               v-for="n in recentNotes"
               :key="n.id"
-              class="bell-item"
+              class="bell-item bell-link"
               :class="{ 'bell-new': highlighted.has(n.id) }"
+              role="link"
+              tabindex="0"
+              @click="openNote(n)"
+              @keydown.enter="openNote(n)"
             >
               <span class="badge me-2" :class="noteBadge(n)">{{ noteLabel(n) }}</span>
               {{ n.message }}
@@ -324,7 +346,7 @@ watch(() => route.fullPath, throttled(load, 15000));
             New users waiting for approval ({{ signups.length }})
           </div>
           <ul class="list-unstyled mb-0">
-            <li v-for="u in signups" :key="u.idUsers" class="bell-item">
+            <li v-for="u in signups" :key="u.idUsers" class="bell-item bell-link" role="link" tabindex="0" @click="goSignups" @keydown.enter="goSignups">
               <strong>{{ u.full_name }}</strong>
               <span class="text-muted"> ({{ u.username }})</span>
               <div class="small text-muted">{{ formatWhen(u.requested_at) }}</div>
@@ -341,7 +363,7 @@ watch(() => route.fullPath, throttled(load, 15000));
             Returns to check ({{ returnsToCheck.length }})
           </div>
           <ul class="list-unstyled mb-0">
-            <li v-for="r in returnsToCheck" :key="r.id" class="bell-item">
+            <li v-for="r in returnsToCheck" :key="r.id" class="bell-item bell-link" role="link" tabindex="0" @click="goReturns" @keydown.enter="goReturns">
               <strong>{{ r.itemName }}</strong> &times; {{ r.quantity }}
               <span
                 class="badge ms-2"
@@ -365,7 +387,7 @@ watch(() => route.fullPath, throttled(load, 15000));
             Overdue returns ({{ overdue.length }})
           </div>
           <ul class="list-unstyled mb-0">
-            <li v-for="l in overdue" :key="l.key" class="bell-item">
+            <li v-for="l in overdue" :key="l.key" class="bell-item bell-link" role="link" tabindex="0" @click="goRequests" @keydown.enter="goRequests">
               <strong>{{ l.itemName }}</strong> &times; {{ l.borrowedQty }}
               <div class="small text-muted">
                 Request #{{ l.requestId }}
@@ -389,7 +411,7 @@ watch(() => route.fullPath, throttled(load, 15000));
             Critical stock ({{ critical.length }})
           </div>
           <ul class="list-unstyled mb-0">
-            <li v-for="i in critical" :key="i.iditems" class="bell-item">
+            <li v-for="i in critical" :key="i.iditems" class="bell-item bell-link" role="link" tabindex="0" @click="goRestock" @keydown.enter="goRestock">
               <strong>{{ i.item_name }}</strong>
               <span v-if="i.quantity <= 0" class="badge bg-dark ms-2">Out of stock</span>
               <span v-else class="text-muted ms-2">Qty {{ i.quantity }}</span>
@@ -498,5 +520,14 @@ watch(() => route.fullPath, throttled(load, 15000));
 }
 .bell-new {
   background: var(--bs-info-bg-subtle);
+}
+.bell-link {
+  cursor: pointer;
+  border-radius: 6px;
+}
+.bell-link:hover,
+.bell-link:focus-visible {
+  background: var(--bs-tertiary-bg);
+  outline: none;
 }
 </style>

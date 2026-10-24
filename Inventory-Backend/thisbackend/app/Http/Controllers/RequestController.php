@@ -58,6 +58,8 @@ return response()->json(
             'borrowedAt' => $request->borrowed_at,
             'releaseMethod' => $request->release_method,
             'releasedAt' => $request->released_at,
+            'paidAt' => $request->paid_at,
+            'stockHeld' => (bool) $request->stock_held,
             'releasedToStudent' => $request->released_to_student,
             'releasedStudentId' => $request->released_student_id,
             'studentName' => $request->student_name,
@@ -257,6 +259,8 @@ public function show($id)
         'borrowedAt' => $request->borrowed_at,
         'releaseMethod' => $request->release_method,
         'releasedAt' => $request->released_at,
+        'paidAt' => $request->paid_at,
+        'stockHeld' => (bool) $request->stock_held,
         'releasedToStudent' => $request->released_to_student,
         'releasedStudentId' => $request->released_student_id,
         'studentName' => $request->student_name,
@@ -306,6 +310,7 @@ public function store(HttpRequest $request)
         'uniforms' => 'nullable|array',
         'student_name' => 'nullable|string|max:255',
         'student_number' => 'nullable|string|max:50',
+        'paid' => 'nullable|boolean',
         'uniforms.*.idUnifvariant' => 'required|exists:uniformvariant,idUnifvariant',
         'uniforms.*.quantity' => 'required|integer|min:1',
         'location' => 'required|string|max:255',
@@ -338,6 +343,15 @@ if (
         return response()->json([
             'message' => 'Enter the full name of the student this uniform request is for.',
             'errors' => ['student_name' => ['The student name is required.']],
+        ], 422);
+    }
+
+    // The student pays at the cashier first; the cashier confirms it when
+    // submitting, and the AMO only hands the uniforms over afterwards.
+    if (strtolower((string) $role) === 'cashier' && !empty($validated['uniforms']) && empty($validated['paid'])) {
+        return response()->json([
+            'message' => 'Confirm that the student has already paid for the uniforms.',
+            'errors' => ['paid' => ['Payment must be confirmed.']],
         ], 422);
     }
 
@@ -391,6 +405,8 @@ if (
             'purpose' => $validated['purpose'],
             'student_number' => !empty($validated['uniforms']) ? trim((string) ($validated['student_number'] ?? '')) ?: null : null,
             'student_name' => !empty($validated['uniforms']) ? trim((string) ($validated['student_name'] ?? '')) ?: null : null,
+            'paid_at' => (!empty($validated['uniforms']) && !empty($validated['paid'])) ? now() : null,
+            'paid_by' => (!empty($validated['uniforms']) && !empty($validated['paid'])) ? request()->user()->idUsers : null,
         ]);
 
 $requestedPerItem = [];
@@ -552,7 +568,7 @@ public function approve(HttpRequest $httpRequest, $id)
 
             $item = Item::find($requestedItem->iditems);
 
-            if (!$item || $item->quantity < $requestedItem->quantity) {
+            if (!$item || ((int) $item->quantity - (int) ($item->reserved_quantity ?? 0)) < $requestedItem->quantity) {
                 return response()->json([
                     'message' => "Insufficient stock for item ID {$requestedItem->iditems}."
                 ], 400);
@@ -603,9 +619,9 @@ public function approve(HttpRequest $httpRequest, $id)
 
             $item = Item::find($requestedItem->iditems);
 
-            $item->quantity -= $requestedItem->quantity;
-            $item->refreshStatus();
-
+            // Hold the units for this request; they leave the shelf when the
+            // AMO releases it (see release()).
+            $item->reserved_quantity = (int) ($item->reserved_quantity ?? 0) + (int) $requestedItem->quantity;
             $item->save();
 
             // Due date only applies to items that must come back.
@@ -630,6 +646,7 @@ public function approve(HttpRequest $httpRequest, $id)
 
         $request->update([
             'status' => 'Approved',
+            'stock_held' => $request->items->isNotEmpty(),
             'approved_by' => request()->user()->idUsers,
             'approval_remarks' => $remarks,
             'borrowed_at' => now(),
@@ -664,6 +681,8 @@ public function approve(HttpRequest $httpRequest, $id)
         'approvalRemarks' => $request->approval_remarks,
         'releaseMethod' => $request->release_method,
         'releasedAt' => $request->released_at,
+        'paidAt' => $request->paid_at,
+        'stockHeld' => (bool) $request->stock_held,
         'releasedToStudent' => $request->released_to_student,
         'releasedStudentId' => $request->released_student_id,
         'studentName' => $request->student_name,
@@ -755,6 +774,8 @@ return response()->json([
         'approvalRemarks' => $request->approval_remarks,
         'releaseMethod' => $request->release_method,
         'releasedAt' => $request->released_at,
+        'paidAt' => $request->paid_at,
+        'stockHeld' => (bool) $request->stock_held,
         'releasedToStudent' => $request->released_to_student,
         'releasedStudentId' => $request->released_student_id,
         'studentName' => $request->student_name,
@@ -860,6 +881,9 @@ public function reportReturn(HttpRequest $httpRequest, $id)
 
         if ($request->status !== 'Approved') {
             return response()->json(['message' => 'Only approved requests can have items returned.'], 422);
+        }
+        if ($request->stock_held) {
+            return response()->json(['message' => 'These items are reserved and have not been released yet.'], 422);
         }
 
         if ($requestItem->item && !$requestItem->item->isReturnable()) {
@@ -1096,6 +1120,28 @@ public function release(HttpRequest $httpRequest, $id)
             return response()->json(['message' => 'The requester already confirmed receiving this request, so its release can no longer be changed.'], 422);
         }
 
+        // Items approved under the reservation flow leave the shelf now.
+        if ($r->stock_held) {
+            $r->loadMissing('items');
+            foreach ($r->items as $line) {
+                $item = Item::where('iditems', $line->iditems)->lockForUpdate()->first();
+                if (!$item) continue;
+                if ((int) $item->quantity < (int) $line->quantity) {
+                    return response()->json(['message' => "Not enough stock of {$item->item_name} to release. Check the inventory first."], 422);
+                }
+            }
+            foreach ($r->items as $line) {
+                $item = Item::where('iditems', $line->iditems)->lockForUpdate()->first();
+                if (!$item) continue;
+                $item->quantity = (int) $item->quantity - (int) $line->quantity;
+                $item->reserved_quantity = max(0, (int) ($item->reserved_quantity ?? 0) - (int) $line->quantity);
+                $item->refreshStatus();
+                $item->save();
+            }
+            $r->stock_held = false;
+            $r->save();
+        }
+
         if ($isUniformRequest) {
             // Uniforms are handed to the student at the AMO office, so the AMO
             // (who physically gives them out) records the handover. The cashier
@@ -1264,6 +1310,9 @@ if ($requestItem->request->status !== 'Approved') {
     return response()->json([
         'message' => 'Only approved requests can be returned.'
     ], 400);
+}
+if ($requestItem->request->stock_held) {
+    return response()->json(['message' => 'These items are reserved and have not been released yet.'], 422);
 }
         $qty = $validated['quantity'];
 

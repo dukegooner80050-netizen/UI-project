@@ -33,6 +33,9 @@ protected $fillable = [
     'released_student_id',
     'student_name',
     'student_number',
+    'stock_held',
+    'paid_at',
+    'paid_by',
 ];
 
 public $timestamps = false;
