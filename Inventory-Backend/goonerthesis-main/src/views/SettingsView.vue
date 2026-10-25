@@ -19,7 +19,7 @@ import {
   approveAccountRequest,
   declineAccountRequest,
 } from "../services/accountRequests";
-import { getUsers, updateUser, deleteUser, resetUserPassword, setUserDepartment } from "../services/users";
+import { getUsers, updateUser, deleteUser, resetUserPassword, setUserDepartment, setUserStatus } from "../services/users";
 import { getDepartments } from "../services/departments";
 import ChangePasswordForm from "../components/ChangePasswordForm.vue";
 import { getErrorMessage } from "../services/errors";
@@ -350,6 +350,7 @@ async function saveDept(user) {
     notify("danger", getErrorMessage(e));
   }
 }
+const amActionsOpen = reactive({}); // { [idUsers]: true } rows whose action buttons are shown
 const amRoleChoice = reactive({}); // { [idUsers]: "amo" | "department_head" | "admin" | "instructor" | "cashier" }
 
 // Student ID length limit (General tab)
@@ -405,13 +406,20 @@ function amRoleChanged(user) {
 }
 
 const amConfirmOpen = ref(false);
-const amConfirmAction = ref(""); // "role" | "delete" | "reset"
+const amConfirmAction = ref(""); // "role" | "delete" | "reset" | "deactivate" | "reactivate"
 const amConfirmTarget = ref(null);
 const amWorking = ref(false);
 
 function amOpenRoleChange(user) {
   if (isSelf(user)) return;
   amConfirmAction.value = "role";
+  amConfirmTarget.value = user;
+  amConfirmOpen.value = true;
+}
+
+function amOpenToggle(user) {
+  if (isSelf(user)) return;
+  amConfirmAction.value = user.status === "inactive" ? "reactivate" : "deactivate";
   amConfirmTarget.value = user;
   amConfirmOpen.value = true;
 }
@@ -471,6 +479,15 @@ async function amRunConfirmed() {
       });
 
       notify("success", `${user.full_name}'s role is now ${ROLE_LABELS[newRole] || newRole}.`);
+    } else if (amConfirmAction.value === "deactivate" || amConfirmAction.value === "reactivate") {
+      const next = amConfirmAction.value === "deactivate" ? "inactive" : "active";
+      await setUserStatus(user.idUsers, next);
+      notify(
+        "success",
+        next === "inactive"
+          ? `${user.full_name} was deactivated and signed out.`
+          : `${user.full_name} was reactivated.`,
+      );
     } else if (amConfirmAction.value === "reset") {
       const res = await resetUserPassword(user.idUsers);
       amTemp.value = {
@@ -845,7 +862,7 @@ onMounted(async () => {
     <template v-else-if="activeTab === 'ACCOUNT_MANAGEMENT'">
 
       <p class="text-muted mb-3">
-        Every account in the system. Reassign a role or remove an account
+        Every account in the system. Reassign a role, deactivate an account, or remove one
         that no longer needs access.
       </p>
 
@@ -861,19 +878,29 @@ onMounted(async () => {
                 <tr>
                   <th>Name</th>
                   <th>Username</th>
+                  <th style="width: 100px">Status</th>
                   <th style="width: 170px">Role</th>
                   <th style="width: 200px">Department</th>
-                  <th style="width: 340px"></th>
+                  <th style="width: 150px">Actions</th>
                 </tr>
               </thead>
 
               <tbody>
-                <tr v-for="u in amUsers" :key="u.idUsers">
+                <tr v-for="u in amUsers" :key="u.idUsers" :class="{ 'text-muted': u.status === 'inactive' }">
                   <td>
                     {{ u.full_name }}
                     <span v-if="isSelf(u)" class="badge bg-secondary ms-1">You</span>
                   </td>
                   <td>{{ u.username }}</td>
+                  <td>
+                    <span
+                      class="badge"
+                      :class="u.status === 'inactive' ? 'bg-secondary' : u.status === 'pending' ? 'bg-warning text-dark' : 'bg-success'"
+                    >{{ u.status === 'inactive' ? 'Inactive' : u.status === 'pending' ? 'Pending' : 'Active' }}</span>
+                    <div v-if="u.status === 'inactive' && u.deactivated_at" class="small text-muted">
+                      since {{ new Date(String(u.deactivated_at).replace(' ', 'T')).toLocaleString('en-PH') }}
+                    </div>
+                  </td>
                   <td>
                     <select
                       class="form-select form-select-sm"
@@ -902,7 +929,15 @@ onMounted(async () => {
                     <span v-else class="text-muted">—</span>
                   </td>
                   <td>
-                    <div class="d-flex gap-2">
+                    <button
+                      class="btn btn-sm btn-secondary text-white"
+                      :aria-expanded="!!amActionsOpen[u.idUsers]"
+                      @click="amActionsOpen[u.idUsers] = !amActionsOpen[u.idUsers]"
+                    >
+                      Actions
+                      <span :class="{ rotated: amActionsOpen[u.idUsers] }" class="chevron ms-1">▶&#xFE0E;</span>
+                    </button>
+                    <div v-if="amActionsOpen[u.idUsers]" class="d-flex flex-column align-items-stretch gap-1 mt-2 text-nowrap">
                       <button
                         class="btn btn-sm btn-primary"
                         :disabled="isSelf(u) || !amRoleChanged(u)"
@@ -919,9 +954,18 @@ onMounted(async () => {
                         Reset Password
                       </button>
                       <button
+                        class="btn btn-sm"
+                        :class="u.status === 'inactive' ? 'btn-success text-white' : 'btn-warning'"
+                        :disabled="isSelf(u) || u.status === 'pending'"
+                        :title="u.status === 'pending' ? 'Handle it in Account Requests' : u.status === 'inactive' ? 'Let this account sign in again' : 'Switch this account off; history is kept'"
+                        @click="amOpenToggle(u)"
+                      >
+                        {{ u.status === 'inactive' ? 'Reactivate' : 'Deactivate' }}
+                      </button>
+                      <button
                         class="btn btn-sm btn-danger text-white"
                         :disabled="isSelf(u)"
-                        :title="isSelf(u) ? 'You can\'t remove your own account.' : ''"
+                        :title="isSelf(u) ? 'You can\'t remove your own account.' : 'Delete permanently (accounts with history can\'t be removed; deactivate them)'"
                         @click="amOpenDelete(u)"
                       >
                         Remove
@@ -931,7 +975,7 @@ onMounted(async () => {
                 </tr>
 
                 <tr v-if="amUsers.length === 0">
-                  <td colspan="5" class="text-center text-muted py-4">
+                  <td colspan="6" class="text-center text-muted py-4">
                     No accounts found.
                   </td>
                 </tr>
@@ -1112,7 +1156,11 @@ onMounted(async () => {
                 ? "Change Role"
                 : amConfirmAction === "reset"
                   ? "Reset Password"
-                  : "Remove Account"
+                  : amConfirmAction === "deactivate"
+                    ? "Deactivate Account"
+                    : amConfirmAction === "reactivate"
+                      ? "Reactivate Account"
+                      : "Remove Account"
             }}
           </h5>
           <button
@@ -1135,6 +1183,15 @@ onMounted(async () => {
             ({{ amConfirmTarget?.username }})? They will be signed out
             everywhere and must choose a new password at their next login.
           </p>
+          <p v-else-if="amConfirmAction === 'deactivate'" class="mb-2">
+            Deactivate <strong>{{ amConfirmTarget?.full_name }}</strong>
+            ({{ amConfirmTarget?.username }})? They are signed out now and can't sign in
+            until you reactivate them. Their requests and history are kept.
+          </p>
+          <p v-else-if="amConfirmAction === 'reactivate'" class="mb-2">
+            Reactivate <strong>{{ amConfirmTarget?.full_name }}</strong>
+            ({{ amConfirmTarget?.username }})? They can sign in again with their current password.
+          </p>
           <p v-else class="mb-2">
             Remove <strong>{{ amConfirmTarget?.full_name }}</strong>
             ({{ amConfirmTarget?.username }})? They will no longer be able to
@@ -1148,7 +1205,7 @@ onMounted(async () => {
           </button>
           <button
             class="btn"
-            :class="amConfirmAction === 'role' || amConfirmAction === 'reset' ? 'btn-primary' : 'btn-danger'"
+            :class="['role', 'reset', 'reactivate'].includes(amConfirmAction) ? 'btn-primary' : amConfirmAction === 'deactivate' ? 'btn-warning' : 'btn-danger'"
             :disabled="amWorking"
             @click="amRunConfirmed"
           >
@@ -1159,7 +1216,11 @@ onMounted(async () => {
                   ? "Confirm Change"
                   : amConfirmAction === "reset"
                     ? "Reset Password"
-                    : "Remove"
+                    : amConfirmAction === "deactivate"
+                      ? "Deactivate"
+                      : amConfirmAction === "reactivate"
+                        ? "Reactivate"
+                        : "Remove"
             }}
           </button>
         </div>
@@ -1210,4 +1271,12 @@ onMounted(async () => {
 </template>
 
 <style scoped>
+.chevron {
+  display: inline-block;
+  transition: transform 0.15s ease;
+  font-size: 0.75rem;
+}
+.chevron.rotated {
+  transform: rotate(90deg);
+}
 </style>

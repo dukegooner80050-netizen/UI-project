@@ -22,6 +22,12 @@ export async function setUserDepartment(id, iddept) {
   return data;
 }
 
+// "active" | "inactive": switch an account off or back on (AMO only).
+export async function setUserStatus(id, status) {
+  const { data } = await axios.put(`/users/${id}/status`, { status });
+  return data;
+}
+
 export async function deleteUser(id) {
     return (await axios.delete(`/users/${id}`)).data;
 }

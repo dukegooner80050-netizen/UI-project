@@ -551,7 +551,7 @@ function statusBadgeClass(status) {
                             >
                               <td>
                                 {{ uniform.uniformName || "Uniform" }}
-                                <div class="text-muted small">
+                                <div class="text-muted detail-sub">
                                   {{ uniform.department || "N/A" }}
                                   — Size {{ uniform.size || "N/A" }}
                                 </div>
@@ -570,20 +570,20 @@ function statusBadgeClass(status) {
 
                       <div class="col-md-5">
                         <div class="fw-semibold small text-muted mb-1">Details</div>
-                        <div class="small mb-1"><strong>Purpose:</strong> {{ r.purpose || "—" }}</div>
-                        <div v-if="r.directReason" class="small mb-1 text-warning-emphasis"><strong>Sent directly (skipped department head):</strong> {{ r.directReason }}</div>
-                        <div v-if="r.coordReview" class="small mb-1" :class="r.coordReview === 'Flagged' ? 'text-danger' : 'text-success'">
+                        <div class="mb-1"><strong>Purpose:</strong> {{ r.purpose || "—" }}</div>
+                        <div v-if="r.directReason" class="mb-1 text-warning-emphasis"><strong>Sent directly (skipped department head):</strong> {{ r.directReason }}</div>
+                        <div v-if="r.coordReview" class="mb-1" :class="r.coordReview === 'Flagged' ? 'text-danger' : 'text-success'">
                           <strong>Department head {{ r.coordReview.toLowerCase() }}</strong>
                           <span v-if="r.coordReviewedBy"> ({{ r.coordReviewedBy }})</span>
                           <span v-if="r.coordReviewNote"> — {{ r.coordReviewNote }}</span>
                         </div>
-                        <div v-if="r.studentName" class="small mb-1"><strong>Student:</strong> {{ r.studentName }}<span v-if="r.studentNumber"> (ID {{ r.studentNumber }})</span></div>
-                        <div class="small mb-1"><strong>Location:</strong> {{ r.location || "—" }}</div>
-                        <div class="small mb-1"><strong>Room:</strong> {{ r.room || "—" }}</div>
+                        <div v-if="r.studentName" class="mb-1"><strong>Student:</strong> {{ r.studentName }}<span v-if="r.studentNumber"> (ID {{ r.studentNumber }})</span></div>
+                        <div class="mb-1"><strong>Location:</strong> {{ r.location || "—" }}</div>
+                        <div class="mb-1"><strong>Room:</strong> {{ r.room || "—" }}</div>
 
                         <div
                           v-if="(r.status || '').toLowerCase() === 'approved'"
-                          class="small mb-1"
+                          class="mb-1"
                         >
                           <strong>Release:</strong>
                           <span v-if="r.releasedAt">
@@ -599,7 +599,7 @@ function statusBadgeClass(status) {
 
                         <div
                           v-if="r.releasedAt && (r.status || '').toLowerCase() !== 'rejected'"
-                          class="small mb-1"
+                          class="mb-1"
                         >
                           <strong>Received:</strong>
                           <span v-if="r.receivedAt">
@@ -611,14 +611,14 @@ function statusBadgeClass(status) {
 
                         <div
                           v-if="(r.status || '').toLowerCase() === 'approved' && r.approvalRemarks"
-                          class="small mb-1"
+                          class="mb-1"
                         >
                           <strong>Approval remarks:</strong> {{ r.approvalRemarks }}
                         </div>
 
                         <div
                           v-if="(r.status || '').toLowerCase() === 'rejected' && r.rejectReason"
-                          class="text-danger small mt-2"
+                          class="text-danger mt-2"
                         >
                           Rejection reason: {{ r.rejectReason }}
                         </div>
@@ -808,6 +808,19 @@ function statusBadgeClass(status) {
 }
 
 .detail-panel {
-  padding: 0.75rem 0.5rem;
+  /* width 0 + min-width 100%: fills the row but can never make the table wider */
+  width: 0;
+  min-width: 100%;
+  max-height: 340px;
+  overflow: auto;
+  padding: 0.75rem 0.75rem;
+  font-size: 1rem;
+  overflow-wrap: anywhere;
+}
+.detail-panel .table {
+  font-size: 0.95rem;
+}
+.detail-panel .detail-sub {
+  font-size: 0.85rem;
 }
 </style>

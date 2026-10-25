@@ -148,6 +148,47 @@ public function setDepartment(Request $request, $id)
     return response()->json(['message' => 'Department saved.', 'iddept' => $user->iddept]);
 }
 
+// Switch an account off (it can't sign in, history is kept) or back on.
+// Safer than Remove: nothing is lost and it can be undone any time.
+public function setStatus(Request $request, $id)
+{
+    $user = User::find($id);
+    if (!$user) {
+        return response()->json(['message' => 'User not found.'], 404);
+    }
+    $validated = $request->validate(['status' => 'required|in:active,inactive']);
+    $new = $validated['status'];
+
+    if ((int) $user->idUsers === (int) $request->user()->idUsers) {
+        return response()->json(['message' => "You can't deactivate your own account."], 422);
+    }
+    if (($user->status ?? 'active') === 'pending') {
+        return response()->json(['message' => 'This account is still waiting for approval. Approve or decline it in Account Requests.'], 422);
+    }
+    if ($new === 'inactive' && strtolower((string) $user->role) === 'amo'
+        && User::whereRaw('LOWER(role) = ?', ['amo'])->where('status', 'active')->where('idUsers', '!=', $user->idUsers)->doesntExist()) {
+        return response()->json(['message' => 'This is the last active AMO account, so it cannot be deactivated.'], 422);
+    }
+
+    $user->status = $new;
+    $user->deactivated_at = $new === 'inactive' ? now() : null;
+    $user->save();
+    if ($new === 'inactive') {
+        // Sign them out of every device straight away.
+        $user->tokens()->delete();
+    }
+
+    $this->logActivity(
+        $request->user()->idUsers,
+        ($new === 'inactive' ? 'Deactivated' : 'Reactivated') . " User '{$user->full_name}'"
+    );
+
+    return response()->json([
+        'message' => $new === 'inactive' ? 'Account deactivated.' : 'Account reactivated.',
+        'status' => $new,
+    ]);
+}
+
 public function destroy($id)
 {
     $user = User::find($id);
@@ -157,8 +198,18 @@ public function destroy($id)
             'message' => 'User not found.'
         ], 404);
     }
+    if ((int) $user->idUsers === (int) request()->user()->idUsers) {
+        return response()->json(['message' => "You can't remove your own account."], 422);
+    }
     $name = $user->full_name;
-    $user->delete();
+    try {
+        $user->delete();
+    } catch (\Illuminate\Database\QueryException $e) {
+        // Requests, logs and other records still point at this account.
+        return response()->json([
+            'message' => "'{$name}' has request history, so the account can't be removed. Use Deactivate instead; it keeps the history and can be undone.",
+        ], 422);
+    }
 
     $this->logActivity(
     request()->user()->idUsers,

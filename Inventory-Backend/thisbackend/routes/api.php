@@ -195,6 +195,7 @@ Route::middleware('role:amo,department_head,admin,instructor,cashier')->group(fu
         Route::get('/users/{id}', [UserController::class, 'show']);
         Route::post('/users', [UserController::class, 'store']);
         Route::put('/users/{id}', [UserController::class, 'update']);
+        Route::put('/users/{id}/status', [UserController::class, 'setStatus']);
         Route::put('/users/{id}/department', [UserController::class, 'setDepartment']);
         Route::delete('/users/{id}', [UserController::class, 'destroy']);
         Route::post('/users/{id}/reset-password', [UserController::class, 'resetPassword']);
