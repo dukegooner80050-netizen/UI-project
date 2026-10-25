@@ -32,6 +32,21 @@ const qty = ref(1);
 const location = ref("");
 const room = ref("");
 const requestPurpose = ref("");
+// Instructors: skip the department head when they are away or there is none.
+const sendDirect = ref(false);
+const directReasonChoice = ref("");
+const directReasonOther = ref("");
+const DIRECT_REASONS = [
+  "Department head is not present",
+  "Department head is unavailable",
+  "No department head assigned",
+  "Other",
+];
+const directReason = computed(() =>
+  directReasonChoice.value === "Other"
+    ? directReasonOther.value.trim()
+    : directReasonChoice.value,
+);
 const error = ref("");
 const invItems = ref([]);
 const requestItems = ref([]);
@@ -209,27 +224,6 @@ async function loadReservations() {
   } catch (err) {
     console.error("Failed to load uniform reservations:", err);
     showWarning("Reservation Error", "Unable to load uniform reservations.");
-  }
-}
-
-async function reserveOutOfStockUniform() {
-  if (userRole !== "cashier" || !selectedUniformVariant.value) return;
-  const quantity = Number(qty.value);
-  if (!Number.isInteger(quantity) || quantity < 1) {
-    error.value = "Reservation quantity must be at least 1.";
-    return;
-  }
-  reservationBusy.value = true;
-  error.value = "";
-  try {
-    await createUniformReservation(selectedUniformVariant.value.idUnifvariant, quantity);
-    await loadReservations();
-    showWarning("Reservation Added", "This uniform is out of stock. Your reservation has been added to the queue. The reservation status will change to Ready when stock is replenished.");
-    activeTab.value = "reservations";
-  } catch (err) {
-    showWarning("Reservation Failed", err.response?.data?.message || "Unable to reserve this uniform.");
-  } finally {
-    reservationBusy.value = false;
   }
 }
 
@@ -424,12 +418,26 @@ const maxQty = computed(() => {
   return available;
 });
 
-const uniformMaxQty = computed(() => {
-  if (!selectedUniformVariant.value) {
-    return 0;
-  }
-  return Number(selectedUniformVariant.value.quantity) || 0;
-});
+// Units the cashier can still request: on the shelf, minus what approved
+// requests are holding, plus anything held for this cashier's own Ready
+// reservations (the server counts those as available to them too).
+function availableUniformStock(variant) {
+  if (!variant) return 0;
+  const held = uniformReservations.value
+    .filter(
+      (x) =>
+        x.status === "Ready" &&
+        String(x.uniformVariantId) === String(variant.idUnifvariant),
+    )
+    .reduce((sum, x) => sum + (Number(x.quantity) || 0), 0);
+  return Math.max(
+    0,
+    (Number(variant.quantity) || 0) - (Number(variant.reserved_quantity) || 0) + held,
+  );
+}
+const uniformMaxQty = computed(() =>
+  availableUniformStock(selectedUniformVariant.value),
+);
 // QUANTITY WARNING //
 
 const qtyWarning = computed(() => {
@@ -500,6 +508,9 @@ async function loadMyRequests() {
         requester: request.requester,
         requesterName: request.requesterName,
         notedBy: request.notedBy,
+        directReason: request.directReason || "",
+        coordReview: request.coordReview || "",
+        coordReviewNote: request.coordReviewNote || "",
         request_date: request.request_date,
         status: request.status,
         date: request.request_date,
@@ -603,33 +614,52 @@ async function addToList() {
       error.value = "Please select a uniform variant.";
       return;
     }
-    if (quantity > uniformMaxQty.value) {
-      error.value = "Quantity exceeds available uniform stock.";
-      return;
-    }
-    const existing = requestUniforms.value.find(
-      (uniform) =>
-        String(uniform.uniformVariantId) ===
-        String(selectedUniformVariant.value.idUnifvariant),
-    );
-    if (existing) {
-      const newQuantity = Number(existing.quantity) + quantity;
-      if (newQuantity > uniformMaxQty.value) {
-        error.value = "Total quantity exceeds available uniform stock.";
-        return;
+    // What is on the shelf goes out as a normal request line; anything
+    // beyond it (or everything, when out of stock) becomes a reservation
+    // line, held for the paid student once the AMO restocks. Both go out
+    // with the same student name, ID and payment confirmation.
+    const variant = selectedUniformVariant.value;
+    const sameVariant = (u) =>
+      String(u.uniformVariantId) === String(variant.idUnifvariant);
+    const normalLine = requestUniforms.value.find((u) => sameVariant(u) && !u.reserve);
+    const reserveLine = requestUniforms.value.find((u) => sameVariant(u) && u.reserve);
+    const availLeft = Math.max(0, uniformMaxQty.value - Number(normalLine?.quantity || 0));
+    const takeNow = Math.min(quantity, availLeft);
+    const toReserve = quantity - takeNow;
+
+    const base = () => ({
+      uniformVariantId: variant.idUnifvariant,
+      uniformName: variant.type?.uniform_name || "Uniform",
+      department: variant.department?.dept_name || "N/A",
+      gender: variant.gender || "Unisex",
+      size: variant.size,
+      price: Number(variant.price) || 0,
+    });
+
+    if (takeNow > 0) {
+      if (normalLine) {
+        normalLine.quantity = Number(normalLine.quantity) + takeNow;
+      } else {
+        // A Ready reservation already has the student and the payment.
+        const held = uniformReservations.value.find(
+          (x) =>
+            x.status === "Ready" &&
+            String(x.uniformVariantId) === String(variant.idUnifvariant),
+        );
+        if (held) {
+          if (!studentName.value.trim() && held.studentName) studentName.value = held.studentName;
+          if (!studentNumber.value.trim() && held.studentNumber) studentNumber.value = held.studentNumber;
+          if (held.paidAt) studentPaid.value = true;
+        }
+        requestUniforms.value.push({ ...base(), quantity: takeNow, reserve: false });
       }
-      existing.quantity = newQuantity;
-    } else {
-      requestUniforms.value.push({
-        uniformVariantId: selectedUniformVariant.value.idUnifvariant,
-        uniformName:
-          selectedUniformVariant.value.type?.uniform_name || "Uniform",
-        department: selectedUniformVariant.value.department?.dept_name || "N/A",
-        gender: selectedUniformVariant.value.gender || "Unisex",
-        size: selectedUniformVariant.value.size,
-        price: Number(selectedUniformVariant.value.price) || 0,
-        quantity,
-      });
+    }
+    if (toReserve > 0) {
+      if (reserveLine) {
+        reserveLine.quantity = Number(reserveLine.quantity) + toReserve;
+      } else {
+        requestUniforms.value.push({ ...base(), quantity: toReserve, reserve: true });
+      }
     }
   }
 
@@ -739,6 +769,10 @@ async function submitRequest(confirmed = false) {
     );
     return;
   }
+  if (userRole === "instructor" && sendDirect.value && directReason.value.length < 3) {
+    showWarning("Reason Required", "Choose why this request is going straight to the AMO.");
+    return;
+  }
   if (!requestPurpose.value.trim()) {
     showWarning(
       "Purpose Required",
@@ -783,6 +817,7 @@ async function submitRequest(confirmed = false) {
 
   if (requestUniforms.value.length > 0) {
     for (const requestUniform of requestUniforms.value) {
+      if (requestUniform.reserve) continue;
       const uniform = uniformVariants.value.find(
         (variant) =>
           String(variant.idUnifvariant) ===
@@ -798,7 +833,7 @@ async function submitRequest(confirmed = false) {
         return;
       }
 
-      const stock = Math.max(0, (Number(uniform.quantity) || 0) - (Number(uniform.reserved_quantity) || 0));
+      const stock = availableUniformStock(uniform);
 
       if (Number(requestUniform.quantity) > stock) {
         showWarning(
@@ -813,17 +848,21 @@ async function submitRequest(confirmed = false) {
 
   // Payload
 
+  const normalUniforms = requestUniforms.value.filter((u) => !u.reserve);
+  const reserveLines = requestUniforms.value.filter((u) => u.reserve);
+
   const payload = {
     location: uniformOnly.value ? AMO_OFFICE : location.value,
     room: uniformOnly.value ? "N/A" : room.value,
     purpose: requestPurpose.value.trim(),
-    ...(requestUniforms.value.length > 0 ? { paid: studentPaid.value } : {}),
+    ...(userRole === "instructor" && sendDirect.value ? { send_direct: true, direct_reason: directReason.value } : {}),
+    ...(normalUniforms.length > 0 ? { paid: studentPaid.value } : {}),
     ...(uniformOnly.value ? { student_name: studentName.value.trim(), student_number: studentNumber.value.trim() } : {}),
     items: requestItems.value.map((item) => ({
       iditems: item.itemId,
       quantity: Number(item.qty),
     })),
-    uniforms: requestUniforms.value.map((uniform) => ({
+    uniforms: normalUniforms.map((uniform) => ({
       idUnifvariant: uniform.uniformVariantId,
       quantity: Number(uniform.quantity),
     })),
@@ -831,7 +870,23 @@ async function submitRequest(confirmed = false) {
 
   submitting.value = true;
   try {
-    const response = await createRequestBatch(payload);
+    let response = null;
+    if (requestItems.value.length > 0 || normalUniforms.length > 0) {
+      response = await createRequestBatch(payload);
+      // Those lines are sent; only reservations stay in the list.
+      requestUniforms.value = reserveLines;
+    }
+
+    // Out-of-stock lines become reservations for the same student.
+    for (const line of [...reserveLines]) {
+      await createUniformReservation(line.uniformVariantId, line.quantity, {
+        name: studentName.value.trim(),
+        number: studentNumber.value.trim(),
+        paid: studentPaid.value,
+      });
+      requestUniforms.value = requestUniforms.value.filter((u) => u !== line);
+    }
+    if (reserveLines.length > 0) await loadReservations();
 
     await loadInventory();
     await loadMyRequests();
@@ -841,13 +896,22 @@ async function submitRequest(confirmed = false) {
         (request) => String(request.id) === String(response.request.id),
       );
     }
-    activeTab.value = "mine";
+    activeTab.value = response ? "mine" : "reservations";
+    if (reserveLines.length > 0) {
+      showWarning(
+        "Reservation Added",
+        "The out-of-stock uniform(s) were reserved. When the AMO restocks, a request is created for the AMO automatically.",
+      );
+    }
     requestItems.value = [];
     requestUniforms.value = [];
     studentName.value = "";
     studentNumber.value = "";
     studentPaid.value = false;
     requestPurpose.value = "";
+    sendDirect.value = false;
+    directReasonChoice.value = "";
+    directReasonOther.value = "";
     location.value = "";
     room.value = "";
     category.value = "";
@@ -1066,7 +1130,7 @@ watch(activeTab, async () => {
               </select>
             </div>
             <div v-if="selectedUniformVariant" class="form-text">
-              Available: {{ Number(selectedUniformVariant.quantity) || 0 }}
+              Available: {{ uniformMaxQty }}
             </div>
           </div>
 
@@ -1098,21 +1162,21 @@ watch(activeTab, async () => {
             <input
               type="number"
               min="1"
-              :max="uniformMaxQty"
               v-model="qty"
               class="form-control" id="rq-qty-2" name="qty" />
             <div
               v-if="selectedUniformVariant && uniformMaxQty <= 0"
               class="text-danger small mt-1"
             >
-              No stock available for this uniform.
+              Out of stock. It will be added to the list as a reservation, held for
+              the student once stock arrives.
             </div>
 
             <div
               v-else-if="selectedUniformVariant && Number(qty) > uniformMaxQty"
-              class="text-danger small mt-1"
+              class="text-info small mt-1"
             >
-              Only {{ uniformMaxQty }} uniform(s) available.
+              Only {{ uniformMaxQty }} in stock. The other {{ Number(qty) - uniformMaxQty }} will be added as a reservation.
             </div>
           </div>
         </template>
@@ -1123,21 +1187,12 @@ watch(activeTab, async () => {
             class="btn btn-success me-2"
             :disabled="
               category === 'Uniforms'
-                ? !selectedUniformVariant || qty <= 0 || qty > uniformMaxQty
+                ? !selectedUniformVariant || qty <= 0
                 : !selectedItem || qty <= 0 || qty > maxQty
             "
             @click="addToList"
           >
-            Add Item
-          </button>
-          <button
-            v-if="category === 'Uniforms' && selectedUniformVariant && uniformMaxQty <= 0"
-            type="button"
-            class="btn btn-outline-primary"
-            :disabled="reservationBusy || Number(qty) < 1"
-            @click="reserveOutOfStockUniform"
-          >
-            {{ reservationBusy ? "Reserving..." : "Reserve Out-of-Stock Uniform" }}
+            {{ category === 'Uniforms' && selectedUniformVariant && uniformMaxQty <= 0 ? 'Add as Reservation' : category === 'Uniforms' && selectedUniformVariant && Number(qty) > uniformMaxQty ? 'Add (reserve the rest)' : 'Add Item' }}
           </button>
         </div>
       </div>
@@ -1190,7 +1245,7 @@ watch(activeTab, async () => {
                 <!-- UNIFORMS -->
                 <tr
                   v-for="(uniform, index) in requestUniforms"
-                  :key="'uniform-' + uniform.uniformVariantId"
+                  :key="'uniform-' + uniform.uniformVariantId + (uniform.reserve ? '-r' : '')"
                 >
                   <td>
                     <div>
@@ -1201,6 +1256,9 @@ watch(activeTab, async () => {
                       {{ uniform.department }}
                       — {{ uniform.gender || "Unisex" }} — Size {{ uniform.size }}
                     </small>
+                    <div v-if="uniform.reserve">
+                      <span class="badge bg-warning text-dark">Reservation · out of stock</span>
+                    </div>
                   </td>
 
                   <td>
@@ -1307,6 +1365,32 @@ watch(activeTab, async () => {
             placeholder="Enter purpose of request..." id="rq-request-purpose" name="request-purpose"></textarea>
         </div>
 
+        <div v-if="userRole === 'instructor'" class="mb-3">
+          <div class="form-check">
+            <input id="rq-send-direct" name="send_direct" type="checkbox" class="form-check-input" v-model="sendDirect" />
+            <label for="rq-send-direct" class="form-check-label">
+              Send directly to the AMO (skip the department head)
+            </label>
+          </div>
+          <div v-if="sendDirect" class="mt-2">
+            <select v-model="directReasonChoice" class="form-select" id="rq-direct-reason" name="direct_reason_choice">
+              <option value="">Why is the department head skipped?</option>
+              <option v-for="r in DIRECT_REASONS" :key="r" :value="r">{{ r }}</option>
+            </select>
+            <input
+              v-if="directReasonChoice === 'Other'"
+              v-model="directReasonOther"
+              id="rq-direct-reason-other"
+              name="direct_reason_other"
+              type="text"
+              class="form-control mt-2"
+              maxlength="200"
+              placeholder="Type the reason"
+            />
+            <div class="form-text">The reason is recorded with the request and shown to the AMO.</div>
+          </div>
+        </div>
+
         <div class="mt-3">
           <button
             class="btn btn-primary w-100"
@@ -1330,27 +1414,33 @@ watch(activeTab, async () => {
           <button class="btn btn-sm btn-outline-primary" @click="loadReservations">Refresh</button>
         </div>
         <div class="alert alert-info py-2">
-          Reservations are processed in queue order when stock is replenished. A Ready status means stock was found for the requested quantity; submit a regular uniform request to complete the request.
+          Reserve uniforms the student has already paid for when they are out of stock. When the AMO restocks, the oldest reservations become requests to the AMO automatically (stock held, ready for pickup) and you get a notification. No need to submit a request yourself.
         </div>
         <div class="table-responsive">
           <table class="table table-hover align-middle">
             <thead class="table-light">
-              <tr><th>Uniform</th><th>Gender</th><th>Size</th><th>Qty</th><th>Stock</th><th>Status</th><th>Date</th><th>Action</th></tr>
+              <tr><th>Uniform</th><th>Student</th><th>Gender</th><th>Size</th><th>Qty</th><th>Stock</th><th>Status</th><th>Date</th><th>Action</th></tr>
             </thead>
             <tbody>
               <tr v-for="reservation in uniformReservations" :key="reservation.id">
                 <td>{{ reservation.uniformName }} <small class="text-muted">({{ reservation.department }})</small></td>
+                <td>
+                  <div>{{ reservation.studentName || "—" }}</div>
+                  <small class="text-muted" v-if="reservation.studentNumber">ID {{ reservation.studentNumber }}</small>
+                  <span v-if="reservation.paidAt" class="badge bg-success ms-1">Paid</span>
+                </td>
                 <td>{{ reservation.gender }}</td>
                 <td>{{ reservation.size }}</td>
                 <td>{{ reservation.quantity }}</td>
                 <td>{{ reservation.stock }}</td>
-                <td><span class="badge" :class="reservation.status === 'Ready' ? 'bg-success' : reservation.status === 'Waiting' ? 'bg-warning text-dark' : 'bg-secondary'">{{ reservation.status }}</span>
-                  <div v-if="reservation.status === 'Ready'" class="small text-success">Stock replenished — ready to request</div>
+                <td><span class="badge" :class="['Ready', 'Submitted'].includes(reservation.status) ? 'bg-success' : reservation.status === 'Waiting' ? 'bg-warning text-dark' : 'bg-secondary'">{{ reservation.status === 'Submitted' ? 'Sent to AMO' : reservation.status }}</span>
+                  <div v-if="reservation.status === 'Submitted'" class="small text-success">Stock arrived — request created, ready for pickup</div>
+                  <div v-else-if="reservation.status === 'Ready'" class="small text-success">Stock replenished — ready to request</div>
                 </td>
                 <td>{{ formatDate(reservation.createdAt) }}</td>
                 <td><button v-if="['Waiting','Ready'].includes(reservation.status)" class="btn btn-sm btn-outline-danger" @click="cancelReservation(reservation)">Cancel</button></td>
               </tr>
-              <tr v-if="uniformReservations.length === 0"><td colspan="8" class="text-center text-muted py-4">No uniform reservations yet.</td></tr>
+              <tr v-if="uniformReservations.length === 0"><td colspan="9" class="text-center text-muted py-4">No uniform reservations yet.</td></tr>
             </tbody>
           </table>
         </div>
@@ -1600,6 +1690,7 @@ watch(activeTab, async () => {
               <div><strong>Location:</strong> {{ selected.location }}</div>
               <div><strong>Room:</strong> {{ selected.room }}</div>
               <div><strong>Purpose:</strong> {{ selected.purpose }}</div>
+              <div v-if="selected.directReason"><strong>Sent directly to the AMO:</strong> {{ selected.directReason }}<span v-if="selected.coordReview"> — Department head {{ selected.coordReview.toLowerCase() }}<span v-if="selected.coordReviewNote">: {{ selected.coordReviewNote }}</span></span></div>
               <div v-if="selected.studentName"><strong>Student:</strong> {{ selected.studentName }}<span v-if="selected.studentNumber"> (ID {{ selected.studentNumber }})</span></div>
               <div><strong>Status:</strong> {{ selected.status }}</div>
               <div>
@@ -1715,6 +1806,7 @@ watch(activeTab, async () => {
           <li v-for="(u, idx) in requestUniforms" :key="'u' + idx">
             {{ u.quantity }} x {{ u.uniformName || "Uniform" }}
             <span v-if="u.size">({{ u.size }})</span>
+            <span v-if="u.reserve" class="text-muted"> — reservation</span>
           </li>
         </ul>
         <p v-if="!uniformOnly" class="text-muted small mb-0">

@@ -59,6 +59,11 @@ return response()->json(
             'releaseMethod' => $request->release_method,
             'releasedAt' => $request->released_at,
             'paidAt' => $request->paid_at,
+            'directReason' => $request->direct_to_amo_reason,
+            'coordReview' => $request->coord_review_status,
+            'coordReviewNote' => $request->coord_review_note,
+            'coordReviewedAt' => $request->coord_reviewed_at,
+            'coordReviewedBy' => $request->coord_reviewed_by ? optional(\App\Models\User::find($request->coord_reviewed_by))->full_name : null,
             'stockHeld' => (bool) $request->stock_held,
             'releasedToStudent' => $request->released_to_student,
             'releasedStudentId' => $request->released_student_id,
@@ -260,6 +265,11 @@ public function show($id)
         'releaseMethod' => $request->release_method,
         'releasedAt' => $request->released_at,
         'paidAt' => $request->paid_at,
+        'directReason' => $request->direct_to_amo_reason,
+        'coordReview' => $request->coord_review_status,
+        'coordReviewNote' => $request->coord_review_note,
+        'coordReviewedAt' => $request->coord_reviewed_at,
+        'coordReviewedBy' => $request->coord_reviewed_by ? optional(\App\Models\User::find($request->coord_reviewed_by))->full_name : null,
         'stockHeld' => (bool) $request->stock_held,
         'releasedToStudent' => $request->released_to_student,
         'releasedStudentId' => $request->released_student_id,
@@ -311,6 +321,8 @@ public function store(HttpRequest $request)
         'student_name' => 'nullable|string|max:255',
         'student_number' => 'nullable|string|max:50',
         'paid' => 'nullable|boolean',
+        'send_direct' => 'nullable|boolean',
+        'direct_reason' => 'nullable|string|max:255',
         'uniforms.*.idUnifvariant' => 'required|exists:uniformvariant,idUnifvariant',
         'uniforms.*.quantity' => 'required|integer|min:1',
         'location' => 'required|string|max:255',
@@ -343,6 +355,17 @@ if (
         return response()->json([
             'message' => 'Enter the full name of the student this uniform request is for.',
             'errors' => ['student_name' => ['The student name is required.']],
+        ], 422);
+    }
+
+    // An instructor may skip the department head (not present, unavailable,
+    // or none assigned) but must say why; the reason is kept on the request.
+    $sendDirect = strtolower((string) $role) === 'instructor' && !empty($validated['send_direct']);
+    $directReason = trim((string) ($validated['direct_reason'] ?? ''));
+    if ($sendDirect && mb_strlen($directReason) < 3) {
+        return response()->json([
+            'message' => 'Tell us why the request is going straight to the AMO.',
+            'errors' => ['direct_reason' => ['A reason is required.']],
         ], 422);
     }
 
@@ -390,7 +413,7 @@ if (
         }
     }
 
-    DB::transaction(function () use ($validated, $idUsers, $isCashierUniformRequest, &$newRequest) {
+    DB::transaction(function () use ($validated, $idUsers, $isCashierUniformRequest, $sendDirect, $directReason, &$newRequest) {
 
         $newRequest = Request::create([
             'idUsers' => $idUsers,
@@ -399,7 +422,8 @@ if (
             'request_date' => now(),
             // Only instructors go through the Department Head. Everyone else
             // (Department Head, Admin, Cashier, AMO) goes straight to the AMO.
-            'status' => strtolower((string) request()->user()->role) === 'instructor' ? 'With Coordinator' : 'With Inventory',
+            'status' => (strtolower((string) request()->user()->role) === 'instructor' && !$sendDirect) ? 'With Coordinator' : 'With Inventory',
+            'direct_to_amo_reason' => $sendDirect ? mb_substr($directReason, 0, 255) : null,
             'location' => $validated['location'],
             'room' => $validated['room'],
             'purpose' => $validated['purpose'],
@@ -481,6 +505,13 @@ $this->logActivity(
 );
 if ($newRequest->status === 'With Inventory' && strtolower((string) $role) !== 'amo') {
     $this->notifyInventoryOfRequest($newRequest, (int) $idUsers);
+}
+if ($newRequest->direct_to_amo_reason) {
+    // The department head was skipped: tell them so they can review it afterwards.
+    $who = optional($newRequest->user)->username ?? 'An instructor';
+    foreach (\App\Models\User::whereRaw('LOWER(role) = ?', ['department_head'])->pluck('idUsers') as $headId) {
+        $this->createRequestNotification($newRequest, (int) $headId, 'direct_review', "Request #{$newRequest->idrequest} from {$who} was sent straight to the AMO ({$newRequest->direct_to_amo_reason}). Please review it.", (int) $idUsers);
+    }
 }
 if ($newRequest->status === 'With Coordinator') {
     $coordinators = \App\Models\User::whereRaw('LOWER(role) = ?', ['department_head'])->pluck('idUsers');
@@ -682,6 +713,11 @@ public function approve(HttpRequest $httpRequest, $id)
         'releaseMethod' => $request->release_method,
         'releasedAt' => $request->released_at,
         'paidAt' => $request->paid_at,
+        'directReason' => $request->direct_to_amo_reason,
+        'coordReview' => $request->coord_review_status,
+        'coordReviewNote' => $request->coord_review_note,
+        'coordReviewedAt' => $request->coord_reviewed_at,
+        'coordReviewedBy' => $request->coord_reviewed_by ? optional(\App\Models\User::find($request->coord_reviewed_by))->full_name : null,
         'stockHeld' => (bool) $request->stock_held,
         'releasedToStudent' => $request->released_to_student,
         'releasedStudentId' => $request->released_student_id,
@@ -775,6 +811,11 @@ return response()->json([
         'releaseMethod' => $request->release_method,
         'releasedAt' => $request->released_at,
         'paidAt' => $request->paid_at,
+        'directReason' => $request->direct_to_amo_reason,
+        'coordReview' => $request->coord_review_status,
+        'coordReviewNote' => $request->coord_review_note,
+        'coordReviewedAt' => $request->coord_reviewed_at,
+        'coordReviewedBy' => $request->coord_reviewed_by ? optional(\App\Models\User::find($request->coord_reviewed_by))->full_name : null,
         'stockHeld' => (bool) $request->stock_held,
         'releasedToStudent' => $request->released_to_student,
         'releasedStudentId' => $request->released_student_id,
@@ -805,6 +846,65 @@ public function coordinatorQueue()
     }
     return response()->json(Request::with(['user', 'items.item', 'uniforms.uniformVariant.type', 'uniforms.uniformVariant.department'])
         ->where('status', 'With Coordinator')->orderBy('request_date')->get()->map(fn ($r) => $this->formatWorkflowRequest($r)));
+}
+
+// Requests an instructor sent straight to the AMO, for the department head
+// to review afterwards (acknowledge or flag). Never blocks the AMO.
+public function directQueue()
+{
+    $user = request()->user();
+    if (strtolower((string) $user->role) !== 'department_head') {
+        return response()->json(['message' => 'Only the Dean/Academic Coordinator can review these requests.'], 403);
+    }
+    return response()->json(Request::with(['user', 'items.item', 'uniforms.uniformVariant.type', 'uniforms.uniformVariant.department'])
+        ->whereNotNull('direct_to_amo_reason')->orderByDesc('request_date')->limit(100)->get()
+        ->map(fn ($r) => array_merge($this->formatWorkflowRequest($r), [
+            'directReason' => $r->direct_to_amo_reason,
+            'coordReview' => $r->coord_review_status,
+            'coordReviewNote' => $r->coord_review_note,
+            'coordReviewedAt' => $r->coord_reviewed_at,
+            'coordReviewedBy' => $r->coord_reviewed_by ? optional(\App\Models\User::find($r->coord_reviewed_by))->full_name : null,
+        ])));
+}
+
+public function coordinatorReview(HttpRequest $httpRequest, $id)
+{
+    $actor = $httpRequest->user();
+    if (strtolower((string) $actor->role) !== 'department_head') {
+        return response()->json(['message' => 'Only the Dean/Academic Coordinator can review these requests.'], 403);
+    }
+    $validated = $httpRequest->validate([
+        'action' => 'required|in:acknowledge,flag',
+        'note' => 'nullable|string|max:500',
+    ]);
+    $note = trim((string) ($validated['note'] ?? ''));
+    if ($validated['action'] === 'flag' && mb_strlen($note) < 3) {
+        return response()->json(['message' => 'Write a short note explaining your concern.'], 422);
+    }
+
+    $r = Request::with('user')->where('idrequest', $id)->first();
+    if (!$r || !$r->direct_to_amo_reason) {
+        return response()->json(['message' => 'This request was not sent directly to the AMO.'], 404);
+    }
+
+    $status = $validated['action'] === 'flag' ? 'Flagged' : 'Acknowledged';
+    $r->update([
+        'coord_review_status' => $status,
+        'coord_reviewed_by' => $actor->idUsers,
+        'coord_reviewed_at' => now(),
+        'coord_review_note' => $note !== '' ? $note : null,
+    ]);
+
+    if ($status === 'Flagged') {
+        foreach (\App\Models\User::whereRaw('LOWER(role) = ?', ['amo'])->pluck('idUsers') as $amoId) {
+            $this->createRequestNotification($r, (int) $amoId, 'coordinator_flag', "The department head flagged request #{$r->idrequest}: {$note}", (int) $actor->idUsers);
+        }
+    }
+    $this->logActivity($actor->idUsers, "{$status} direct request #{$r->idrequest}");
+
+    return response()->json([
+        'message' => $status === 'Flagged' ? 'Flagged. The AMO has been notified.' : 'Marked as acknowledged.',
+    ]);
 }
 
 public function forwardToInventory($id)

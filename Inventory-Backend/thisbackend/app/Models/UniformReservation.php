@@ -21,6 +21,9 @@ class UniformReservation extends Model
         'cancelled_at',
         'submitted_at',
         'created_at',
+        'student_name',
+        'student_number',
+        'paid_at',
     ];
 
     protected $casts = [
@@ -28,6 +31,7 @@ class UniformReservation extends Model
         'created_at' => 'datetime',
         'cancelled_at' => 'datetime',
         'submitted_at' => 'datetime',
+        'paid_at' => 'datetime',
     ];
 
     public function user()

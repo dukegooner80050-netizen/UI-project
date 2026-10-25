@@ -107,10 +107,13 @@ export async function listUniformReservations() {
   return response.data;
 }
 
-export async function createUniformReservation(idUnifvariant, quantity) {
+export async function createUniformReservation(idUnifvariant, quantity, student = {}) {
   const response = await axios.post("/uniform-reservations", {
     idUnifvariant: Number(idUnifvariant),
     quantity: Number(quantity),
+    student_name: student.name || "",
+    student_number: student.number || "",
+    paid: !!student.paid,
   });
   return response.data;
 }

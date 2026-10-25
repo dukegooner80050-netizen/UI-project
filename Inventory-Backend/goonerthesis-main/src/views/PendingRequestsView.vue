@@ -421,6 +421,13 @@ function statusBadgeClass(status) {
                   >
                     {{ releaseBadgeText(r) }}
                   </div>
+                  <div v-if="r.directReason" class="badge bg-warning text-dark mt-1" :title="r.directReason">
+                    Direct to AMO
+                  </div>
+                  <div v-if="r.directReason && r.coordReview" class="badge mt-1 ms-1" :class="r.coordReview === 'Flagged' ? 'bg-danger' : 'bg-success'" :title="r.coordReviewNote || ''">
+                    Dept. head: {{ r.coordReview }}
+                  </div>
+                  <div v-else-if="r.directReason" class="badge bg-secondary mt-1 ms-1">Dept. head: not reviewed</div>
                   <div v-if="fulfilmentState(r)" class="badge mt-1" :class="fulfilmentState(r).cls">
                     {{ fulfilmentState(r).text }}
                   </div>
@@ -556,6 +563,12 @@ function statusBadgeClass(status) {
                       <div class="col-md-5">
                         <div class="fw-semibold small text-muted mb-1">Details</div>
                         <div class="small mb-1"><strong>Purpose:</strong> {{ r.purpose || "—" }}</div>
+                        <div v-if="r.directReason" class="small mb-1 text-warning-emphasis"><strong>Sent directly (skipped department head):</strong> {{ r.directReason }}</div>
+                        <div v-if="r.coordReview" class="small mb-1" :class="r.coordReview === 'Flagged' ? 'text-danger' : 'text-success'">
+                          <strong>Department head {{ r.coordReview.toLowerCase() }}</strong>
+                          <span v-if="r.coordReviewedBy"> ({{ r.coordReviewedBy }})</span>
+                          <span v-if="r.coordReviewNote"> — {{ r.coordReviewNote }}</span>
+                        </div>
                         <div v-if="r.studentName" class="small mb-1"><strong>Student:</strong> {{ r.studentName }}<span v-if="r.studentNumber"> (ID {{ r.studentNumber }})</span></div>
                         <div class="small mb-1"><strong>Location:</strong> {{ r.location || "—" }}</div>
                         <div class="small mb-1"><strong>Room:</strong> {{ r.room || "—" }}</div>

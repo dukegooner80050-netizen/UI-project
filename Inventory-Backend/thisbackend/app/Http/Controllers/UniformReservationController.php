@@ -35,7 +35,16 @@ class UniformReservationController extends Controller
         $validated = $request->validate([
             'idUnifvariant' => 'required|integer|exists:uniformvariant,idUnifvariant',
             'quantity' => 'required|integer|min:1|max:1000',
+            'student_name' => 'required|string|max:255',
+            'student_number' => 'required|string|max:50',
+            'paid' => 'accepted',
+        ], [
+            'student_name.required' => 'Enter the full name of the student this reservation is for.',
+            'student_number.required' => 'Enter the student ID number.',
+            'paid.accepted' => 'Confirm that the student has already paid for this uniform.',
         ]);
+        $studentName = trim($validated['student_name']);
+        $studentNumber = trim($validated['student_number']);
 
         $variant = UniformVariant::with(['type', 'department'])
             ->findOrFail($validated['idUnifvariant']);
@@ -49,6 +58,7 @@ class UniformReservationController extends Controller
         $existing = UniformReservation::where('idUsers', $user->idUsers)
             ->where('idUnifvariant', $variant->idUnifvariant)
             ->where('status', 'Waiting')
+            ->where('student_number', $studentNumber)
             ->first();
 
         if ($existing) {
@@ -61,12 +71,15 @@ class UniformReservationController extends Controller
                 'idUnifvariant' => $variant->idUnifvariant,
                 'quantity' => $validated['quantity'],
                 'status' => 'Waiting',
+                'student_name' => $studentName,
+                'student_number' => $studentNumber,
+                'paid_at' => now(),
             ]);
         }
 
         $this->logActivity(
             $user->idUsers,
-            "Reserved {$validated['quantity']} {$variant->type->uniform_name} ({$variant->department->dept_name} - {$variant->gender} - {$variant->size})"
+            "Reserved {$validated['quantity']} {$variant->type->uniform_name} ({$variant->department->dept_name} - {$variant->gender} - {$variant->size}) for student {$studentNumber}"
         );
 
         return response()->json([
@@ -119,6 +132,9 @@ class UniformReservationController extends Controller
             'size' => optional($variant)->size ?? 'N/A',
             'stock' => (int) (optional($variant)->quantity ?? 0),
             'quantity' => (int) $r->quantity,
+            'studentName' => $r->student_name,
+            'studentNumber' => $r->student_number,
+            'paidAt' => optional($r->paid_at)->toDateTimeString(),
             'status' => $r->status,
             'notifiedAt' => optional($r->notified_at)->toDateTimeString(),
             'createdAt' => optional($r->created_at)->toDateTimeString(),

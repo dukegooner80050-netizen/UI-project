@@ -111,6 +111,8 @@ Route::middleware([AdminSessionTimeoutMiddleware::class, 'auth:sanctum', \App\Ht
         Route::get('/request-notifications', [RequestController::class, 'notifications']);
         Route::post('/request-notifications/read', [RequestController::class, 'readNotifications']);
         Route::get('/requests/coordinator-queue', [RequestController::class, 'coordinatorQueue'])->middleware('role:department_head');
+        Route::get('/requests/direct-queue', [RequestController::class, 'directQueue'])->middleware('role:department_head');
+        Route::put('/requests/{id}/coordinator-review', [RequestController::class, 'coordinatorReview'])->middleware('role:department_head');
         Route::put('/requests/{id}/forward-to-inventory', [RequestController::class, 'forwardToInventory'])->middleware('role:department_head');
         Route::put('/requests/{id}/confirm-received', [RequestController::class, 'confirmReceived']);
         Route::get('/requests/{id}', [RequestController::class, 'show']);

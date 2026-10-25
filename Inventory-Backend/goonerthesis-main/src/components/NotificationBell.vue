@@ -218,7 +218,8 @@ function openNote(n) {
   const t = n.event_type;
   let to = "/request";
   if (t === "inventory_review") to = "/pending-requests";
-  else if (t === "coordinator_review") to = "/coordinator-requests";
+  else if (t === "coordinator_review" || t === "direct_review") to = "/coordinator-requests";
+  else if (t === "coordinator_flag") to = "/pending-requests";
   else if (t === "return_reported") to = "/dashboard";
   closePanel();
   router.push(to);
@@ -235,6 +236,8 @@ function noteLabel(n) {
   if (n.event_type === "released" || n.event_type === "reservation_ready") return "Ready";
   if (n.event_type === "received") return "Received";
   if (n.event_type === "inventory_review") return "To approve";
+  if (n.event_type === "direct_review") return "To review";
+  if (n.event_type === "coordinator_flag") return "Flagged";
   if (n.event_type === "coordinator_review") return "To review";
   if (n.event_type === "return_reported") return "Return";
   if (n.event_type === "return_confirmed") return "Confirmed";
@@ -247,7 +250,7 @@ function noteLabel(n) {
 function noteBadge(n) {
   const label = noteLabel(n);
   if (label === "Approved" || label === "Confirmed") return "bg-success";
-  if (label === "Rejected" || label === "Not received") return "bg-danger";
+  if (label === "Rejected" || label === "Not received" || label === "Flagged") return "bg-danger";
   if (label === "Return" || label === "To approve" || label === "To review")
     return "bg-warning text-dark";
   if (label === "Ready" || label === "Received") return "bg-success";

@@ -36,6 +36,11 @@ protected $fillable = [
     'stock_held',
     'paid_at',
     'paid_by',
+    'direct_to_amo_reason',
+    'coord_review_status',
+    'coord_reviewed_by',
+    'coord_reviewed_at',
+    'coord_review_note',
 ];
 
 public $timestamps = false;
