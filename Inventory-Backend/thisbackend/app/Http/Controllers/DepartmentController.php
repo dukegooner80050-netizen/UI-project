@@ -11,8 +11,9 @@ class DepartmentController extends Controller
     use ActivityLogger;
 public function index()
 {
+    // variants_count lets the screen tell which courses are in use.
     return response()->json(
-        Department::all()
+        Department::withCount('uniformVariants')->orderBy('iddept')->get()
     );
 }
 
@@ -34,6 +35,13 @@ public function store(Request $request)
     $validated = $request->validate([
         'dept_name' => 'required|string|max:255'
     ]);
+    $validated['dept_name'] = trim($validated['dept_name']);
+    if (Department::whereRaw('LOWER(dept_name) = ?', [mb_strtolower($validated['dept_name'])])->exists()) {
+        return response()->json([
+            'message' => "A course named '{$validated['dept_name']}' already exists.",
+            'errors' => ['dept_name' => ['This course already exists.']],
+        ], 422);
+    }
 
     $department = Department::create($validated);
     $this->logActivity(
@@ -60,6 +68,14 @@ public function update(Request $request, $id)
     $validated = $request->validate([
         'dept_name' => 'required|string|max:255'
     ]);
+    $validated['dept_name'] = trim($validated['dept_name']);
+    if (Department::whereRaw('LOWER(dept_name) = ?', [mb_strtolower($validated['dept_name'])])
+        ->where('iddept', '!=', $department->iddept)->exists()) {
+        return response()->json([
+            'message' => "A course named '{$validated['dept_name']}' already exists.",
+            'errors' => ['dept_name' => ['This course already exists.']],
+        ], 422);
+    }
 
     $department->update($validated);
     $this->logActivity(
@@ -84,6 +100,19 @@ public function destroy($id)
     }
 
 $name = $department->dept_name;
+
+// A course that still has uniforms (or people assigned to it) can't go.
+if ($department->uniformVariants()->exists()) {
+    return response()->json([
+        'message' => "'{$name}' still has uniform variants. Remove or move them first.",
+    ], 422);
+}
+if (\Illuminate\Support\Facades\Schema::hasColumn('users', 'iddept')
+    && \App\Models\User::where('iddept', $department->iddept)->exists()) {
+    return response()->json([
+        'message' => "Some users are assigned to '{$name}'. Reassign them in Settings first.",
+    ], 422);
+}
 
 $department->delete();
 

@@ -5,8 +5,21 @@ import { useRoute, useRouter } from "vue-router"
 import { getCurrentUser } from "../services/storage"
 import { logout as doLogout } from "../services/auth"
 import { startPolling, throttled } from "../services/poller"
+import appAxios from "../axios"
 
 const showUniforms = ref(false)
+
+// Course links come from the database so a course the AMO adds shows up
+// here too. The old fixed list is only used if the request fails.
+const FALLBACK_COURSES = ["BSMT", "BSCrim", "BSHM", "BSIT", "Senior High School"]
+const courses = ref(FALLBACK_COURSES)
+async function loadCourses() {
+  try {
+    const { data } = await appAxios.get("/departments", { silent: true })
+    const names = (Array.isArray(data) ? data : []).map((d) => d.dept_name).filter(Boolean)
+    if (names.length) courses.value = names
+  } catch { /* keep the current list */ }
+}
 
 const toggleUniforms = () => {
   if (!props.collapsed) {
@@ -80,6 +93,8 @@ const refreshSoon = throttled(refreshCounts, 3000)
 let stopPolling = null
 
 onMounted(() => {
+  loadCourses()
+  window.addEventListener('cims:courses-changed', loadCourses)
   refreshCounts()
   stopPolling = startPolling(refreshCounts, 30000)
 
@@ -90,6 +105,7 @@ onMounted(() => {
 
 onBeforeUnmount(() => {
   if (stopPolling) stopPolling()
+  window.removeEventListener("cims:courses-changed", loadCourses)
   window.removeEventListener("cims:counts-changed", refreshCounts)
   window.removeEventListener("cims:accounts-changed", refreshCounts)
   window.removeEventListener("cims:equipment-reports-changed", refreshCounts)
@@ -182,13 +198,12 @@ watch(() => route.fullPath, refreshSoon)
     v-if="showUniforms && !props.collapsed"
     class="dropdown-menu-click"
   >  <RouterLink class="dropdown-link" to="/uniforms">All Uniforms</RouterLink>
-    <RouterLink class="dropdown-link" to="/uniforms?course=BSMT">BSMT</RouterLink>
-    <RouterLink class="dropdown-link" to="/uniforms?course=BSCrim">BSCrim</RouterLink>
-    <RouterLink class="dropdown-link" to="/uniforms?course=BSHM">BSHM</RouterLink>
-    <RouterLink class="dropdown-link" to="/uniforms?course=BSIT">BSIT</RouterLink>
-    <RouterLink class="dropdown-link" to="/uniforms?course=Senior%20High%20School">
-      Senior High School
-    </RouterLink>
+    <RouterLink
+      v-for="c in courses"
+      :key="c"
+      class="dropdown-link"
+      :to="{ path: '/uniforms', query: { course: c } }"
+    >{{ c }}</RouterLink>
   </div>
 
 </div>

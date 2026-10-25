@@ -111,6 +111,7 @@ Route::middleware([AdminSessionTimeoutMiddleware::class, 'auth:sanctum', \App\Ht
         Route::get('/request-notifications', [RequestController::class, 'notifications']);
         Route::post('/request-notifications/read', [RequestController::class, 'readNotifications']);
         Route::get('/requests/coordinator-queue', [RequestController::class, 'coordinatorQueue'])->middleware('role:department_head');
+        Route::get('/requests/coordinator-history', [RequestController::class, 'coordinatorHistory'])->middleware('role:department_head');
         Route::get('/requests/direct-queue', [RequestController::class, 'directQueue'])->middleware('role:department_head');
         Route::put('/requests/{id}/coordinator-review', [RequestController::class, 'coordinatorReview'])->middleware('role:department_head');
         Route::put('/requests/{id}/forward-to-inventory', [RequestController::class, 'forwardToInventory'])->middleware('role:department_head');
@@ -140,6 +141,7 @@ Route::middleware([AdminSessionTimeoutMiddleware::class, 'auth:sanctum', \App\Ht
 
         // Anyone who submits requests needs to see their own limit.
         Route::get('/settings/monthly-request-limit', [SettingController::class, 'monthlyRequestLimit']);
+        Route::get('/settings/student-id-length', [SettingController::class, 'studentIdLength']);
         Route::get('/settings/return-periods', [SettingController::class, 'returnPeriods']);
 
         // Roadmap #13: anyone can report equipment that needs maintenance or
@@ -193,6 +195,7 @@ Route::middleware('role:amo,department_head,admin,instructor,cashier')->group(fu
         Route::get('/users/{id}', [UserController::class, 'show']);
         Route::post('/users', [UserController::class, 'store']);
         Route::put('/users/{id}', [UserController::class, 'update']);
+        Route::put('/users/{id}/department', [UserController::class, 'setDepartment']);
         Route::delete('/users/{id}', [UserController::class, 'destroy']);
         Route::post('/users/{id}/reset-password', [UserController::class, 'resetPassword']);
 
@@ -333,6 +336,7 @@ Route::middleware('role:amo,department_head,admin,instructor,cashier')->group(fu
         */
 
         Route::put('/settings/monthly-request-limit', [SettingController::class, 'updateMonthlyRequestLimit']);
+        Route::put('/settings/student-id-length', [SettingController::class, 'updateStudentIdLength']);
         Route::put('/settings/return-periods', [SettingController::class, 'updateReturnPeriods']);
         Route::get('/settings/stock-levels', [SettingController::class, 'stockLevels']);
         Route::put('/settings/stock-levels', [SettingController::class, 'updateStockLevels']);

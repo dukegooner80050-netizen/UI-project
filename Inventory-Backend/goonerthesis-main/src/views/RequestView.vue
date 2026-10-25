@@ -1,6 +1,7 @@
 <script setup>
 import { printBorrowerForm, hasBorrowedItems } from "../services/borrowerForm";
 import { ref, watch, computed, onMounted, nextTick } from "vue";
+import { useRoute } from "vue-router";
 import { createRequestBatch, getRequests, confirmReceived } from "../services/requests";
 import { fulfilmentState } from "../services/requestState";
 import {
@@ -13,7 +14,7 @@ import {
 import { getCurrentUser } from "../services/storage";
 import { getItems } from "../services/items";
 import { TYPE_B, OFFICE_TYPE_OPTIONS } from "../services/itemTypes";
-import { getMonthlyRequestLimit } from "../services/settings";
+import { getMonthlyRequestLimit, getStudentIdMaxLength } from "../services/settings";
 import DueBadge from "../components/DueBadge.vue";
 import { reportReturn } from "../services/returnReports";
 import { isReturnableType } from "../services/itemTypes";
@@ -22,6 +23,60 @@ const user = getCurrentUser();
 const userRole = String(user?.role || "").toLowerCase();
 const listContainer = ref(null);
 const activeTab = ref("create");
+const route = useRoute();
+
+// What happened to one line of a request, for the details panel. Consumables
+// and Type A are issued (received, never returned); Type B and equipment are
+// borrowed, so they also show how many came back.
+function lineStatus(item, req) {
+  const st = String(req.status || "").toLowerCase();
+  if (!["approved", "returned"].includes(st)) return null;
+  const qty = Number(item.qty) || 0;
+  const returnable = isReturnableType(item.itemType);
+  if (!req.releasedAt) {
+    return { text: req.stockHeld ? "Reserved · awaiting release" : "Awaiting release", cls: "bg-secondary" };
+  }
+  if (!req.receivedAt) {
+    return { text: "Released · confirm receipt", cls: "bg-info text-dark" };
+  }
+  if (!returnable) return { text: "Received · issued, no return", cls: "bg-success" };
+  const back = Number(item.returnedQty) || 0;
+  if (back >= qty) return { text: `Received · all ${qty} returned`, cls: "bg-primary" };
+  if (back > 0) return { text: `Received · ${back} of ${qty} returned`, cls: "bg-warning text-dark" };
+  return { text: "Received · borrowed, not returned yet", cls: "bg-warning text-dark" };
+}
+
+// My Requests rows open to show every line, like the AMO's Pending Requests.
+const expandedMine = ref(null);
+function toggleMine(id) {
+  expandedMine.value = expandedMine.value === id ? null : id;
+}
+function mineLines(r) {
+  return [
+    ...(r.items || []).map((i) => ({ name: i.itemName, qty: Number(i.qty) || 0 })),
+    ...(r.uniforms || []).map((u) => ({ name: u.uniformName || "Uniform", qty: Number(u.quantity) || 0 })),
+  ];
+}
+function mineSummary(r) {
+  const names = mineLines(r).map((l) => l.name);
+  if (!names.length) return "—";
+  return names.length > 2 ? `${names[0]}, ${names[1]} +${names.length - 2} more` : names.join(", ");
+}
+function mineTotalQty(r) {
+  return mineLines(r).reduce((sum, l) => sum + l.qty, 0);
+}
+// Links from the bell and the overdue banner: /request?tab=mine&open=52
+function applyRouteQuery() {
+  const { tab, open } = route.query;
+  if (["create", "mine", "reservations"].includes(String(tab))) activeTab.value = String(tab);
+  if (open) {
+    const found = myRequests.value.find((r) => String(r.id) === String(open));
+    if (found) {
+      selected.value = found;
+      expandedMine.value = found.id;
+    }
+  }
+}
 const lastReceipt = ref(null);
 const myRequests = ref([]);
 const selected = ref(null);
@@ -81,9 +136,13 @@ const requestsThisMonth = computed(() => {
   }).length;
 });
 
+watch(() => [route.query.tab, route.query.open], () => applyRouteQuery());
+
 onMounted(async () => {
+  getStudentIdMaxLength().then((n) => (studentIdMax.value = n)).catch(() => {});
   // Independent lists: load them together instead of one after another.
   await Promise.all([loadInventory(), loadUniforms(), loadMyRequests()]);
+  applyRouteQuery();
 
   if (user?.role !== "amo") {
     try {
@@ -117,6 +176,14 @@ const receiveBusy = ref(false);
 
 const studentName = ref("");
 const studentNumber = ref("");
+// Student ID rules: numbers and a dash, up to the length the AMO set.
+const studentIdMax = ref(15);
+const onlyIdChars = (v) => String(v).replace(/[^0-9-]/g, "");
+watch(studentNumber, (v) => {
+  const clean = onlyIdChars(v).slice(0, studentIdMax.value);
+  if (clean !== v) studentNumber.value = clean;
+});
+
 const studentPaid = ref(false);
 
 async function doConfirmReceived() {
@@ -751,6 +818,10 @@ async function submitRequest(confirmed = false) {
     showWarning("Student ID Required", "Enter the student ID number this uniform request is for.");
     return;
   }
+  if (uniformOnly.value && !/^[0-9-]+$/.test(studentNumber.value.trim())) {
+    showWarning("Student ID Not Valid", "The student ID can only have numbers and a dash (-).");
+    return;
+  }
   if (requestUniforms.value.length > 0 && !studentPaid.value) {
     showWarning("Payment Not Confirmed", "Tick the box to confirm the student already paid for the uniforms at the cashier.");
     return;
@@ -1319,11 +1390,11 @@ watch(activeTab, async () => {
             type="text"
             class="form-control"
             v-model="studentNumber"
-            maxlength="50"
+            :maxlength="studentIdMax"
             autocomplete="off"
-            placeholder="Student ID"
+            placeholder="e.g. 2021-00123"
           />
-          <div class="form-text">The AMO will see this and check the student's ID at pickup.</div>
+          <div class="form-text">Numbers and a dash only, up to {{ studentIdMax }} characters. The AMO will check the student's ID at pickup.</div>
         </div>
 
         <div v-if="requestUniforms.length > 0" class="form-check mb-3">
@@ -1501,93 +1572,95 @@ watch(activeTab, async () => {
               <table class="table table-hover align-middle mb-0">
                 <thead class="table-light sticky-top">
                   <tr>
+                    <th style="width: 32px"></th>
                     <th>Requested Items</th>
-                    <th style="width: 90px">Qty</th>
+                    <th style="width: 90px">Total Qty</th>
                     <th>Status</th>
                     <th>Date</th>
-                    <th style="width: 120px">Details</th>
+                    <th style="width: 100px">Details</th>
                   </tr>
                 </thead>
                 <tbody>
-                  <tr v-for="r in myRequests" :key="r.id || r.batchId">
-                    <td>
-                      <!-- Inventory Items -->
-                      <div
-                        v-for="(item, i) in r.items"
-                        :key="'item-' + i"
-                        class="mb-1"
-                      >
-                        {{ item.itemName }}
-                      </div>
+                  <template v-for="r in myRequests" :key="r.id || r.batchId">
+                    <tr style="cursor: pointer" @click="toggleMine(r.id)">
+                      <td class="text-center text-muted">
+                        <span :class="{ rotated: expandedMine === r.id }" class="chevron">▶&#xFE0E;</span>
+                      </td>
+                      <td>{{ mineSummary(r) }}</td>
+                      <td class="text-center">{{ mineTotalQty(r) }}</td>
+                      <td>
+                        <span
+                          class="badge"
+                          :class="{
+                            'bg-success': (r.status || '').toLowerCase() === 'approved',
+                            'bg-danger': (r.status || '').toLowerCase() === 'rejected',
+                            'bg-primary': (r.status || '').toLowerCase() === 'returned',
+                            'bg-warning text-dark':
+                              ['pending', 'with coordinator', 'with inventory'].includes((r.status || '').toLowerCase()),
+                          }"
+                        >
+                          {{ r.status }}
+                        </span>
+                        <div v-if="r.releasedAt" class="badge bg-info text-dark mt-1">
+                          {{ r.releaseMethod }}
+                        </div>
+                        <div v-if="fulfilmentState(r)" class="badge mt-1" :class="fulfilmentState(r).cls">
+                          {{ fulfilmentState(r).text }}
+                        </div>
+                      </td>
+                      <td>{{ formatDate(r.date) }}</td>
+                      <td @click.stop>
+                        <button
+                          class="btn btn-sm btn-secondary text-white"
+                          @click="selected = r"
+                        >
+                          View
+                        </button>
+                      </td>
+                    </tr>
 
-                      <!-- Uniforms -->
-                      <div
-                        v-for="(uniform, i) in r.uniforms"
-                        :key="'uniform-' + i"
-                        class="mb-1"
-                      >
-                        {{ uniform.uniformName || "Uniform" }}
-                        <small class="text-muted">
-                          ({{ uniform.department || "N/A" }}, {{ uniform.gender || "Unisex" }}, Size
-                          {{ uniform.size || "N/A" }})
-                        </small>
-                      </div>
-                    </td>
-                    <td>
-                      <!-- Inventory quantities -->
-                      <div
-                        v-for="(item, i) in r.items"
-                        :key="'item-qty-' + i"
-                        class="mb-1 text-center"
-                      >
-                        {{ item.qty }}
-                      </div>
-
-                      <!-- Uniform quantities -->
-                      <div
-                        v-for="(uniform, i) in r.uniforms"
-                        :key="'uniform-qty-' + i"
-                        class="mb-1 text-center"
-                      >
-                        {{ uniform.quantity }}
-                      </div>
-                    </td>
-                    <td>
-                      <span
-                        class="badge"
-                        :class="{
-                          'bg-success':
-                            (r.status || '').toLowerCase() === 'approved',
-                          'bg-danger':
-                            (r.status || '').toLowerCase() === 'rejected',
-                          'bg-primary':
-                            (r.status || '').toLowerCase() === 'returned',
-                          'bg-warning text-dark':
-                            ['pending', 'with coordinator', 'with inventory'].includes((r.status || '').toLowerCase()),
-                        }"
-                      >
-                        {{ r.status }}
-                      </span>
-                      <div v-if="r.releasedAt" class="badge bg-info text-dark mt-1">
-                        {{ r.releaseMethod }}
-                      </div>
-                      <div v-if="fulfilmentState(r)" class="badge mt-1" :class="fulfilmentState(r).cls">
-                        {{ fulfilmentState(r).text }}
-                      </div>
-                    </td>
-                    <td>{{ formatDate(r.date) }}</td>
-                    <td>
-                      <button
-                        class="btn btn-sm btn-secondary text-white"
-                        @click="selected = r"
-                      >
-                        View
-                      </button>
-                    </td>
-                  </tr>
+                    <tr v-if="expandedMine === r.id" class="detail-row">
+                      <td></td>
+                      <td colspan="5">
+                        <div class="detail-panel">
+                          <table class="table table-sm mb-2">
+                            <thead>
+                              <tr>
+                                <th>Item</th>
+                                <th>Details</th>
+                                <th style="width: 70px">Qty</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              <tr v-for="(item, i) in r.items" :key="'mi-' + i">
+                                <td>{{ item.itemName }}</td>
+                                <td class="text-muted small">
+                                  {{ item.category }}<span v-if="item.itemType"> · {{ item.itemType }}</span>
+                                </td>
+                                <td>{{ item.qty }}</td>
+                              </tr>
+                              <tr v-for="(uniform, i) in r.uniforms" :key="'mu-' + i">
+                                <td>{{ uniform.uniformName || "Uniform" }}</td>
+                                <td class="text-muted small">
+                                  {{ uniform.department || "N/A" }}, {{ uniform.gender || "Unisex" }}, Size {{ uniform.size || "N/A" }}
+                                </td>
+                                <td>{{ uniform.quantity }}</td>
+                              </tr>
+                            </tbody>
+                          </table>
+                          <div v-if="r.studentName" class="small">
+                            <strong>Student:</strong> {{ r.studentName }}<span v-if="r.studentNumber"> (ID {{ r.studentNumber }})</span>
+                          </div>
+                          <div v-if="r.directReason" class="small">
+                            <strong>Sent directly to the AMO:</strong> {{ r.directReason }}
+                          </div>
+                        </div>
+                      </td>
+                    </tr>
+                  </template>
 
                   <tr v-if="myRequests.length === 0">
-                    <td colspan="5" class="text-center text-muted py-4">
+                    <td colspan="6" class="text-center text-muted py-4">
                       No requests yet.
                     </td>
                   </tr>
@@ -1610,17 +1683,16 @@ watch(activeTab, async () => {
                 <li v-for="(item, i) in selected.items" :key="'item-' + i">
                   {{ item.itemName }} (Qty: {{ item.qty }})
                   <span
+                    v-if="lineStatus(item, selected)"
+                    class="badge ms-1"
+                    :class="lineStatus(item, selected).cls"
+                  >{{ lineStatus(item, selected).text }}</span>
+                  <span
                     v-if="isReturnableType(item.itemType) && selected.status === 'Approved'"
                     class="text-muted small ms-1"
                   >
                     &middot; {{ item.returnedQty }} returned &middot;
                     {{ item.borrowedQty }} still out
-                  </span>
-                  <span
-                    v-else-if="selected.status === 'Approved' && !isReturnableType(item.itemType)"
-                    class="text-muted small ms-1"
-                  >
-                    &middot; issued, no return needed
                   </span>
                   <DueBadge
                     v-if="item.dueDate && item.borrowedQty > 0 && !item.pendingReturnQty"
@@ -1953,5 +2025,20 @@ ul {
   list-style: none;
   padding-left: 0;
   margin-bottom: 0;
+}
+.chevron {
+  display: inline-block;
+  transition: transform 0.15s ease;
+  font-size: 0.75rem;
+}
+.chevron.rotated {
+  transform: rotate(90deg);
+}
+.detail-row td {
+  background: var(--bs-tertiary-bg, #f8f9fa);
+  border-top: none;
+}
+.detail-panel {
+  padding: 0.5rem;
 }
 </style>

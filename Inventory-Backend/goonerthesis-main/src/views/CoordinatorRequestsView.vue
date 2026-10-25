@@ -1,5 +1,5 @@
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, watch } from 'vue'
 import axios from '../axios'
 import AlertMessage from '../components/AlertMessage.vue'
 
@@ -54,6 +54,27 @@ async function review(r, action, note = '') {
 }
 function openFlag(r) { flagTarget.value = r; flagNote.value = '' }
 const unreviewedCount = () => directRequests.value.filter(r => !r.coordReview).length
+// History: everything from instructors in the head's own department.
+const hist = ref({ requests: [], instructors: [], summary: [], scopedToDepartment: true })
+const histLoading = ref(false)
+const monthStart = () => { const d = new Date(); return new Date(d.getFullYear(), d.getMonth(), 1).toLocaleDateString('en-CA') }
+const today = () => new Date().toLocaleDateString('en-CA')
+const hf = ref({ from: monthStart(), to: today(), user_id: '', source: 'all' })
+async function loadHistory() {
+  histLoading.value = true
+  try {
+    const params = { source: hf.value.source }
+    if (hf.value.from) params.from = hf.value.from
+    if (hf.value.to) params.to = hf.value.to
+    if (hf.value.user_id) params.user_id = hf.value.user_id
+    const { data } = await axios.get('/requests/coordinator-history', { params })
+    hist.value = data
+  } catch (e) { notify('danger', e.response?.data?.message || 'Could not load the history.') }
+  finally { histLoading.value = false }
+}
+function clearHistoryFilters() { hf.value = { from: '', to: '', user_id: '', source: 'all' } }
+watch(hf, loadHistory, { deep: true })
+watch(tab, (t) => { if (t === 'history') loadHistory() })
 function summary(r) {
   const names = [...(r.items || []).map(i => `${i.itemName} × ${i.qty}`), ...(r.uniforms || []).map(u => `${u.uniformName || 'Uniform'} (${u.size || 'size n/a'}) × ${u.quantity}`)]
   return names.length ? names.join(', ') : 'No line items found'
@@ -73,9 +94,73 @@ onMounted(refresh)
     <div class="d-flex flex-wrap gap-2 mb-3">
       <button class="btn" :class="tab === 'queue' ? 'btn-primary' : 'btn-outline-primary'" @click="tab = 'queue'">Waiting for review ({{ requests.length }})</button>
       <button class="btn" :class="tab === 'direct' ? 'btn-primary' : 'btn-outline-primary'" @click="tab = 'direct'">Sent directly to AMO ({{ unreviewedCount() }} to review)</button>
+      <button class="btn" :class="tab === 'history' ? 'btn-primary' : 'btn-outline-primary'" @click="tab = 'history'">History</button>
     </div>
 
-    <template v-if="tab === 'direct'">
+    <template v-if="tab === 'history'">
+      <div v-if="!hist.scopedToDepartment" class="alert alert-warning py-2 small">
+        Your account has no department set, so every instructor is shown. Ask the AMO to set your department (Settings → Account Management) to see only your department's instructors.
+      </div>
+      <div class="d-flex flex-wrap gap-2 align-items-end mb-3">
+        <div>
+          <label for="hf-from" class="form-label small mb-1">From</label>
+          <input id="hf-from" name="hf_from" type="date" class="form-control form-control-sm" v-model="hf.from" />
+        </div>
+        <div>
+          <label for="hf-to" class="form-label small mb-1">To</label>
+          <input id="hf-to" name="hf_to" type="date" class="form-control form-control-sm" v-model="hf.to" />
+        </div>
+        <div>
+          <label for="hf-user" class="form-label small mb-1">Instructor</label>
+          <select id="hf-user" name="hf_user" class="form-select form-select-sm" v-model="hf.user_id">
+            <option value="">All instructors</option>
+            <option v-for="i in hist.instructors" :key="i.idUsers" :value="i.idUsers">{{ i.full_name }}</option>
+          </select>
+        </div>
+        <div>
+          <label for="hf-source" class="form-label small mb-1">Came from</label>
+          <select id="hf-source" name="hf_source" class="form-select form-select-sm" v-model="hf.source">
+            <option value="all">Both tabs</option>
+            <option value="review">Waiting for review</option>
+            <option value="direct">Sent directly to AMO</option>
+          </select>
+        </div>
+        <button class="btn btn-sm btn-outline-secondary" @click="clearHistoryFilters">Clear filters</button>
+      </div>
+
+      <div v-if="hist.summary.length" class="d-flex flex-wrap gap-2 mb-3">
+        <span v-for="s in hist.summary" :key="s.idUsers" class="badge text-bg-light border text-start">
+          {{ s.name }}: <strong>{{ s.total }}</strong>
+          <span class="text-muted">({{ s.review }} reviewed · {{ s.direct }} direct)</span>
+        </span>
+      </div>
+
+      <div v-if="histLoading && !hist.requests.length" class="text-muted py-4">Loading history…</div>
+      <div v-else-if="!hist.requests.length" class="alert alert-info">No requests match these filters.</div>
+      <div v-else class="table-responsive table-scroll bg-body rounded shadow-sm">
+        <table class="table table-hover align-middle mb-0">
+          <thead class="table-light sticky-top"><tr><th>Request</th><th>Instructor</th><th>Date</th><th>Items / uniforms</th><th>Came from</th><th>AMO status</th><th>Review</th></tr></thead>
+          <tbody><tr v-for="r in hist.requests" :key="r.id">
+            <td class="fw-semibold">#{{ r.id }}</td>
+            <td>{{ r.requesterName || r.requester }}</td>
+            <td>{{ r.request_date ? new Date(r.request_date).toLocaleString('en-PH') : '—' }}</td>
+            <td class="request-summary">{{ summary(r) }}</td>
+            <td>
+              <span class="badge" :class="r.source === 'direct' ? 'text-bg-warning' : 'text-bg-info'">{{ r.source === 'direct' ? 'Sent directly' : 'Reviewed' }}</span>
+              <div v-if="r.directReason" class="small text-muted">{{ r.directReason }}</div>
+            </td>
+            <td><span class="badge text-bg-secondary">{{ r.status }}</span></td>
+            <td>
+              <span v-if="r.source === 'direct'" class="badge" :class="!r.coordReview ? 'text-bg-warning' : r.coordReview === 'Flagged' ? 'text-bg-danger' : 'text-bg-success'">{{ r.coordReview || 'Not reviewed' }}</span>
+              <span v-else class="text-muted">—</span>
+              <div v-if="r.coordReviewNote" class="small text-muted">{{ r.coordReviewNote }}</div>
+            </td>
+          </tr></tbody>
+        </table>
+      </div>
+    </template>
+
+    <template v-else-if="tab === 'direct'">
       <p class="text-muted small">Instructors can skip the department head when you are away. These already went to the AMO. Acknowledge them, or flag a concern; flagging notifies the AMO. Neither action blocks or undoes the request.</p>
       <div v-if="!directRequests.length" class="alert alert-success">No requests were sent directly to the AMO.</div>
       <div v-else class="table-responsive table-scroll bg-body rounded shadow-sm">
@@ -94,7 +179,7 @@ onMounted(refresh)
             </td>
             <td class="text-nowrap">
               <button v-if="r.coordReview !== 'Acknowledged'" class="btn btn-sm btn-success me-1" :disabled="busyId === r.id" @click="review(r, 'acknowledge')">Acknowledge</button>
-              <button v-if="r.coordReview !== 'Flagged'" class="btn btn-sm btn-danger text-white" :disabled="busyId === r.id" @click="openFlag(r)">Flag</button>
+              <button v-if="r.coordReview !== 'Flagged'" class="btn btn-sm btn-outline-danger" :disabled="busyId === r.id" @click="openFlag(r)">Flag</button>
             </td>
           </tr></tbody>
         </table>

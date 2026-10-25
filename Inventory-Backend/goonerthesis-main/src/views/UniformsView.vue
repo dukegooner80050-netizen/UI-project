@@ -4,7 +4,7 @@ import { useRoute } from "vue-router";
 
 import { listUniformTypes, listUniformVariants, createUniformType, updateUniformType, deleteUniformType,
   createUniformVariant, updateUniformVariant, deleteUniformVariant, restockUniformVariant, releaseUniformVariant,} from "../services/uniforms";
-import { getDepartments } from "../services/departments";
+import { getDepartments, createDepartment, updateDepartment, deleteDepartment } from "../services/departments";
 import AlertMessage from "../components/AlertMessage.vue";
 
 const showAlert = ref(false);
@@ -17,6 +17,75 @@ function notify(type, message) {
   showAlert.value = true;
 }
 const route = useRoute();
+
+/* MANAGE COURSES: the AMO adds a missing course, renames or removes one */
+const courseModalOpen = ref(false);
+const newCourseName = ref("");
+const courseBusy = ref(false);
+const editCourseId = ref(null);
+const editCourseName = ref("");
+function announceCoursesChanged() {
+  // The sidebar listens and reloads its course links.
+  window.dispatchEvent(new Event("cims:courses-changed"));
+}
+async function reloadCourses() {
+  departments.value = (await getDepartments()) || [];
+  announceCoursesChanged();
+}
+async function addCourse() {
+  const name = newCourseName.value.trim();
+  if (!name) return;
+  courseBusy.value = true;
+  try {
+    await createDepartment({ dept_name: name });
+    newCourseName.value = "";
+    await reloadCourses();
+    notify("success", `Course '${name}' added.`);
+  } catch (e) {
+    notify("danger", e?.response?.data?.message || "Could not add the course.");
+  } finally {
+    courseBusy.value = false;
+  }
+}
+function startRename(d) {
+  editCourseId.value = d.iddept;
+  editCourseName.value = d.dept_name;
+}
+async function saveRename(d) {
+  const name = editCourseName.value.trim();
+  if (!name || name === d.dept_name) {
+    editCourseId.value = null;
+    return;
+  }
+  courseBusy.value = true;
+  try {
+    await updateDepartment(d.iddept, { dept_name: name });
+    editCourseId.value = null;
+    await reloadCourses();
+    await loadAll();
+    notify("success", "Course renamed.");
+  } catch (e) {
+    notify("danger", e?.response?.data?.message || "Could not rename the course.");
+  } finally {
+    courseBusy.value = false;
+  }
+}
+const deleteCourseTarget = ref(null);
+async function removeCourse() {
+  const d = deleteCourseTarget.value;
+  deleteCourseTarget.value = null;
+  if (!d) return;
+  courseBusy.value = true;
+  try {
+    await deleteDepartment(d.iddept);
+    await reloadCourses();
+    notify("success", `Course '${d.dept_name}' removed.`);
+  } catch (e) {
+    notify("danger", e?.response?.data?.message || "Could not remove the course.");
+  } finally {
+    courseBusy.value = false;
+  }
+}
 
 /* PAGE / FILTER */
 
@@ -695,6 +764,12 @@ const visibleTypes = computed(() => {
         {{ isAllView ? "Manage all uniform variants" : "Manage uniforms for " + course }}
       </div>
 
+      <div class="d-flex gap-2 flex-wrap">
+        <button class="btn btn-outline-primary" @click="courseModalOpen = true">
+          Manage Courses
+        </button>
+      </div>
+
       <div class="d-flex gap-2" v-if="!isAllView">
         <!-- ADD TYPE -->
 
@@ -808,6 +883,88 @@ const visibleTypes = computed(() => {
             </tr>
           </tbody>
         </table>
+      </div>
+    </div>
+
+    <!-- MANAGE COURSES MODAL -->
+    <div v-if="courseModalOpen" class="modal-backdrop-custom">
+      <div class="modal-custom">
+        <div class="modal-header">
+          <h5 class="mb-0">Manage Courses</h5>
+          <button type="button" class="btn-close" @click="courseModalOpen = false"></button>
+        </div>
+        <div class="modal-body">
+          <form class="d-flex gap-2 mb-3" @submit.prevent="addCourse">
+            <input
+              v-model="newCourseName"
+              id="un-new-course"
+              name="new_course"
+              class="form-control"
+              maxlength="255"
+              autocomplete="off"
+              placeholder="New course name, e.g. BSBA"
+            />
+            <button type="submit" class="btn btn-primary text-nowrap" :disabled="courseBusy || !newCourseName.trim()">
+              Add Course
+            </button>
+          </form>
+
+          <ul class="list-group" style="max-height: 360px; overflow-y: auto">
+            <li v-for="d in departments" :key="d.iddept" class="list-group-item d-flex align-items-center gap-2">
+              <template v-if="editCourseId === d.iddept">
+                <input
+                  v-model="editCourseName"
+                  :id="'un-edit-course-' + d.iddept"
+                  :name="'edit_course_' + d.iddept"
+                  class="form-control form-control-sm"
+                  maxlength="255"
+                  @keyup.enter="saveRename(d)"
+                  @keyup.esc="editCourseId = null"
+                />
+                <button class="btn btn-sm btn-success" :disabled="courseBusy" @click="saveRename(d)">Save</button>
+                <button class="btn btn-sm btn-secondary" @click="editCourseId = null">Cancel</button>
+              </template>
+              <template v-else>
+                <div class="flex-grow-1">
+                  <strong>{{ d.dept_name }}</strong>
+                  <span class="badge bg-secondary ms-2">{{ d.uniform_variants_count || 0 }} variant(s)</span>
+                </div>
+                <button class="btn btn-sm btn-outline-secondary" @click="startRename(d)">Rename</button>
+                <button
+                  class="btn btn-sm btn-outline-danger"
+                  :disabled="courseBusy || d.uniform_variants_count > 0"
+                  :title="d.uniform_variants_count > 0 ? 'Remove its uniform variants first' : 'Remove this course'"
+                  @click="deleteCourseTarget = d"
+                >
+                  Remove
+                </button>
+              </template>
+            </li>
+            <li v-if="!departments.length" class="list-group-item text-center text-muted">No courses yet.</li>
+          </ul>
+          <div class="form-text mt-2">
+            A new course gets its own page in the Uniforms menu. Add its uniform types and variants there.
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button class="btn btn-secondary" @click="courseModalOpen = false">Close</button>
+        </div>
+      </div>
+    </div>
+
+    <div v-if="deleteCourseTarget" class="modal-backdrop-custom">
+      <div class="modal-custom" style="max-width: 420px">
+        <div class="modal-header">
+          <h5 class="mb-0">Remove Course</h5>
+          <button class="btn-close" @click="deleteCourseTarget = null"></button>
+        </div>
+        <div class="modal-body">
+          <p class="mb-0">Remove <strong>{{ deleteCourseTarget.dept_name }}</strong>? This can't be undone.</p>
+        </div>
+        <div class="modal-footer">
+          <button class="btn btn-secondary" @click="deleteCourseTarget = null">Cancel</button>
+          <button class="btn btn-danger" @click="removeCourse">Remove</button>
+        </div>
       </div>
     </div>
 

@@ -7,6 +7,7 @@ import AlertMessage from "../components/AlertMessage.vue";
 import DueBadge from "../components/DueBadge.vue";
 import { getErrorMessage } from "../services/errors";
 import { isReturnableType } from "../services/itemTypes";
+import { getStudentIdMaxLength } from "../services/settings";
 import { printBorrowerForm, hasBorrowedItems } from "../services/borrowerForm";
 import { fulfilmentState } from "../services/requestState";
 
@@ -87,6 +88,7 @@ const approvalRemarks = ref("");
 
 onMounted(async () => {
   requireAdmin();
+  getStudentIdMaxLength().then((n) => (studentIdMax.value = n)).catch(() => {});
 
   await refresh();
 });
@@ -260,6 +262,12 @@ const releaseTargetId = ref(null);
 const releaseMethod = ref("For Pick Up");
 const releaseStudent = ref("");
 const releaseStudentId = ref("");
+const studentIdMax = ref(15);
+watch(releaseStudentId, (v) => {
+  const clean = String(v).replace(/[^0-9-]/g, "").slice(0, studentIdMax.value);
+  if (clean !== v) releaseStudentId.value = clean;
+});
+
 
 // Uniform requests are handed to a student at the AMO office: the AMO checks
 // the student's ID and records who collected it. Stock is deducted then.
@@ -678,7 +686,8 @@ function statusBadgeClass(status) {
       <input id="release-student-name" name="release_student_name" type="text" class="form-control mb-2" v-model="releaseStudent" maxlength="255" autocomplete="off" />
       <label class="form-label" for="release-student-id">Student ID checked</label>
       <div v-if="releaseStudentId" class="form-text mt-0 mb-1">Prefilled from the cashier's request; correct it if the ID shown is different.</div>
-      <input id="release-student-id" name="release_student_id" type="text" class="form-control" v-model="releaseStudentId" maxlength="50" autocomplete="off" />
+      <input id="release-student-id" name="release_student_id" type="text" class="form-control" v-model="releaseStudentId" :maxlength="studentIdMax" autocomplete="off" placeholder="e.g. 2021-00123" />
+      <div class="form-text">Numbers and a dash only, up to {{ studentIdMax }} characters.</div>
     </div>
 
     <div class="modal-body" v-else>

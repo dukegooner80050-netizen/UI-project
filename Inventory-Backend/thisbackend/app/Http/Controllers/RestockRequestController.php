@@ -27,7 +27,15 @@ class RestockRequestController extends Controller
         $items = Item::whereIn('category', self::CATEGORIES)
             ->whereColumn('quantity', '<=', 'minimum_stock')
             ->orderBy('quantity')
-            ->get();
+            ->get()
+            // School Equipment and Type B items with an empty shelf that are
+            // only out on loan or placed in rooms are not out of stock, so
+            // there is nothing to restock.
+            ->reject(function ($item) {
+                $away = $item->awayUnits();
+                return $away !== null && ($away['borrowed'] > 0 || $away['deployed'] > 0);
+            })
+            ->values();
 
         $active = RestockRequest::whereIn('iditems', $items->pluck('iditems'))
             ->whereIn('status', self::ACTIVE)

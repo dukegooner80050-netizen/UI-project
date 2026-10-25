@@ -127,6 +127,27 @@ public function resetPassword($id)
     ]);
 }
 
+// The AMO assigns an instructor / department head to a department, which
+// decides whose requests a department head sees in History.
+public function setDepartment(Request $request, $id)
+{
+    $user = User::find($id);
+    if (!$user) {
+        return response()->json(['message' => 'User not found.'], 404);
+    }
+    if (!in_array(strtolower((string) $user->role), ['instructor', 'department_head'], true)) {
+        return response()->json(['message' => 'Only instructors and department heads have a department.'], 422);
+    }
+    $validated = $request->validate([
+        'iddept' => 'nullable|integer|exists:dept,iddept',
+    ]);
+    $user->iddept = $validated['iddept'] ?? null;
+    $user->save();
+    $this->logActivity($request->user()->idUsers, "Set department for {$user->full_name}");
+
+    return response()->json(['message' => 'Department saved.', 'iddept' => $user->iddept]);
+}
+
 public function destroy($id)
 {
     $user = User::find($id);

@@ -378,6 +378,11 @@ if (
         ], 422);
     }
 
+    if (strtolower((string) $role) === 'cashier' && !empty($validated['uniforms']) && trim((string) ($validated['student_number'] ?? '')) !== ''
+        && ($idErr = SettingController::studentIdError(trim((string) $validated['student_number'])))) {
+        return response()->json(['message' => $idErr, 'errors' => ['student_number' => [$idErr]]], 422);
+    }
+
     if (strtolower((string) $role) === 'cashier' && !empty($validated['uniforms']) && trim((string) ($validated['student_number'] ?? '')) === '') {
         return response()->json([
             'message' => 'Enter the student ID number this uniform request is for.',
@@ -867,6 +872,59 @@ public function directQueue()
         ])));
 }
 
+// History for the department head: every request from instructors in their
+// own department (a head with no department set sees all instructors), with
+// date range, instructor and source filters, plus per-instructor counts.
+//   source = review (went through the head) | direct (skipped the head)
+public function coordinatorHistory(HttpRequest $httpRequest)
+{
+    $user = $httpRequest->user();
+    if (strtolower((string) $user->role) !== 'department_head') {
+        return response()->json(['message' => 'Only the Dean/Academic Coordinator can view this.'], 403);
+    }
+    $v = $httpRequest->validate([
+        'from' => 'nullable|date',
+        'to' => 'nullable|date',
+        'user_id' => 'nullable|integer',
+        'source' => 'nullable|in:all,review,direct',
+    ]);
+
+    $instructors = \App\Models\User::whereRaw('LOWER(role) = ?', ['instructor'])
+        ->when($user->iddept, fn ($q) => $q->where('iddept', $user->iddept))
+        ->orderBy('full_name')->get(['idUsers', 'full_name', 'username']);
+    $ids = $instructors->pluck('idUsers')->all();
+
+    $q = Request::with(['user', 'items.item', 'uniforms.uniformVariant.type', 'uniforms.uniformVariant.department'])
+        ->whereIn('idUsers', $ids);
+    if (!empty($v['user_id'])) $q->where('idUsers', (int) $v['user_id']);
+    if (!empty($v['from'])) $q->where('request_date', '>=', $v['from'] . ' 00:00:00');
+    if (!empty($v['to'])) $q->where('request_date', '<=', $v['to'] . ' 23:59:59');
+    if (($v['source'] ?? 'all') === 'direct') $q->whereNotNull('direct_to_amo_reason');
+    if (($v['source'] ?? 'all') === 'review') $q->whereNull('direct_to_amo_reason');
+
+    $rows = $q->orderByDesc('request_date')->limit(500)->get();
+
+    $summary = [];
+    foreach ($rows as $r) {
+        $uid = $r->idUsers;
+        $summary[$uid] ??= ['idUsers' => $uid, 'name' => optional($r->user)->full_name, 'total' => 0, 'review' => 0, 'direct' => 0];
+        $summary[$uid]['total']++;
+        $summary[$uid][$r->direct_to_amo_reason ? 'direct' : 'review']++;
+    }
+
+    return response()->json([
+        'scopedToDepartment' => (bool) $user->iddept,
+        'instructors' => $instructors,
+        'summary' => array_values($summary),
+        'requests' => $rows->map(fn ($r) => array_merge($this->formatWorkflowRequest($r), [
+            'source' => $r->direct_to_amo_reason ? 'direct' : 'review',
+            'directReason' => $r->direct_to_amo_reason,
+            'coordReview' => $r->coord_review_status,
+            'coordReviewNote' => $r->coord_review_note,
+        ]))->values(),
+    ]);
+}
+
 public function coordinatorReview(HttpRequest $httpRequest, $id)
 {
     $actor = $httpRequest->user();
@@ -1257,6 +1315,9 @@ public function release(HttpRequest $httpRequest, $id)
             }
             if (empty(trim((string) ($validated['released_student_id'] ?? '')))) {
                 return response()->json(['message' => 'Enter the student ID you checked.'], 422);
+            }
+            if ($idErr = SettingController::studentIdError(trim($validated['released_student_id']))) {
+                return response()->json(['message' => $idErr], 422);
             }
 
             $totals = $r->uniforms->groupBy('idUnifvariant')->map(fn ($lines) => (int) $lines->sum('quantity'));

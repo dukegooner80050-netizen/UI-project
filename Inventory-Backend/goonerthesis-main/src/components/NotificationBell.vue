@@ -206,9 +206,10 @@ function goSignups() {
   router.push({ path: "/settings", query: { tab: "ACCOUNT_REQUESTS" } });
 }
 
-function goRequests() {
+function goRequests(l) {
   closePanel();
-  router.push("/request");
+  const open = l && l.requestId ? l.requestId : undefined;
+  router.push({ path: "/request", query: open ? { tab: "mine", open } : { tab: "mine" } });
 }
 
 // Where a request update leads, by who it is for:
@@ -222,7 +223,11 @@ function openNote(n) {
   else if (t === "coordinator_flag") to = "/pending-requests";
   else if (t === "return_reported") to = "/dashboard";
   closePanel();
-  router.push(to);
+  if (to === "/request") {
+    router.push({ path: "/request", query: n.idrequest ? { tab: "mine", open: n.idrequest } : { tab: "mine" } });
+  } else {
+    router.push(to);
+  }
 }
 
 function goRestock() {
@@ -390,7 +395,7 @@ watch(() => route.fullPath, throttled(load, 15000));
             Overdue returns ({{ overdue.length }})
           </div>
           <ul class="list-unstyled mb-0">
-            <li v-for="l in overdue" :key="l.key" class="bell-item bell-link" role="link" tabindex="0" @click="goRequests" @keydown.enter="goRequests">
+            <li v-for="l in overdue" :key="l.key" class="bell-item bell-link" role="link" tabindex="0" @click="goRequests(l)" @keydown.enter="goRequests(l)">
               <strong>{{ l.itemName }}</strong> &times; {{ l.borrowedQty }}
               <div class="small text-muted">
                 Request #{{ l.requestId }}

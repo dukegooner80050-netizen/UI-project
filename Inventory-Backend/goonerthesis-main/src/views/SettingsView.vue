@@ -8,6 +8,8 @@ import {
   updateReturnPeriods,
   getStockLevels,
   updateStockLevels,
+  getStudentIdMaxLength,
+  updateStudentIdMaxLength,
 } from "../services/settings";
 import { getTheme, setTheme } from "../services/theme";
 import { getCurrentUser } from "../services/storage";
@@ -17,7 +19,8 @@ import {
   approveAccountRequest,
   declineAccountRequest,
 } from "../services/accountRequests";
-import { getUsers, updateUser, deleteUser, resetUserPassword } from "../services/users";
+import { getUsers, updateUser, deleteUser, resetUserPassword, setUserDepartment } from "../services/users";
+import { getDepartments } from "../services/departments";
 import ChangePasswordForm from "../components/ChangePasswordForm.vue";
 import { getErrorMessage } from "../services/errors";
 import AlertMessage from "../components/AlertMessage.vue";
@@ -168,6 +171,9 @@ async function loadGeneral() {
 
     currentLimit.value = res.monthly_request_limit;
     newLimit.value = res.monthly_request_limit;
+
+    sidMax.value = await getStudentIdMaxLength();
+    sidNew.value = sidMax.value;
 
     const levels = await getStockLevels();
     Object.assign(slEquipment, levels.school_equipment);
@@ -332,7 +338,41 @@ async function arRunConfirmed() {
 
 const amLoading = ref(true);
 const amUsers = ref([]);
+const deptList = ref([]);
+const amDeptChoice = reactive({}); // { [idUsers]: iddept | "" }
+async function saveDept(user) {
+  try {
+    await setUserDepartment(user.idUsers, amDeptChoice[user.idUsers]);
+    user.iddept = amDeptChoice[user.idUsers] || null;
+    notify("success", "Department saved.");
+  } catch (e) {
+    amDeptChoice[user.idUsers] = user.iddept || "";
+    notify("danger", getErrorMessage(e));
+  }
+}
 const amRoleChoice = reactive({}); // { [idUsers]: "amo" | "department_head" | "admin" | "instructor" | "cashier" }
+
+// Student ID length limit (General tab)
+const sidMax = ref(15);
+const sidNew = ref(15);
+const sidSaving = ref(false);
+async function saveSid() {
+  const n = Number(sidNew.value);
+  if (!Number.isInteger(n) || n < 4 || n > 30) {
+    notify("danger", "Enter a whole number from 4 to 30.");
+    return;
+  }
+  sidSaving.value = true;
+  try {
+    const res = await updateStudentIdMaxLength(n);
+    sidMax.value = res.student_id_max_length;
+    notify("success", "Student ID length saved.");
+  } catch (e) {
+    notify("danger", getErrorMessage(e));
+  } finally {
+    sidSaving.value = false;
+  }
+}
 
 async function loadUsers() {
   if (!canEditLimit.value) {
@@ -344,7 +384,9 @@ async function loadUsers() {
 
   try {
     amUsers.value = await getUsers();
+    try { deptList.value = await getDepartments(); } catch { deptList.value = []; }
     amUsers.value.forEach((u) => {
+      amDeptChoice[u.idUsers] = u.iddept || "";
       amRoleChoice[u.idUsers] = u.role;
     });
   } catch (e) {
@@ -548,6 +590,32 @@ onMounted(async () => {
             </button>
           </div>
 
+        </div>
+      </div>
+
+      <div v-if="canEditLimit && !loading" class="card shadow-sm mb-3">
+        <div class="card-body">
+          <h6 class="mb-2">Student ID Length</h6>
+          <p class="text-muted small">
+            Longest student ID number a cashier or the AMO can type (numbers
+            and a dash only, like 2021-00123). Currently:
+            <strong>{{ sidMax }}</strong> characters.
+          </p>
+          <div class="input-group">
+            <input
+              id="st-sid-max"
+              name="student_id_max_length"
+              type="number"
+              min="4"
+              max="30"
+              class="form-control"
+              v-model.number="sidNew"
+              :disabled="sidSaving"
+            />
+            <button class="btn btn-primary" :disabled="sidSaving || sidNew === sidMax" @click="saveSid">
+              Save
+            </button>
+          </div>
         </div>
       </div>
 
@@ -794,6 +862,7 @@ onMounted(async () => {
                   <th>Name</th>
                   <th>Username</th>
                   <th style="width: 170px">Role</th>
+                  <th style="width: 200px">Department</th>
                   <th style="width: 340px"></th>
                 </tr>
               </thead>
@@ -818,6 +887,19 @@ onMounted(async () => {
                       <option value="instructor">Instructor</option>
                       <option value="cashier">Cashier</option>
                     </select>
+                  </td>
+                  <td>
+                    <select
+                      v-if="['instructor', 'department_head'].includes(u.role)"
+                      class="form-select form-select-sm"
+                      v-model="amDeptChoice[u.idUsers]"
+                      :aria-label="'Department for ' + u.full_name"
+                      @change="saveDept(u)"
+                    >
+                      <option value="">Not set</option>
+                      <option v-for="d in deptList" :key="d.iddept" :value="d.iddept">{{ d.dept_name }}</option>
+                    </select>
+                    <span v-else class="text-muted">—</span>
                   </td>
                   <td>
                     <div class="d-flex gap-2">
@@ -849,7 +931,7 @@ onMounted(async () => {
                 </tr>
 
                 <tr v-if="amUsers.length === 0">
-                  <td colspan="4" class="text-center text-muted py-4">
+                  <td colspan="5" class="text-center text-muted py-4">
                     No accounts found.
                   </td>
                 </tr>

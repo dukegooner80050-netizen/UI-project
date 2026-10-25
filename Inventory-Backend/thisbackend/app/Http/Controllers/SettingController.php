@@ -12,6 +12,52 @@ class SettingController extends Controller
     use ActivityLogger;
 
     const DEFAULT_MONTHLY_REQUEST_LIMIT = 5;
+    const DEFAULT_STUDENT_ID_LENGTH = 15;
+
+    // Longest student ID number the system accepts (the AMO can change it).
+    public static function studentIdMax(): int
+    {
+        $s = Setting::where('setting_key', 'student_id_max_length')->first();
+        $n = $s ? (int) $s->setting_value : self::DEFAULT_STUDENT_ID_LENGTH;
+        return $n >= 4 ? $n : self::DEFAULT_STUDENT_ID_LENGTH;
+    }
+
+    // Returns an error message, or null when the ID is fine. Digits and '-' only.
+    public static function studentIdError(string $id): ?string
+    {
+        $max = self::studentIdMax();
+        if (!preg_match('/^[0-9-]+$/', $id)) {
+            return 'The student ID can only have numbers and a dash (-).';
+        }
+        if (mb_strlen($id) > $max) {
+            return "The student ID can be at most {$max} characters.";
+        }
+        return null;
+    }
+
+    // Any authenticated role can read this (the forms need it).
+    public function studentIdLength()
+    {
+        return response()->json(['student_id_max_length' => self::studentIdMax()]);
+    }
+
+    // AMO only (route middleware).
+    public function updateStudentIdLength(Request $request)
+    {
+        $validated = $request->validate([
+            'student_id_max_length' => 'required|integer|min:4|max:30',
+        ]);
+        Setting::updateOrCreate(
+            ['setting_key' => 'student_id_max_length'],
+            ['setting_value' => (string) $validated['student_id_max_length']]
+        );
+        $this->logActivity(request()->user()->idUsers, "Set the student ID length limit to {$validated['student_id_max_length']}");
+
+        return response()->json([
+            'message' => 'Student ID length saved.',
+            'student_id_max_length' => (int) $validated['student_id_max_length'],
+        ]);
+    }
 
     // Any authenticated role can read this -- everyone except the AMO
     // needs to know their own limit.

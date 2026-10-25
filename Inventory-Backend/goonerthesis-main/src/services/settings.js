@@ -1,5 +1,14 @@
 import axios from "../axios";
 
+// Longest student ID number allowed (digits and '-'). Everyone can read it.
+export async function getStudentIdMaxLength() {
+    return (await axios.get("/settings/student-id-length", { silent: true })).data.student_id_max_length;
+}
+
+export async function updateStudentIdMaxLength(value) {
+    return (await axios.put("/settings/student-id-length", { student_id_max_length: value })).data;
+}
+
 export async function getMonthlyRequestLimit() {
     return (await axios.get("/settings/monthly-request-limit")).data;
 }

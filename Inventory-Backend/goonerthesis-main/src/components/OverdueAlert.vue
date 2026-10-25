@@ -1,6 +1,6 @@
 <script setup>
 import { ref, computed, watch, onMounted, onBeforeUnmount } from "vue";
-import { useRoute } from "vue-router";
+import { useRoute, useRouter } from "vue-router";
 import { getMyOverdue } from "../services/requests";
 import { getCurrentUser } from "../services/storage";
 import DueBadge from "./DueBadge.vue";
@@ -16,6 +16,13 @@ import { startPolling, throttled } from "../services/poller";
 const REFRESH_MS = 300000; // looks again every 5 minutes (the bell checks every minute)
 
 const route = useRoute();
+const router = useRouter();
+
+// Open the request an overdue item belongs to, in My Requests.
+function goToRequest(l) {
+  noticeOpen.value = false;
+  router.push({ path: "/request", query: { tab: "mine", open: l.requestId } });
+}
 
 const lines = ref([]);
 const expanded = ref(false);
@@ -164,7 +171,7 @@ watch(() => route.fullPath, throttled(load, 15000));
             </tr>
           </thead>
           <tbody>
-            <tr v-for="l in lines" :key="l.key">
+            <tr v-for="l in lines" :key="l.key" class="overdue-row" role="link" tabindex="0" title="Open this request" @click="goToRequest(l)" @keydown.enter="goToRequest(l)">
               <td>{{ l.itemName }}</td>
               <td>{{ l.borrowedQty }}</td>
               <td>
@@ -204,7 +211,7 @@ watch(() => route.fullPath, throttled(load, 15000));
           </p>
 
           <ul class="list-unstyled mb-0">
-            <li v-for="l in lines" :key="l.key" class="mb-2">
+            <li v-for="l in lines" :key="l.key" class="mb-2 overdue-row" role="link" tabindex="0" title="Open this request" @click="goToRequest(l)" @keydown.enter="goToRequest(l)">
               <strong>{{ l.itemName }}</strong> &times; {{ l.borrowedQty }}
               <div class="small text-muted">
                 Request #{{ l.requestId }}
@@ -277,4 +284,6 @@ watch(() => route.fullPath, throttled(load, 15000));
   justify-content: flex-end;
   border-top: 1px solid var(--bs-border-color);
 }
+.overdue-row { cursor: pointer; }
+.overdue-row:hover, .overdue-row:focus-visible { background: rgba(0, 0, 0, 0.05); outline: none; }
 </style>

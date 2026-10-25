@@ -45,6 +45,9 @@ class UniformReservationController extends Controller
         ]);
         $studentName = trim($validated['student_name']);
         $studentNumber = trim($validated['student_number']);
+        if ($idErr = SettingController::studentIdError($studentNumber)) {
+            return response()->json(['message' => $idErr, 'errors' => ['student_number' => [$idErr]]], 422);
+        }
 
         $variant = UniformVariant::with(['type', 'department'])
             ->findOrFail($validated['idUnifvariant']);
