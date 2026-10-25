@@ -69,8 +69,15 @@ export async function rejectRequest(id, rejectReason) {
 }
 
 // The requester confirms they received the released items.
-export async function confirmReceived(id) {
-    const response = await axios.put(`/requests/${id}/confirm-received`);
+// itemIds (optional): confirm only those lines; omit to confirm everything left.
+export async function confirmReceived(id, itemIds = []) {
+    const response = await axios.put(`/requests/${id}/confirm-received`, { item_ids: itemIds });
+    return response.data;
+}
+
+// AMO: cancel an approved request nothing was handed over for (frees held stock).
+export async function cancelApprovedRequest(id, reason) {
+    const response = await axios.put(`/requests/${id}/cancel`, { reason });
     return response.data;
 }
 

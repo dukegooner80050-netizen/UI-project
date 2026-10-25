@@ -36,7 +36,7 @@ function lineStatus(item, req) {
   if (!req.releasedAt) {
     return { text: req.stockHeld ? "Reserved · awaiting release" : "Awaiting release", cls: "bg-secondary" };
   }
-  if (!req.receivedAt) {
+  if (!(item.receivedAt || req.receivedAt)) {
     return { text: "Released · confirm receipt", cls: "bg-info text-dark" };
   }
   if (!returnable) return { text: "Received · issued, no return", cls: "bg-success" };
@@ -186,16 +186,27 @@ watch(studentNumber, (v) => {
 
 const studentPaid = ref(false);
 
+// Which lines the open confirmation is for (empty = every line left).
+const receiveItemIds = ref([]);
+const receiveLabel = ref("");
+function askReceive(item = null) {
+  receiveItemIds.value = item ? [item.requestItemId] : [];
+  receiveLabel.value = item ? item.itemName : "";
+  receiveConfirmOpen.value = true;
+}
+const lineReceived = (item) => !!(item.receivedAt || selected.value?.receivedAt);
+
 async function doConfirmReceived() {
   const id = selected.value?.id;
   receiveConfirmOpen.value = false;
   if (!id) return;
   receiveBusy.value = true;
   try {
-    await confirmReceived(id);
+    await confirmReceived(id, receiveItemIds.value);
     await loadMyRequests();
     selected.value = myRequests.value.find((r) => r.id === id) || null;
     showWarning("Receipt recorded", "Thanks, your receipt has been recorded.");
+    receiveItemIds.value = [];
   } catch (e) {
     showWarning(
       "Confirm Received",
@@ -604,6 +615,7 @@ async function loadMyRequests() {
           itemName: item.itemName,
           category: item.category,
           itemType: item.itemType,
+          receivedAt: item.receivedAt || "",
           qty: Number(item.qty) || 0,
           returnedQty: Number(item.returnedQty) || 0,
           borrowedQty: Number(item.borrowedQty) || 0,
@@ -1509,7 +1521,7 @@ watch(activeTab, async () => {
                   <div v-else-if="reservation.status === 'Ready'" class="small text-success">Stock replenished — ready to request</div>
                 </td>
                 <td>{{ formatDate(reservation.createdAt) }}</td>
-                <td><button v-if="['Waiting','Ready'].includes(reservation.status)" class="btn btn-sm btn-danger text-white" @click="cancelReservation(reservation)">Cancel</button></td>
+                <td><button v-if="['Waiting','Ready'].includes(reservation.status)" class="btn btn-sm btn-outline-danger" @click="cancelReservation(reservation)">Cancel</button></td>
               </tr>
               <tr v-if="uniformReservations.length === 0"><td colspan="9" class="text-center text-muted py-4">No uniform reservations yet.</td></tr>
             </tbody>
@@ -1594,6 +1606,7 @@ watch(activeTab, async () => {
                           :class="{
                             'bg-success': (r.status || '').toLowerCase() === 'approved',
                             'bg-danger': (r.status || '').toLowerCase() === 'rejected',
+                            'bg-secondary': (r.status || '').toLowerCase() === 'cancelled',
                             'bg-primary': (r.status || '').toLowerCase() === 'returned',
                             'bg-warning text-dark':
                               ['pending', 'with coordinator', 'with inventory'].includes((r.status || '').toLowerCase()),
@@ -1648,6 +1661,10 @@ watch(activeTab, async () => {
                               </tr>
                             </tbody>
                           </table>
+                          <div class="small"><strong>Purpose:</strong> {{ r.purpose || "—" }}</div>
+                          <div v-if="!(r.uniforms || []).length" class="small">
+                            <strong>Location:</strong> {{ r.location || "—" }} / {{ r.room || "—" }}
+                          </div>
                           <div v-if="r.studentName" class="small">
                             <strong>Student:</strong> {{ r.studentName }}<span v-if="r.studentNumber"> (ID {{ r.studentNumber }})</span>
                           </div>
@@ -1708,11 +1725,22 @@ watch(activeTab, async () => {
                     Return reported ({{ item.pendingReturnQty }}): awaiting check
                   </span>
 
+                  <button
+                    v-if="selected.releasedAt && !lineReceived(item) && (selected.items || []).length > 1"
+                    type="button"
+                    class="btn btn-sm btn-outline-success ms-2"
+                    @click="askReceive(item)"
+                  >
+                    Confirm received
+                  </button>
+
                   <!-- Borrower says it was returned; AMO confirms -->
                   <template
                     v-if="
                       selected.status === 'Approved' &&
                       isReturnableType(item.itemType) &&
+                      selected.releasedAt &&
+                      lineReceived(item) &&
                       reportable(item) > 0
                     "
                   >
@@ -1765,6 +1793,7 @@ watch(activeTab, async () => {
               <div v-if="selected.directReason"><strong>Sent directly to the AMO:</strong> {{ selected.directReason }}<span v-if="selected.coordReview"> — Department head {{ selected.coordReview.toLowerCase() }}<span v-if="selected.coordReviewNote">: {{ selected.coordReviewNote }}</span></span></div>
               <div v-if="selected.studentName"><strong>Student:</strong> {{ selected.studentName }}<span v-if="selected.studentNumber"> (ID {{ selected.studentNumber }})</span></div>
               <div><strong>Status:</strong> {{ selected.status }}</div>
+              <div v-if="(selected.status || '').toLowerCase() === 'cancelled' && selected.rejectReason" class="text-danger"><strong>Cancelled:</strong> {{ selected.rejectReason }}</div>
               <div>
                 <strong>Request Date:</strong> {{ formatDate(selected.date) }}
               </div>
@@ -1805,9 +1834,9 @@ watch(activeTab, async () => {
                   v-else
                   type="button"
                   class="btn btn-sm btn-success mt-1"
-                  @click="receiveConfirmOpen = true"
+                  @click="askReceive()"
                 >
-                  Confirm received
+                  {{ (selected.items || []).some((i) => i.receivedAt) ? "Confirm the rest as received" : "Confirm all received" }}
                 </button>
               </div>
               <button
@@ -1939,7 +1968,9 @@ watch(activeTab, async () => {
 
       <div class="modal-body">
         <p class="mb-2">
-          Confirm that you received the items for request
+          Confirm that you received
+          <template v-if="receiveLabel"><strong>{{ receiveLabel }}</strong> from request</template>
+          <template v-else>the items for request</template>
           <strong>#{{ selected?.id }}</strong>?
         </p>
         <p class="text-muted small mb-0">

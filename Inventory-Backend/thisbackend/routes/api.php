@@ -303,6 +303,7 @@ Route::middleware('role:amo,department_head,admin,instructor,cashier')->group(fu
 
         Route::put('/requests/{id}/approve', [RequestController::class, 'approve']);
         Route::put('/requests/{id}/reject', [RequestController::class, 'reject']);
+        Route::put('/requests/{id}/cancel', [RequestController::class, 'cancelApproved']);
         Route::post('/requests/{id}/resend-notification', [RequestController::class, 'resendNotification']);
         Route::put('/requests/{id}/release', [RequestController::class, 'release']);
 

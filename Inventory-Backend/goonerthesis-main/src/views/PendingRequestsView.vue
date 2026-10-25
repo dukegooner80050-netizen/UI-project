@@ -1,6 +1,6 @@
 <script setup>
 import { ref, reactive, computed, onMounted, watch } from "vue";
-import { getRequests, approveRequest, rejectRequest, releaseRequest } from "../services/requests";
+import { getRequests, approveRequest, rejectRequest, releaseRequest, cancelApprovedRequest } from "../services/requests";
 import { getCurrentUser } from "../services/storage";
 import { requireAdmin } from "../services/session";
 import AlertMessage from "../components/AlertMessage.vue";
@@ -73,6 +73,33 @@ function dueValue(r, item) {
 function setDue(r, item, value) {
   dueDates.value = { ...dueDates.value, [dueKey(r, item)]: value };
 }
+// Cancel an approved request nothing was handed over for.
+const cancelModal = ref(false);
+const cancelReason = ref("");
+const cancelTargetId = ref(null);
+const cancelBusy = ref(false);
+function openCancelModal(id) {
+  cancelTargetId.value = id;
+  cancelReason.value = "";
+  cancelModal.value = true;
+}
+async function confirmCancel() {
+  const reason = cancelReason.value.trim();
+  if (reason.length < 3 || cancelBusy.value) return;
+  cancelBusy.value = true;
+  try {
+    const res = await cancelApprovedRequest(cancelTargetId.value, reason);
+    cancelModal.value = false;
+    notify("success", res.message || "Request cancelled.");
+    await refresh();
+  } catch (e) {
+    cancelModal.value = false;
+    notify("danger", getErrorMessage(e));
+  } finally {
+    cancelBusy.value = false;
+  }
+}
+
 const rejectModal = ref(false);
 const rejectReason = ref("");
 const rejectTargetId = ref(null);
@@ -329,6 +356,7 @@ function statusBadgeClass(status) {
   if (s === "with coordinator") return "bg-info text-dark";
   if (s === "approved") return "bg-success";
   if (s === "rejected") return "bg-danger";
+  if (s === "cancelled") return "bg-secondary";
   return "bg-secondary";
 }
 </script>
@@ -476,6 +504,14 @@ function statusBadgeClass(status) {
                       Reject
                     </button>
                     <button
+                      v-if="(r.status || '').toLowerCase() === 'approved' && !r.releasedAt"
+                      class="btn btn-sm btn-danger text-white"
+                      title="Cancel this approval and free the held stock"
+                      @click="openCancelModal(r.id)"
+                    >
+                      Cancel approval
+                    </button>
+                    <button
                       v-if="(r.status || '').toLowerCase() === 'approved'"
                       class="btn btn-sm btn-info text-dark"
                       @click="openReleaseModal(r.id)"
@@ -617,10 +653,10 @@ function statusBadgeClass(status) {
                         </div>
 
                         <div
-                          v-if="(r.status || '').toLowerCase() === 'rejected' && r.rejectReason"
+                          v-if="['rejected', 'cancelled'].includes((r.status || '').toLowerCase()) && r.rejectReason"
                           class="text-danger mt-2"
                         >
-                          Rejection reason: {{ r.rejectReason }}
+                          {{ (r.status || '').toLowerCase() === 'cancelled' ? 'Cancelled' : 'Rejection' }} reason: {{ r.rejectReason }}
                         </div>
                       </div>
                     </div>
@@ -639,7 +675,34 @@ function statusBadgeClass(status) {
       </div>
     </div>
   </div>
-  <div v-if="rejectModal" class="modal-backdrop-custom">
+  <div v-if="cancelModal" class="modal-backdrop-custom">
+  <div class="modal-custom" style="max-width: 460px">
+    <div class="modal-header">
+      <h5 class="mb-0">Cancel Approval</h5>
+      <button class="btn-close" @click="cancelModal = false"></button>
+    </div>
+    <div class="modal-body">
+      <p class="mb-2">Request <strong>#{{ cancelTargetId }}</strong> will be cancelled and its held stock returned to the shelf. The requester is notified.</p>
+      <label for="cancel-reason" class="form-label">Reason</label>
+      <textarea
+        id="cancel-reason"
+        name="cancel_reason"
+        v-model="cancelReason"
+        class="form-control"
+        rows="3"
+        maxlength="255"
+        placeholder="e.g. Student did not pick it up"
+      ></textarea>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary text-white" @click="cancelModal = false">Back</button>
+      <button class="btn btn-danger" :disabled="cancelBusy || cancelReason.trim().length < 3" @click="confirmCancel">
+        Cancel approval
+      </button>
+    </div>
+  </div>
+</div>
+<div v-if="rejectModal" class="modal-backdrop-custom">
   <div class="modal-custom">
 
     <div class="modal-header">

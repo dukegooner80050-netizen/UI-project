@@ -75,6 +75,7 @@ return response()->json(
 
                 return [
                     'requestItemId' => $item->idrequestItem,
+                    'receivedAt' => $item->received_at,
                     'itemId' => $item->iditems,
                     'itemName' => optional($item->item)->item_name,
                     'category' => optional($item->item)->category,
@@ -281,6 +282,7 @@ public function show($id)
 
             return [
                 'requestItemId' => $item->idrequestItem,
+                    'receivedAt' => $item->received_at,
                 'itemId' => $item->iditems,
                 'itemName' => optional($item->item)->item_name,
                 'category' => optional($item->item)->category,
@@ -541,6 +543,7 @@ return response()->json([
         'items' => $newRequest->items->map(function ($item) use ($newRequest) {
             return [
                 'requestItemId' => $item->idrequestItem,
+                    'receivedAt' => $item->received_at,
                 'itemId' => $item->iditems,
                 'itemName' => optional($item->item)->item_name,
                 'qty' => $item->quantity,
@@ -732,6 +735,7 @@ public function approve(HttpRequest $httpRequest, $id)
         'items' => $request->items->map(function ($item) use ($request) {
             return [
                 'requestItemId' => $item->idrequestItem,
+                    'receivedAt' => $item->received_at,
                 'itemId' => $item->iditems,
                 'itemName' => optional($item->item)->item_name,
                 'qty' => $item->quantity,
@@ -830,6 +834,7 @@ return response()->json([
         'items' => $request->items->map(function ($item) use ($request) {
             return [
                 'requestItemId' => $item->idrequestItem,
+                    'receivedAt' => $item->received_at,
                 'itemId' => $item->iditems,
                 'itemName' => optional($item->item)->item_name,
                 'qty' => $item->quantity,
@@ -1042,6 +1047,12 @@ public function reportReturn(HttpRequest $httpRequest, $id)
         }
         if ($request->stock_held) {
             return response()->json(['message' => 'These items are reserved and have not been released yet.'], 422);
+        }
+        if (is_null($request->released_at)) {
+            return response()->json(['message' => 'This request has not been released yet.'], 422);
+        }
+        if (is_null($requestItem->received_at ?? $request->received_at)) {
+            return response()->json(['message' => 'Confirm that you received this item before reporting it returned.'], 422);
         }
 
         if ($requestItem->item && !$requestItem->item->isReturnable()) {
@@ -1369,13 +1380,17 @@ public function release(HttpRequest $httpRequest, $id)
     });
 }
 
-// Requester confirms they received the released items (proof of receipt).
-public function confirmReceived($id)
+// Requester confirms they received what was released (proof of receipt).
+// Optional item_ids confirms only those lines (requestitem ids); without it,
+// every line not yet confirmed is confirmed. The request counts as received
+// once every line has been.
+public function confirmReceived(HttpRequest $httpRequest, $id)
 {
     $user = request()->user();
+    $ids = array_map('intval', (array) $httpRequest->input('item_ids', []));
 
-    return DB::transaction(function () use ($id, $user) {
-        $r = Request::with('user')->where('idrequest', $id)->lockForUpdate()->first();
+    return DB::transaction(function () use ($id, $user, $ids) {
+        $r = Request::with(['user', 'items.item'])->where('idrequest', $id)->lockForUpdate()->first();
 
         if (!$r) {
             return response()->json(['message' => 'Request not found.'], 404);
@@ -1390,24 +1405,96 @@ public function confirmReceived($id)
             return response()->json(['message' => 'You already confirmed receiving this request.'], 422);
         }
 
-        $r->update(['received_at' => now()]);
+        // Uniform-only requests have no lines: the AMO records the handover.
+        $lines = $r->items->filter(fn ($l) => is_null($l->received_at));
+        if (!empty($ids)) {
+            $lines = $lines->filter(fn ($l) => in_array((int) $l->idrequestItem, $ids, true));
+        }
+        if ($r->items->isNotEmpty() && $lines->isEmpty()) {
+            return response()->json(['message' => 'Those items were already confirmed.'], 422);
+        }
 
+        foreach ($lines as $l) {
+            $l->update(['received_at' => now()]);
+        }
+
+        $allIn = $r->items->every(fn ($l) => !is_null($l->fresh()->received_at));
+        if ($allIn) {
+            $r->update(['received_at' => now()]);
+        }
+
+        $names = $lines->map(fn ($l) => optional($l->item)->item_name)->filter()->implode(', ');
         foreach (\App\Models\User::whereRaw('LOWER(role) = ?', ['amo'])->pluck('idUsers') as $amoId) {
             $this->createRequestNotification(
                 $r,
                 (int) $amoId,
                 'received',
-                ($user->username ?? 'The requester') . ' confirmed receiving request #' . $r->idrequest . '.',
+                ($user->username ?? 'The requester') . ' confirmed receiving ' . ($allIn ? 'request #' . $r->idrequest : ($names ?: 'items') . ' from request #' . $r->idrequest) . '.',
                 (int) $user->idUsers
             );
         }
 
-        $this->logActivity($user->idUsers, 'Confirmed receiving Request #' . $r->idrequest);
+        $this->logActivity($user->idUsers, 'Confirmed receiving ' . ($allIn ? 'Request #' . $r->idrequest : ($names ?: 'items') . ' of Request #' . $r->idrequest));
 
         return response()->json([
-            'message' => 'Thanks, your receipt has been recorded.',
-            'receivedAt' => $r->received_at,
+            'message' => $allIn ? 'Thanks, your receipt has been recorded.' : 'Receipt recorded for the selected items.',
+            'receivedAt' => $r->fresh()->received_at,
+            'allReceived' => $allIn,
         ]);
+    });
+}
+
+// The AMO cancels an approved request nothing has been handed over for, e.g.
+// the student never came. Held stock goes back on the shelf.
+public function cancelApproved(HttpRequest $httpRequest, $id)
+{
+    $actor = $httpRequest->user();
+    $validated = $httpRequest->validate(['reason' => 'required|string|min:3|max:255']);
+
+    return DB::transaction(function () use ($id, $actor, $validated) {
+        $r = Request::with(['items', 'uniforms'])->where('idrequest', $id)->lockForUpdate()->first();
+
+        if (!$r) {
+            return response()->json(['message' => 'Request not found.'], 404);
+        }
+        if ($r->status !== 'Approved') {
+            return response()->json(['message' => 'Only approved requests can be cancelled.'], 422);
+        }
+        if (!is_null($r->released_at)) {
+            return response()->json(['message' => 'This request was already released. Record the return instead of cancelling it.'], 422);
+        }
+
+        foreach ($r->items as $line) {
+            $item = Item::where('iditems', $line->iditems)->lockForUpdate()->first();
+            if (!$item) continue;
+            if ($r->stock_held) {
+                $item->reserved_quantity = max(0, (int) ($item->reserved_quantity ?? 0) - (int) $line->quantity);
+            } else {
+                // Approved before items were reserved: stock was taken at approval.
+                $item->quantity = (int) $item->quantity + (int) $line->quantity;
+            }
+            $item->refreshStatus();
+            $item->save();
+        }
+        foreach ($r->uniforms->groupBy('idUnifvariant') as $variantId => $lines) {
+            $variant = UniformVariant::where('idUnifvariant', $variantId)->lockForUpdate()->first();
+            if ($variant) {
+                $variant->reserved_quantity = max(0, (int) ($variant->reserved_quantity ?? 0) - (int) $lines->sum('quantity'));
+                $variant->save();
+            }
+        }
+
+        $r->update([
+            'status' => 'Cancelled',
+            'stock_held' => false,
+            'rejectReason' => $validated['reason'],
+        ]);
+
+        $paidNote = ($r->uniforms->isNotEmpty() && $r->paid_at) ? ' The student already paid, so please settle it with the cashier.' : '';
+        $this->createRequestNotification($r, (int) $r->idUsers, 'decision', 'Your request #' . $r->idrequest . ' was cancelled by the AMO. Reason: ' . $validated['reason'] . '.' . $paidNote, (int) $actor->idUsers);
+        $this->logActivity($actor->idUsers, 'Cancelled approved Request #' . $r->idrequest . ' (' . $validated['reason'] . ')');
+
+        return response()->json(['message' => 'Request cancelled and the held stock was released.']);
     });
 }
 
@@ -1472,8 +1559,13 @@ if ($requestItem->request->status !== 'Approved') {
         'message' => 'Only approved requests can be returned.'
     ], 400);
 }
-if ($requestItem->request->stock_held) {
-    return response()->json(['message' => 'These items are reserved and have not been released yet.'], 422);
+if ($requestItem->request->stock_held || is_null($requestItem->request->released_at)) {
+    return response()->json(['message' => 'Release this request before recording a return.'], 422);
+}
+if (is_null($requestItem->received_at)) {
+    // The AMO is taking it back, so it was in the borrower's hands.
+    $requestItem->received_at = $requestItem->request->received_at ?? now();
+    $requestItem->save();
 }
         $qty = $validated['quantity'];
 

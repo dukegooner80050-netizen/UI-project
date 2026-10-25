@@ -134,14 +134,28 @@ class ReturnPolicy
             'daysOverdue' => 0,
         ];
 
-        if (!$request->borrowed_at || $request->status === 'Pending' || $request->status === 'Rejected') {
+        if (!$request->borrowed_at || in_array($request->status, ['Pending', 'Rejected', 'Cancelled'], true)) {
+            return $none;
+        }
+
+        // The clock starts when the item is actually in the borrower's hands:
+        // their receipt for this line, else the request's receipt, else the
+        // release. Older approved requests (items deducted at approval, never
+        // released) fall back to the approval date. Reserved items that have
+        // not been handed over yet have no due date.
+        $basis = $requestItem->received_at
+            ?? $request->received_at
+            ?? $request->released_at
+            ?? ($request->stock_held ? null : $request->borrowed_at);
+        if (!$basis) {
             return $none;
         }
 
         // A due date picked by the admin at approval wins over the default
         // period. Only tracked (returnable) items ever get one.
-        $borrowed = Carbon::parse($request->borrowed_at)->startOfDay();
+        $borrowed = Carbon::parse($basis)->startOfDay();
         if ($requestItem->due_date && $requestItem->item && $requestItem->item->isReturnable()) {
+            // A date the AMO picked stays that exact date.
             $due = Carbon::parse($requestItem->due_date)->startOfDay();
             $days = (int) abs($borrowed->diffInDays($due));
         } elseif ($default !== null) {
