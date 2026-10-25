@@ -1509,7 +1509,7 @@ watch(activeTab, async () => {
                   <div v-else-if="reservation.status === 'Ready'" class="small text-success">Stock replenished — ready to request</div>
                 </td>
                 <td>{{ formatDate(reservation.createdAt) }}</td>
-                <td><button v-if="['Waiting','Ready'].includes(reservation.status)" class="btn btn-sm btn-outline-danger" @click="cancelReservation(reservation)">Cancel</button></td>
+                <td><button v-if="['Waiting','Ready'].includes(reservation.status)" class="btn btn-sm btn-danger text-white" @click="cancelReservation(reservation)">Cancel</button></td>
               </tr>
               <tr v-if="uniformReservations.length === 0"><td colspan="9" class="text-center text-muted py-4">No uniform reservations yet.</td></tr>
             </tbody>

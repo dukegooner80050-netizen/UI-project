@@ -179,7 +179,7 @@ onMounted(refresh)
             </td>
             <td class="text-nowrap">
               <button v-if="r.coordReview !== 'Acknowledged'" class="btn btn-sm btn-success me-1" :disabled="busyId === r.id" @click="review(r, 'acknowledge')">Acknowledge</button>
-              <button v-if="r.coordReview !== 'Flagged'" class="btn btn-sm btn-outline-danger" :disabled="busyId === r.id" @click="openFlag(r)">Flag</button>
+              <button v-if="r.coordReview !== 'Flagged'" class="btn btn-sm btn-danger text-white" :disabled="busyId === r.id" @click="openFlag(r)">Flag</button>
             </td>
           </tr></tbody>
         </table>
