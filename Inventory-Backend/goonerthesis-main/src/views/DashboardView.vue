@@ -904,7 +904,7 @@ eventContent(arg) {
             <button class="btn btn-danger btn-sm" @click="scrollToRestock">
               Go to restocking
             </button>
-            <button class="btn btn-outline-secondary btn-sm" @click="openLowStockModal">
+            <button class="btn btn-secondary text-white btn-sm" @click="openLowStockModal">
               All low stock
             </button>
             <button
@@ -1044,7 +1044,7 @@ eventContent(arg) {
               </li>
             </ul>
             <div class="mt-3">
-              <button class="btn btn-sm btn-outline-secondary" @click="router.push('/logs')">
+              <button class="btn btn-sm btn-secondary text-white" @click="router.push('/logs')">
                 View All Logs
               </button>
             </div>
@@ -1475,8 +1475,9 @@ eventContent(arg) {
   overflow-y: auto;
 }
 
-/* the dashboard's list pop-ups are wider than the default */
 .modal-custom {
   max-width: 700px;
 }
+.spin { display: inline-block; animation: spin 0.8s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
 </style>

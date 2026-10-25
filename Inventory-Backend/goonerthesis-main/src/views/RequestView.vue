@@ -1411,7 +1411,7 @@ watch(activeTab, async () => {
       <div class="card-body">
         <div class="d-flex justify-content-between align-items-center mb-3">
           <h5 class="mb-0">Uniform Reservation Queue</h5>
-          <button class="btn btn-sm btn-outline-primary" @click="loadReservations">Refresh</button>
+          <button class="btn btn-sm btn-outline-secondary" title="Refresh" aria-label="Refresh" @click="loadReservations"><i class="bi bi-arrow-clockwise"></i></button>
         </div>
         <div class="alert alert-info py-2">
           Reserve uniforms the student has already paid for when they are out of stock. When the AMO restocks, the oldest reservations become requests to the AMO automatically (stock held, ready for pickup) and you get a notification. No need to submit a request yourself.

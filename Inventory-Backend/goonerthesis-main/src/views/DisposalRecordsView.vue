@@ -153,7 +153,7 @@ async function exportExcel() {
               :disabled="!search && !dateFrom && !dateTo"
               @click="clearFilters"
             >
-              Clear
+              Clear filters
             </button>
           </div>
         </div>

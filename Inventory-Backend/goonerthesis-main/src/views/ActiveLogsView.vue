@@ -172,9 +172,9 @@ function badgeClass(action) {
         <div class="text-muted small">Monitoring Database</div>
       </div>
 
-      <div class="d-flex gap-2">
-        <button class="btn btn-secondary" @click="refresh">Refresh</button>
-      </div>
+      <button class="btn btn-outline-secondary" title="Refresh" aria-label="Refresh" @click="refresh">
+        <i class="bi bi-arrow-clockwise"></i>
+      </button>
     </div>
 
     <div class="card shadow-sm">
@@ -318,4 +318,6 @@ function badgeClass(action) {
   z-index: 2;
   box-shadow: 0 1px 0 #dee2e6;
 }
+.spin { display: inline-block; animation: spin 0.8s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
 </style>

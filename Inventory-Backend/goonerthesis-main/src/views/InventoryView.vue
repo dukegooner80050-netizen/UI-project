@@ -533,7 +533,7 @@ function formatDate(date) {
             </select>
           </div>
           <div class="col-md-1">
-            <button type="button" class="btn btn-outline-secondary w-100" @click="clearLocationFilters">Clear</button>
+            <button type="button" class="btn btn-outline-secondary w-100" @click="clearLocationFilters">Clear filters</button>
           </div>
         </div>
       </div>
@@ -796,7 +796,7 @@ function formatDate(date) {
                 </td>
 
                 <td>
-                  <button class="btn btn-outline-danger btn-sm" @click="openDispose(item)">
+                  <button class="btn btn-danger text-white btn-sm" @click="openDispose(item)">
                     Dispose
                   </button>
                 </td>

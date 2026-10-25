@@ -238,7 +238,7 @@ function toggleExpand(key) {
 
           <div>
             <button
-              class="btn btn-outline-secondary"
+              class="btn btn-secondary text-white"
               :disabled="!dateFrom && !dateTo"
               @click="clearDates"
             >

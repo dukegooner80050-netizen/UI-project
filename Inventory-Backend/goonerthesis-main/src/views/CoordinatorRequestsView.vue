@@ -65,20 +65,22 @@ onMounted(refresh)
   <div class="container-fluid py-3">
     <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
       <div><h2 class="mb-1">Coordinator Request Review</h2><p class="text-muted mb-0">Review requests and forward them to Inventory Management. This step does not approve the request or change stock.</p></div>
-      <button class="btn btn-outline-success" @click="refresh" :disabled="loading">{{ loading ? 'Refreshing…' : 'Refresh' }}</button>
+      <button class="btn btn-outline-secondary" title="Refresh" aria-label="Refresh" @click="refresh" :disabled="loading">
+  <i class="bi bi-arrow-clockwise" :class="{ spin: loading }"></i>
+</button>
     </div>
     <AlertMessage v-model:show="showAlert" :type="alertType" :message="alertMessage" />
-    <div class="btn-group mb-3">
-      <button class="btn" :class="tab === 'queue' ? 'btn-success' : 'btn-outline-success'" @click="tab = 'queue'">Waiting for review ({{ requests.length }})</button>
-      <button class="btn" :class="tab === 'direct' ? 'btn-success' : 'btn-outline-success'" @click="tab = 'direct'">Sent directly to AMO ({{ unreviewedCount() }} to review)</button>
+    <div class="d-flex flex-wrap gap-2 mb-3">
+      <button class="btn" :class="tab === 'queue' ? 'btn-primary' : 'btn-outline-primary'" @click="tab = 'queue'">Waiting for review ({{ requests.length }})</button>
+      <button class="btn" :class="tab === 'direct' ? 'btn-primary' : 'btn-outline-primary'" @click="tab = 'direct'">Sent directly to AMO ({{ unreviewedCount() }} to review)</button>
     </div>
 
     <template v-if="tab === 'direct'">
       <p class="text-muted small">Instructors can skip the department head when you are away. These already went to the AMO. Acknowledge them, or flag a concern; flagging notifies the AMO. Neither action blocks or undoes the request.</p>
       <div v-if="!directRequests.length" class="alert alert-success">No requests were sent directly to the AMO.</div>
-      <div v-else class="table-responsive bg-body rounded shadow-sm">
+      <div v-else class="table-responsive table-scroll bg-body rounded shadow-sm">
         <table class="table table-hover align-middle mb-0">
-          <thead class="table-light"><tr><th>Request</th><th>Instructor</th><th>Date</th><th>Items / uniforms</th><th>Why skipped</th><th>AMO status</th><th>Your review</th><th>Action</th></tr></thead>
+          <thead class="table-light sticky-top"><tr><th>Request</th><th>Instructor</th><th>Date</th><th>Items / uniforms</th><th>Why skipped</th><th>AMO status</th><th>Your review</th><th>Action</th></tr></thead>
           <tbody><tr v-for="r in directRequests" :key="r.id">
             <td class="fw-semibold">#{{ r.id }}</td><td>{{ r.requester || 'Unknown' }}</td>
             <td>{{ r.request_date ? new Date(r.request_date).toLocaleString('en-PH') : '—' }}</td>
@@ -92,7 +94,7 @@ onMounted(refresh)
             </td>
             <td class="text-nowrap">
               <button v-if="r.coordReview !== 'Acknowledged'" class="btn btn-sm btn-success me-1" :disabled="busyId === r.id" @click="review(r, 'acknowledge')">Acknowledge</button>
-              <button v-if="r.coordReview !== 'Flagged'" class="btn btn-sm btn-outline-danger" :disabled="busyId === r.id" @click="openFlag(r)">Flag</button>
+              <button v-if="r.coordReview !== 'Flagged'" class="btn btn-sm btn-danger text-white" :disabled="busyId === r.id" @click="openFlag(r)">Flag</button>
             </td>
           </tr></tbody>
         </table>
@@ -102,9 +104,9 @@ onMounted(refresh)
     <template v-else>
     <div v-if="loading && !requests.length" class="text-muted py-4">Loading coordinator queue…</div>
     <div v-else-if="!requests.length" class="alert alert-success">No requests are currently waiting for coordinator review.</div>
-    <div v-else class="table-responsive bg-body rounded shadow-sm">
+    <div v-else class="table-responsive table-scroll bg-body rounded shadow-sm">
       <table class="table table-hover align-middle mb-0">
-        <thead class="table-light"><tr><th>Request</th><th>Requester</th><th>Date</th><th>Items / uniforms</th><th>Purpose / location</th><th>Status</th><th>Action</th></tr></thead>
+        <thead class="table-light sticky-top"><tr><th>Request</th><th>Requester</th><th>Date</th><th>Items / uniforms</th><th>Purpose / location</th><th>Status</th><th>Action</th></tr></thead>
         <tbody><tr v-for="r in requests" :key="r.id">
           <td class="fw-semibold">#{{ r.id }}</td><td>{{ r.requester || 'Unknown' }}</td><td>{{ r.request_date ? new Date(r.request_date).toLocaleString('en-PH') : '—' }}</td>
           <td class="request-summary">{{ summary(r) }}</td><td><div>{{ r.purpose || '—' }}</div><small class="text-muted">{{ r.location || '—' }} / {{ r.room || '—' }}</small></td>
@@ -151,5 +153,8 @@ onMounted(refresh)
 </template>
 
 <style scoped>
+.table-scroll { max-height: 520px; overflow: auto; }
 .request-summary { min-width: 220px; max-width: 330px; white-space: normal; }
+.spin { display: inline-block; animation: spin 0.8s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
 </style>
