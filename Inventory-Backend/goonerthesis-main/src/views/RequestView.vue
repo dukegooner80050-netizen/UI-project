@@ -1844,7 +1844,7 @@ watch(activeTab, async () => {
                 class="btn btn-sm btn-dark text-white mt-2"
                 @click="printBorrowerForm(selected)"
               >
-                Print Borrower's Form
+                Print my copy of the Borrower's Form
               </button>
 
               <div

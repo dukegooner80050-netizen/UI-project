@@ -285,6 +285,7 @@ async function executeConfirm() {
 // is picking the items up or having them delivered.
 
 const releaseModal = ref(false);
+const releaseTarget = computed(() => requests.value.find((r) => r.id === releaseTargetId.value) || null);
 const releaseTargetId = ref(null);
 const releaseMethod = ref("For Pick Up");
 const releaseStudent = ref("");
@@ -754,6 +755,17 @@ function statusBadgeClass(status) {
     </div>
 
     <div class="modal-body" v-else>
+      <div v-if="releaseTarget && hasBorrowedItems(releaseTarget)" class="alert alert-warning py-2">
+        <div class="fw-semibold mb-1">This request includes borrowed items</div>
+        <div class="small mb-2">
+          Print the Borrower's Form, have the borrower sign it when they receive
+          the items, and keep the signed copy on file.
+        </div>
+        <button type="button" class="btn btn-sm btn-dark text-white" @click="printBorrowerForm(releaseTarget)">
+          Print Borrower's Form
+        </button>
+      </div>
+
       <label class="form-label">How are these items going out?</label>
 
       <div class="form-check">
