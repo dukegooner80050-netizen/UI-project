@@ -15,6 +15,7 @@ protected $fillable = [
     'iditems',
     'quantity',
     'returned_quantity',
+    'received_at',
 ];
 
 public $timestamps = false;

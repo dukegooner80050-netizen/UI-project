@@ -1,10 +1,15 @@
 <script setup>
-import { ref, computed, onMounted, watch, onBeforeUnmount } from "vue";
+import { ref, computed, onMounted, watch, onBeforeUnmount, nextTick } from "vue";
 import { useRouter } from "vue-router";
 import { getItems } from "../services/items";
-import { getRequests } from "../services/requests";
+import StockBadge from "../components/StockBadge.vue";
+import DueBadge from "../components/DueBadge.vue";
+import { getRequests, getMyOverdue } from "../services/requests";
 import { getLogs } from "../services/logs";
 import { getCurrentUser } from "../services/storage";
+import LowStockRestockPanel from "../components/LowStockRestockPanel.vue";
+import ReturnReportsPanel from "../components/ReturnReportsPanel.vue";
+import { getLowStock } from "../services/restock";
 
 // Chart.js
 import Chart from "chart.js/auto";
@@ -19,7 +24,7 @@ const router = useRouter();
 /*  DASHBOARD FEATURES FOR REG.USER  */
 const user = computed(() => getCurrentUser());
 const isAdmin = computed(
-  () => (user.value?.role || "").toLowerCase() === "admin",
+  () => (user.value?.role || "").toLowerCase() === "amo",
 );
 
 /*  STATE  */
@@ -30,13 +35,61 @@ const lastUpdated = ref("");
 const selectedDayRequests = ref([]);
 const selectedDay = ref("");
 const showDayModal = ref(false);
+// Request statuses (review workflow, roadmap #14). "In flight" = still
+// waiting on a decision; "actionable" = Inventory Management can act now.
+const IN_FLIGHT = ["pending", "with coordinator", "with inventory"];
+const ACTIONABLE = ["pending", "with inventory"];
+const isInFlight = (s) => IN_FLIGHT.includes((s || "").toLowerCase());
+const isActionable = (s) => ACTIONABLE.includes((s || "").toLowerCase());
+
+// One colour per status, matching the calendar badges. (Returned used to
+// fall through to red, so it looked like a rejection.)
+function statusBadgeClass(status) {
+  const s = (status || "").toLowerCase();
+  if (isInFlight(s)) return "bg-warning text-dark";
+  if (s === "approved") return "bg-success";
+  if (s === "rejected") return "bg-danger";
+  if (s === "returned") return "bg-info text-dark";
+  return "bg-secondary";
+}
+
 const lowStockModal = ref(false);
+const overdueModal = ref(false);
+
+// Items at Critical stock (or out), straight from the restock API so we know
+// whether a restock request already exists for each one.
+const criticalStock = ref([]);
+
+// The urgent card can be closed. It stays closed for this browser session and
+// comes back if a different set of items reaches Critical.
+function urgentKey() {
+  return `urgentCardDismissed:${getCurrentUser()?.idUsers ?? "anon"}`;
+}
+function readUrgentDismissed() {
+  try {
+    return sessionStorage.getItem(urgentKey()) || "";
+  } catch {
+    return "";
+  }
+}
+const urgentDismissed = ref(readUrgentDismissed());
+
+// The signed-in user's own overdue lines (borrowers). Admins use the list
+// built from every request instead.
+const myOverdue = ref([]);
 const showPendingRequestsModal = ref(false);
 /*  CLOCK  */
 const now = ref(null); // Date object (PH time from API)
 const clockStatus = ref("syncing"); // "syncing" | "synced" | "offline"
 let clockTimer = null;
 let resyncTimer = null;
+
+// Philippine time without trusting the device clock: ask a time service once
+// (and every 10 minutes), remember how far the device is off, and read the
+// device clock plus that offset every second. The clock shows straight away
+// and keeps running even when the service is unreachable (a school network
+// may have no internet), and a request that hangs is cut off after 4 seconds.
+let clockOffsetMs = 0;
 
 async function fetchPHTime() {
   const urls = [
@@ -45,41 +98,68 @@ async function fetchPHTime() {
   ];
 
   for (const url of urls) {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 4000);
+
     try {
-      const res = await fetch(url, { cache: "no-store" });
+      const started = Date.now();
+      const res = await fetch(url, { cache: "no-store", signal: controller.signal });
       if (!res.ok) continue;
 
       const data = await res.json();
       const iso = data.datetime || data.dateTime;
       if (!iso) continue;
 
-      now.value = new Date(iso);
+      // Half the round trip is how old the answer already is.
+      const latency = (Date.now() - started) / 2;
+      clockOffsetMs = new Date(iso).getTime() + latency - Date.now();
       clockStatus.value = "synced";
+      tickPH();
       return true;
     } catch (e) {
-      // try next URL
+      // timed out or unreachable: try the next URL
+    } finally {
+      clearTimeout(timeout);
     }
   }
 
-  // If both APIs fail, mark offline and fall back (optional)
   clockStatus.value = "offline";
-  if (!now.value) now.value = new Date();
   return false;
 }
 
 function tickPH() {
-  if (!now.value) return;
-  now.value = new Date(now.value.getTime() + 1000);
+  now.value = new Date(Date.now() + clockOffsetMs);
 }
 /* LOAD */
 async function loadAll() {
-  items.value = await getItems();
-  requests.value = await getRequests();
-  if (isAdmin.value) {
-    logs.value = await getLogs();
-  } else {
-    logs.value = [];
-  }
+  // Each part loads on its own and in parallel, so one failing request can't
+  // blank the whole dashboard.
+  const run = async (label, job) => {
+    try {
+      await job();
+    } catch (e) {
+      console.error(`Failed to load ${label}:`, e);
+    }
+  };
+
+  await Promise.all([
+    run("items", async () => (items.value = await getItems())),
+    run("requests", async () => (requests.value = await getRequests())),
+    isAdmin.value
+      ? run("activity logs", async () => (logs.value = await getLogs({ limit: 5 })))
+      : run("overdue items", async () => (myOverdue.value = await getMyOverdue())),
+    isAdmin.value
+      ? run("critical stock", async () => {
+          const low = await getLowStock();
+          criticalStock.value = low
+            .filter((r) => r.level === "Critical")
+            .sort((a, b) => a.quantity - b.quantity);
+        })
+      : Promise.resolve(),
+  ]);
+
+  if (isAdmin.value) myOverdue.value = [];
+  else logs.value = [];
 
   lastUpdated.value = new Date().toLocaleString();
 }
@@ -90,34 +170,143 @@ async function refresh() {
 }
 
 onMounted(async () => {
-  await loadAll();
-
-  renderCharts();
-
-  await fetchPHTime();
-
+  // Clock first: it must not wait for the data (or for a slow time service).
+  tickPH();
   clockTimer = setInterval(tickPH, 1000);
 
-  resyncTimer = setInterval(fetchPHTime, 60000);
+  await loadAll();
+  renderCharts();
+
+  fetchPHTime();
+
+  // Re-checking the time service every 10 minutes is plenty.
+  resyncTimer = setInterval(fetchPHTime, 600000);
 });
 
+/*  COMPACT CLOCK  */
+const clockTime = computed(() =>
+  now.value
+    ? now.value.toLocaleTimeString("en-PH", {
+        hour: "numeric",
+        minute: "2-digit",
+        second: "2-digit",
+      })
+    : "--:--:--",
+);
+const clockDate = computed(() =>
+  now.value
+    ? now.value.toLocaleDateString("en-PH", {
+        weekday: "short",
+        month: "short",
+        day: "numeric",
+        year: "numeric",
+      })
+    : "",
+);
+const clockTitle = computed(() =>
+  clockStatus.value === "synced"
+    ? "Synced with Philippine time"
+    : clockStatus.value === "syncing"
+      ? "Syncing with the time service..."
+      : "Offline: showing this device's clock",
+);
+
 /*  CARD MODALS  */
+function goTo(path) {
+  lowStockModal.value = false;
+  showPendingRequestsModal.value = false;
+  router.push(path);
+}
+
 function openLowStockModal() {
   lowStockModal.value = true;
 }
 
 /*  SUMMARY  */
+const urgentItems = computed(() => criticalStock.value.slice(0, 5));
+const urgentSignature = computed(() =>
+  criticalStock.value
+    .map((r) => r.iditems)
+    .sort((a, b) => a - b)
+    .join(","),
+);
+const urgentVisible = computed(
+  () =>
+    isAdmin.value &&
+    criticalStock.value.length > 0 &&
+    urgentDismissed.value !== urgentSignature.value,
+);
+
+function dismissUrgent() {
+  urgentDismissed.value = urgentSignature.value;
+  try {
+    sessionStorage.setItem(urgentKey(), urgentSignature.value);
+  } catch {
+    /* ignore: the card just comes back on the next load */
+  }
+}
+const urgentWithoutRequest = computed(
+  () => criticalStock.value.filter((r) => !r.active_request_id).length,
+);
+const outOfStockCount = computed(
+  () => items.value.filter((i) => i.stockLevel === "Out of Stock").length,
+);
+
+function scrollToRestock() {
+  document
+    .getElementById("restock-panel")
+    ?.scrollIntoView({ behavior: "smooth", block: "start" });
+}
+
 const totalItems = computed(() =>
   items.value.reduce((a, i) => a + (Number(i.qty) || 0), 0),
 );
 
+// Low stock = at or below the item's own Minimum level (Critical, Minimum
+// or Out of Stock) -- see roadmap #6.
+const LOW_LEVELS = ["Out of Stock", "Critical", "Minimum"];
 const lowStockCount = computed(
-  () => items.value.filter((i) => (Number(i.qty) || 0) <= 5).length,
+  () => items.value.filter((i) => LOW_LEVELS.includes(i.stockLevel)).length,
 );
+
+// Borrowed lines still out past their due date (roadmap #8). The server
+// works out due/overdue per line; this just flattens them for the list.
+const overdueLines = computed(() => {
+  // Borrowers see only their own overdue items.
+  if (!isAdmin.value) {
+    return myOverdue.value.map((l) => ({
+      key: l.key,
+      requestId: l.requestId,
+      requester: user.value?.username || "You",
+      itemName: l.itemName,
+      borrowedQty: l.borrowedQty,
+      dueDate: l.dueDate,
+      daysOverdue: l.daysOverdue,
+    }));
+  }
+
+  const lines = [];
+  requests.value.forEach((r) => {
+    if ((r.status || "").toLowerCase() !== "approved") return;
+    (r.items || []).forEach((it) => {
+      if (!it.overdue) return;
+      lines.push({
+        key: `${r.id}-${it.requestItemId}`,
+        requestId: r.id,
+        requester: r.requester,
+        itemName: it.itemName,
+        borrowedQty: it.borrowedQty,
+        dueDate: it.dueDate,
+        daysOverdue: it.daysOverdue,
+      });
+    });
+  });
+  return lines.sort((a, b) => b.daysOverdue - a.daysOverdue);
+});
 
 const pendingRequests = computed(
   () =>
-    requests.value.filter((r) => (r.status || "").toLowerCase() === "pending")
+    requests.value.filter((r) => isActionable(r.status))
       .length,
 );
 
@@ -132,7 +321,7 @@ const myRequests = computed(() => {
 
 const myPendingCount = computed(
   () =>
-    myRequests.value.filter((r) => (r.status || "").toLowerCase() === "pending")
+    myRequests.value.filter((r) => isInFlight(r.status))
       .length,
 );
 
@@ -150,21 +339,168 @@ const myRejectedCount = computed(
     ).length,
 );
 
-/*  LISTS (CARDS)  */
-const lowStockItems = computed(() =>
-  items.value.filter((i) => (Number(i.qty) || 0) <= 5).slice(0, 20),
+/*  KPI CARDS  */
+// Ordered by what needs attention first. Each card says what the number
+// counts, and clickable cards open the list behind the number.
+const overdueBorrowers = computed(
+  () => new Set(overdueLines.value.map((l) => l.requester)).size,
 );
+
+// School Equipment placed in rooms (Equipment Distribution), so it is not
+// mistaken for stock that went missing from the shelf.
+const deployedUnits = computed(() =>
+  items.value
+    .filter((i) => i.category === "School Equipment")
+    .reduce((sum, i) => sum + (Number(i.deployedQty) || 0), 0),
+);
+const deployedTypes = computed(
+  () =>
+    items.value.filter(
+      (i) => i.category === "School Equipment" && Number(i.deployedQty) > 0,
+    ).length,
+);
+
+const kpiCards = computed(() => {
+  if (isAdmin.value) {
+    return [
+      {
+        key: "pending",
+        label: "Pending Requests",
+        value: pendingRequests.value,
+        sub: pendingRequests.value ? "waiting for a decision" : "nothing waiting",
+        icon: pendingRequests.value ? "bi-list-check" : "bi-check-circle",
+        tone: pendingRequests.value ? "text-warning" : "text-success",
+        level: pendingRequests.value ? "warning" : "ok",
+        onClick: () => (showPendingRequestsModal.value = true),
+      },
+      {
+        key: "overdue",
+        label: "Overdue Returns",
+        value: overdueLines.value.length,
+        sub: overdueLines.value.length
+          ? `from ${overdueBorrowers.value} borrower${overdueBorrowers.value === 1 ? "" : "s"}`
+          : "all returns on time",
+        icon: overdueLines.value.length ? "bi-clock-history" : "bi-check-circle",
+        tone: overdueLines.value.length ? "text-danger" : "text-success",
+        level: overdueLines.value.length ? "danger" : "ok",
+        onClick: () => (overdueModal.value = true),
+      },
+      {
+        key: "low",
+        label: "Low Stock Items",
+        value: lowStockCount.value,
+        sub: outOfStockCount.value
+          ? `${outOfStockCount.value} out of stock`
+          : lowStockCount.value
+            ? "at or below minimum"
+            : "stock levels are fine",
+        icon: lowStockCount.value ? "bi-exclamation-triangle" : "bi-check-circle",
+        level: !lowStockCount.value ? "ok" : criticalStock.value.length ? "danger" : "warning",
+        tone: criticalStock.value.length
+          ? "text-danger"
+          : lowStockCount.value
+            ? "text-warning"
+            : "text-success",
+        onClick: openLowStockModal,
+      },
+      {
+        key: "stock",
+        label: "Units in Stock",
+        value: totalItems.value,
+        sub: `across ${items.value.length} item types`,
+        icon: "bi-box-seam",
+        tone: "text-primary",
+        onClick: null,
+      },
+      {
+        key: "deployed",
+        label: "Deployed Equipment",
+        value: deployedUnits.value,
+        sub: deployedUnits.value
+          ? `${deployedTypes.value} equipment type${deployedTypes.value === 1 ? "" : "s"} in rooms`
+          : "none placed in rooms",
+        icon: "bi-building",
+        tone: "text-info",
+        onClick: () => router.push("/equipment-distribution"),
+      },
+    ];
+  }
+
+  return [
+    {
+      key: "my-pending",
+      label: "My Pending Requests",
+      value: myPendingCount.value,
+      sub: "still being reviewed",
+      icon: "bi-hourglass-split",
+      tone: myPendingCount.value ? "text-warning" : "text-muted",
+      onClick: null,
+    },
+    {
+      key: "my-approved",
+      label: "My Approved Requests",
+      value: myApprovedCount.value,
+      sub: "approved so far",
+      icon: "bi-check-circle",
+      tone: "text-success",
+      onClick: null,
+    },
+    {
+      key: "my-rejected",
+      label: "My Rejected Requests",
+      value: myRejectedCount.value,
+      sub: "not approved",
+      icon: "bi-x-circle",
+      tone: myRejectedCount.value ? "text-danger" : "text-muted",
+      onClick: null,
+    },
+    {
+      key: "my-overdue",
+      label: "My Overdue Returns",
+      value: overdueLines.value.length,
+      sub: overdueLines.value.length ? "please return them" : "nothing overdue",
+      icon: "bi-clock-history",
+      tone: overdueLines.value.length ? "text-danger" : "text-success",
+      onClick: () => (overdueModal.value = true),
+    },
+  ];
+});
+
+/*  LISTS (CARDS)  */
+// All of them: the list in the modal scrolls, and it must agree with the count.
+const lowStockItems = computed(() =>
+  items.value.filter((i) => LOW_LEVELS.includes(i.stockLevel)),
+);
+
+// A request can hold items, uniforms, or both. Uniform-only requests (the
+// cashier's) have no items, so these helpers cover both lists.
+function uniformLabel(u) {
+  const name = u.uniformName || "Uniform";
+  return u.size ? `${name} (${u.size})` : name;
+}
+function requestTitle(r) {
+  const names = [
+    ...(r.items || []).map((i) => i.itemName),
+    ...(r.uniforms || []).map(uniformLabel),
+  ].filter(Boolean);
+  return names.length ? names.join(", ") : "—";
+}
+function requestCategories(r) {
+  const cats = (r.items || []).map((i) => i.category);
+  if ((r.uniforms || []).length) cats.push("Uniforms");
+  return [...new Set(cats.filter(Boolean))].join(", ") || "—";
+}
 
 const recentRequestsList = computed(() => {
   const base = isAdmin.value ? requests.value : myRequests.value;
   return base
-    .filter((r) => (r.status || "").toLowerCase() === "pending")
+    .filter((r) => (isAdmin.value ? isActionable(r.status) : isInFlight(r.status)))
     .slice(-5)
     .reverse();
 });
 
 const recentLogsList = computed(() =>
-  [...(logs.value || [])].slice(-5).reverse(),
+  (logs.value || []).slice(0, 5), // newest first
 );
 
 /*  CHART DATA  */
@@ -204,50 +540,93 @@ function destroyCharts() {
   }
 }
 
+// Colours that mean something: green = fine, amber = running low, red = out.
+const STATUS_COLORS = {
+  Available: "#198754",
+  "Low Stock": "#ffc107",
+  "Out of Stock": "#dc3545",
+  Borrowed: "#0d6efd",
+  Deployed: "#6f42c1",
+  Unknown: "#6c757d",
+};
+const FALLBACK_COLORS = ["#0d6efd", "#6f42c1", "#20c997", "#fd7e14", "#d63384"];
+
 function renderCharts() {
-  // STATUS PIE
+  // Follow the page's light/dark text colour so labels stay readable.
+  const textColor = getComputedStyle(document.body).color;
+  Chart.defaults.color = textColor;
+
+  // ITEMS BY STATUS (doughnut: a handful of parts of one whole)
   if (statusCanvas.value) {
     const data = statusCounts.value;
     if (statusChart) statusChart.destroy();
 
+    const names = Object.keys(data);
+
     statusChart = new Chart(statusCanvas.value, {
-      type: "pie",
+      type: "doughnut",
       data: {
-        labels: Object.keys(data),
-        datasets: [{ data: Object.values(data) }],
+        labels: names.map((n) => `${n} (${data[n]})`),
+        datasets: [
+          {
+            data: Object.values(data),
+            backgroundColor: names.map(
+              (n, i) =>
+                STATUS_COLORS[n] || FALLBACK_COLORS[i % FALLBACK_COLORS.length],
+            ),
+            borderWidth: 2,
+          },
+        ],
       },
       options: {
         responsive: true,
         maintainAspectRatio: false,
+        cutout: "62%",
         plugins: {
           legend: {
             position: window.innerWidth < 768 ? "bottom" : "right",
-            labels: { boxWidth: 14, padding: 14, usePointStyle: true },
+            labels: { boxWidth: 12, padding: 14, usePointStyle: true },
           },
         },
       },
     });
   }
 
-  // CATEGORY DOUGHNUT
+  // UNITS BY CATEGORY (horizontal bars: comparing amounts, not shares)
   if (categoryCanvas.value) {
-    const data = categoryCounts.value;
+    const entries = Object.entries(categoryCounts.value).sort(
+      (a, b) => b[1] - a[1],
+    );
     if (categoryChart) categoryChart.destroy();
 
     categoryChart = new Chart(categoryCanvas.value, {
-      type: "doughnut",
+      type: "bar",
       data: {
-        labels: Object.keys(data),
-        datasets: [{ data: Object.values(data) }],
+        labels: entries.map(([name]) => name),
+        datasets: [
+          {
+            label: "Units",
+            data: entries.map(([, qty]) => qty),
+            backgroundColor: entries.map(
+              (_, i) => FALLBACK_COLORS[i % FALLBACK_COLORS.length],
+            ),
+            borderRadius: 6,
+            maxBarThickness: 34,
+          },
+        ],
       },
       options: {
+        indexAxis: "y",
         responsive: true,
         maintainAspectRatio: false,
-        plugins: {
-          legend: {
-            position: window.innerWidth < 768 ? "bottom" : "right",
-            labels: { boxWidth: 14, padding: 14, usePointStyle: true },
+        plugins: { legend: { display: false } },
+        scales: {
+          x: {
+            beginAtZero: true,
+            ticks: { precision: 0 },
+            grid: { color: "rgba(128, 128, 128, 0.18)" },
           },
+          y: { grid: { display: false } },
         },
       },
     });
@@ -258,7 +637,35 @@ watch([items, requests], () => {
   renderCharts();
 });
 
+// Calendar pop-over, opened from the header button (same idea as the bell).
+const calOpen = ref(false);
+const calRoot = ref(null);
+const calRef = ref(null);
+
+async function toggleCalendar() {
+  calOpen.value = !calOpen.value;
+  if (calOpen.value) {
+    await nextTick();
+    calRef.value?.getApi?.().updateSize();
+  }
+}
+
+function onCalDocClick(e) {
+  // Leave it open while a day's request list is showing on top of it.
+  if (showDayModal.value) return;
+  if (calOpen.value && calRoot.value && !calRoot.value.contains(e.target)) calOpen.value = false;
+}
+
+function onCalKey(e) {
+  if (e.key === "Escape" && calOpen.value && !showDayModal.value) calOpen.value = false;
+}
+
+document.addEventListener("mousedown", onCalDocClick);
+document.addEventListener("keydown", onCalKey);
+
 onBeforeUnmount(() => {
+  document.removeEventListener("mousedown", onCalDocClick);
+  document.removeEventListener("keydown", onCalKey);
   destroyCharts();
   if (clockTimer) clearInterval(clockTimer);
   if (resyncTimer) clearInterval(resyncTimer);
@@ -302,7 +709,7 @@ const calendarEvents = computed(() => {
 
     const status = (r.status || "").toLowerCase();
 
-if (status === "pending") {
+if (isInFlight(status)) {
   map[iso].pending.push(r);
 } else if (status === "approved") {
   map[iso].approved.push(r);
@@ -318,6 +725,8 @@ if (status === "pending") {
     allDay: true,
     display: "block",
     title: "",
+    backgroundColor: "transparent",
+    borderColor: "transparent",
 
     extendedProps: {
       pending: data.pending,
@@ -327,6 +736,21 @@ if (status === "pending") {
     },
   }));
 });
+
+function openDay(iso) {
+  const ev = calendarEvents.value.find((e) => e.start === iso);
+  if (!ev) return;
+
+  const p = ev.extendedProps;
+  selectedDayRequests.value = [
+    ...(p.pending || []),
+    ...(p.approved || []),
+    ...(p.rejected || []),
+    ...(p.returned || []),
+  ];
+  selectedDay.value = iso;
+  showDayModal.value = true;
+}
 
 const calendarOptions = computed(() => ({
   plugins: [dayGridPlugin, interactionPlugin],
@@ -341,18 +765,15 @@ const calendarOptions = computed(() => ({
 
   events: calendarEvents.value,
 
+  fixedWeekCount: false,
+  dayMaxEvents: 2,
+
+  // Click the badges or anywhere in the day to see that day's requests.
   eventClick(info) {
-    const p = info.event.extendedProps;
-
-    selectedDayRequests.value = [
-      ...(p.pending || []),
-      ...(p.approved || []),
-      ...(p.rejected || []),
-      ...(p.returned || []),
-    ];
-
-    selectedDay.value = info.event.startStr;
-    showDayModal.value = true;
+    openDay(info.event.startStr);
+  },
+  dateClick(info) {
+    openDay(info.dateStr);
   },
 
 eventContent(arg) {
@@ -365,15 +786,22 @@ eventContent(arg) {
 
   const container = document.createElement("div");
 
+  const tip = [
+    pending ? `${pending} in review` : "",
+    approved ? `${approved} approved` : "",
+    rejected ? `${rejected} rejected` : "",
+    returned ? `${returned} returned` : "",
+  ]
+    .filter(Boolean)
+    .join(", ");
+
+  container.title = tip;
   container.innerHTML = `
-    <div style="display:flex; gap:4px; flex-wrap:wrap; font-size:12px;">
+    <div style="display:flex; gap:4px; flex-wrap:wrap; font-size:12px; cursor:pointer;">
       ${pending ? `<span class="badge bg-warning text-dark">${pending}</span>` : ""}
-
-      ${ approved ? `<span class="badge bg-success">${approved}</span>` : ""}
-
-      ${ rejected ? `<span class="badge bg-danger">${rejected}</span>` : ""}
-
-      ${ returned ? `<span class="badge bg-info text-dark">${returned}</span>` : ""}
+      ${approved ? `<span class="badge bg-success">${approved}</span>` : ""}
+      ${rejected ? `<span class="badge bg-danger">${rejected}</span>` : ""}
+      ${returned ? `<span class="badge bg-info text-dark">${returned}</span>` : ""}
     </div>
   `;
 
@@ -384,126 +812,174 @@ eventContent(arg) {
 
 <template>
   <div>
-    <div class="d-flex justify-content-between align-items-start flex-wrap gap-2 mb-4">
+    <!-- HEADER: title, compact clock, refresh -->
+    <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
       <div>
-        <h3 class="mb-1">Dashboard</h3>
-        <div class="text-muted small">
-          Last updated: {{ lastUpdated || "—" }}
+        <h3 class="mb-0">Dashboard</h3>
+        <div class="text-muted small">Last updated {{ lastUpdated || "—" }}</div>
+      </div>
+
+      <div class="d-flex align-items-center gap-2">
+        <div v-if="isAdmin" ref="calRoot" class="cal-wrap">
+          <button
+            type="button"
+            class="btn btn-outline-secondary btn-sm"
+            :class="{ active: calOpen }"
+            title="Requests calendar"
+            aria-label="Requests calendar"
+            :aria-expanded="calOpen"
+            @click="toggleCalendar"
+          >
+            <i class="bi bi-calendar3"></i>
+          </button>
+
+          <div v-show="calOpen" class="cal-panel" role="dialog" aria-label="Requests calendar">
+            <div class="d-flex justify-content-between align-items-center mb-2">
+              <h6 class="mb-0">Requests Calendar</h6>
+              <small class="text-muted">Click a day to see its requests</small>
+            </div>
+            <!-- Legend: what each badge on a day is -->
+            <div class="calendar-legend d-flex flex-wrap align-items-center mb-1 small">
+              <span class="d-inline-flex align-items-center gap-1">
+                <span class="legend-dot bg-warning"></span> In review
+              </span>
+              <span class="d-inline-flex align-items-center gap-1">
+                <span class="legend-dot bg-success"></span> Approved
+              </span>
+              <span class="d-inline-flex align-items-center gap-1">
+                <span class="legend-dot bg-danger"></span> Rejected
+              </span>
+              <span class="d-inline-flex align-items-center gap-1">
+                <span class="legend-dot bg-info"></span> Returned
+              </span>
+            </div>
+            <div class="text-muted small mb-3">
+              Each badge is the number of requests made that day with that status.
+            </div>
+
+            <FullCalendar ref="calRef" :options="calendarOptions" />
+          </div>
+        </div>
+
+        <div
+          class="clock-pill d-flex align-items-center gap-2 border rounded-pill px-3 py-1 bg-body-tertiary"
+          :title="clockTitle"
+        >
+          <span class="clock-dot" :class="clockStatus"></span>
+          <span class="fw-semibold clock-time">{{ clockTime }}</span>
+          <span class="text-muted small d-none d-sm-inline">{{ clockDate }}</span>
+        </div>
+
+        <button
+          class="btn btn-outline-secondary btn-sm"
+          title="Refresh"
+          aria-label="Refresh dashboard"
+          @click="refresh"
+        >
+          <i class="bi bi-arrow-clockwise"></i>
+        </button>
+      </div>
+    </div>
+
+    <!-- URGENT STOCK (admin, only when something is at Critical or out) -->
+    <div v-if="urgentVisible" class="card shadow-sm border-danger mb-3 urgent-card">
+      <div class="card-body">
+        <div class="d-flex justify-content-between align-items-start flex-wrap gap-2 mb-2">
+          <div>
+            <h6 class="text-danger mb-1">
+              <i class="bi bi-exclamation-octagon-fill me-1"></i>
+              Urgent: {{ criticalStock.length }}
+              item{{ criticalStock.length === 1 ? "" : "s" }} at Critical stock
+            </h6>
+            <div class="text-muted small">
+              <template v-if="urgentWithoutRequest">
+                {{ urgentWithoutRequest }} still
+                {{ urgentWithoutRequest === 1 ? "has" : "have" }} no restock request.
+              </template>
+              <template v-else>A restock request is open for every one of them.</template>
+            </div>
+          </div>
+
+          <div class="d-flex gap-2">
+            <button class="btn btn-danger btn-sm" @click="scrollToRestock">
+              Go to restocking
+            </button>
+            <button class="btn btn-secondary text-white btn-sm" @click="openLowStockModal">
+              All low stock
+            </button>
+            <button
+              type="button"
+              class="btn-close ms-1 align-self-center"
+              aria-label="Close"
+              title="Close"
+              @click="dismissUrgent"
+            ></button>
+          </div>
+        </div>
+
+        <ul class="list-group list-group-flush">
+          <li
+            v-for="r in urgentItems"
+            :key="r.iditems"
+            class="list-group-item d-flex justify-content-between align-items-center gap-2 px-0"
+          >
+            <div class="min-w-0">
+              <div class="fw-semibold text-truncate">{{ r.item_name }}</div>
+              <div class="small text-muted">{{ r.category }}</div>
+            </div>
+
+            <div class="d-flex align-items-center gap-2 flex-shrink-0">
+              <span v-if="r.quantity <= 0" class="badge bg-dark">Out of stock</span>
+              <span v-else class="badge bg-danger">{{ r.quantity }} left</span>
+              <span
+                class="badge"
+                :class="r.active_request_id ? 'bg-success' : 'bg-warning text-dark'"
+              >
+                {{ r.active_request_id ? "Restock requested" : "No request yet" }}
+              </span>
+            </div>
+          </li>
+        </ul>
+
+        <div v-if="criticalStock.length > urgentItems.length" class="small text-muted mt-2">
+          and {{ criticalStock.length - urgentItems.length }} more
         </div>
       </div>
     </div>
 
-    <!-- CLOCK CARD  -->
-    <div class="row mb-4">
-      <div class="col-12">
-        <div class="card shadow-sm">
-          <div class="card-body">
-            <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
-              <div>
-                <div class="text-muted small">Current time</div>
-                <div class="fw-bold" style="font-size: 2.25rem; line-height: 1">
-                  {{ now ? now.toLocaleTimeString("en-PH") : "—" }}
-                </div>
-                <div class="text-muted">
-                  {{ now ? now.toLocaleDateString("en-PH") : "—" }}
-                </div>
-              </div>
-
-              <div class="text-muted small text-end">
-                <div>
-                  <span v-if="typeof clockStatus !== 'undefined'">
-                    ({{
-                      clockStatus === "synced"
-                        ? "Online"
-                        : clockStatus === "syncing"
-                          ? "Syncing"
-                          : "Offline"
-                    }})
-                  </span>
-                </div>
-              </div>
+    <!-- KPI CARDS -->
+    <div class="row g-3 mb-3">
+      <div v-for="c in kpiCards" :key="c.key" class="col-6 col-lg">
+        <div
+          class="card shadow-sm h-100 kpi-card"
+          :class="[{ 'kpi-click': c.onClick }, c.level ? 'kpi-' + c.level : '']"
+          :role="c.onClick ? 'button' : undefined"
+          :tabindex="c.onClick ? 0 : undefined"
+          @click="c.onClick && c.onClick()"
+          @keyup.enter="c.onClick && c.onClick()"
+        >
+          <div class="card-body d-flex justify-content-between align-items-center gap-2 position-relative">
+            <span v-if="c.level === 'danger'" class="kpi-pulse" aria-hidden="true"></span>
+            <div>
+              <div class="text-muted small">{{ c.label }}</div>
+              <div class="fs-2 fw-bold lh-1 my-1" :class="c.tone">{{ c.value }}</div>
+              <div class="text-muted small">{{ c.sub }}</div>
             </div>
+            <i class="bi fs-1 opacity-75" :class="[c.icon, c.tone]"></i>
           </div>
         </div>
       </div>
     </div>
 
-    <!-- SUMMARY CARDS -->
-    <div class="row mb-4">
-      <!-- Admin cards -->
-      <template v-if="isAdmin">
-        <div class="col-md-4 mb-3 mb-md-0">
-          <div class="card shadow-sm">
-            <div class="card-body">
-              <h6 class="text-muted">Total Inventory Quantity</h6>
-              <h3 class="mb-0">{{ totalItems }}</h3>
-            </div>
-          </div>
-        </div>
-
-        <div class="col-md-4 mb-3 mb-md-0">
-          <div class="card shadow-sm cursor-pointer" @click="openLowStockModal">
-            <div class="card-body d-flex justify-content-between align-items-center">
-              <div>
-                <h6 class="text-muted mb-1">Low Stock Items</h6>
-                <h3 class="mb-0 text-danger">{{ lowStockItems.length }}</h3>
-              </div>
-              <i class="bi bi-exclamation-triangle fs-2 text-danger"></i>
-            </div>
-          </div>
-        </div>
-
-        <div class="col-md-4">
-          <div class="card shadow-sm cursor-pointer" @click="showPendingRequestsModal = true">
-            <div class="card-body d-flex justify-content-between align-items-center">
-              <div>
-                <h6 class="text-muted mb-1">Pending Requests</h6>
-                <h3 class="mb-0 text-warning">{{ pendingRequests }}</h3>
-              </div>
-              <i class="bi bi-list-check fs-2 text-warning"></i>
-            </div>
-          </div>
-        </div>
-      </template>
-
-      <!-- User cards -->
-      <template v-else>
-        <div class="col-md-4 mb-3 mb-md-0">
-          <div class="card shadow-sm">
-            <div class="card-body">
-              <h6 class="text-muted">My Pending Requests</h6>
-              <h3 class="mb-0 text-warning">{{ myPendingCount }}</h3>
-            </div>
-          </div>
-        </div>
-
-        <div class="col-md-4 mb-3 mb-md-0">
-          <div class="card shadow-sm">
-            <div class="card-body">
-              <h6 class="text-muted">My Approved Requests</h6>
-              <h3 class="mb-0 text-success">{{ myApprovedCount }}</h3>
-            </div>
-          </div>
-        </div>
-
-        <div class="col-md-4">
-          <div class="card shadow-sm">
-            <div class="card-body">
-              <h6 class="text-muted">My Rejected Requests</h6>
-              <h3 class="mb-0 text-danger">{{ myRejectedCount }}</h3>
-            </div>
-          </div>
-        </div>
-      </template>
-    </div>
-
-    <!-- CHARTS (SIDE BY SIDE) -->
-    <div v-if="isAdmin" class="row">
-      <!-- Chart 1 -->
-      <div class="col-md-6 mb-3">
+    <!-- CHARTS (admin) -->
+    <div v-if="isAdmin" class="row g-3 mb-3">
+      <div class="col-md-6">
         <div class="card shadow-sm h-100">
+          <div class="card-header d-flex flex-wrap justify-content-between align-items-center gap-2">
+            <h6 class="mb-0">Items by Status</h6>
+          </div>
           <div class="card-body">
-            <h6 class="mb-3">Inventory Status Distribution</h6>
+            <div class="text-muted small mb-2">Number of item types in each status</div>
             <div class="chart-wrap">
               <canvas ref="statusCanvas"></canvas>
             </div>
@@ -511,11 +987,13 @@ eventContent(arg) {
         </div>
       </div>
 
-      <!-- Chart 2 -->
-      <div class="col-md-6 mb-3">
+      <div class="col-md-6">
         <div class="card shadow-sm h-100">
+          <div class="card-header d-flex flex-wrap justify-content-between align-items-center gap-2">
+            <h6 class="mb-0">Units by Category</h6>
+          </div>
           <div class="card-body">
-            <h6 class="mb-3">Inventory by Category</h6>
+            <div class="text-muted small mb-2">Total units currently in stock</div>
             <div class="chart-wrap">
               <canvas ref="categoryCanvas"></canvas>
             </div>
@@ -524,23 +1002,28 @@ eventContent(arg) {
       </div>
     </div>
 
-    <!-- CALENDAR + RECENT ACTIVITY -->
-    <div v-if="isAdmin" class="row">
-      <!-- Calendar (Left or Right) -->
-      <div class="col-lg-8 col-md-12 mb-3 mb-lg-0">
-        <div class="card shadow-sm h-100">
-          <div class="card-body">
-            <h6 class="mb-3">Requests Calendar</h6>
-            <FullCalendar :options="calendarOptions" />
-          </div>
+    <!-- MAIN ROW (admin): action panels (the calendar opens from the header button) -->
+    <div v-if="isAdmin" class="row g-3 mb-3">
+      <!-- Return reports + restock panels, and Recent Activity Logs -->
+      <!-- One row. The returns panel only shows when there is something to
+           check; an empty column hides itself so the others share the width. -->
+      <div class="col-lg col-md-6 dash-col">
+        <ReturnReportsPanel v-if="isAdmin" />
+      </div>
+
+      <div class="col-lg col-md-6 dash-col">
+        <div id="restock-panel">
+          <LowStockRestockPanel v-if="isAdmin" />
         </div>
       </div>
 
-      <!-- Recent Activity Logs -->
-      <div class="col-lg-4 col-md-12">
-        <div class="card shadow-sm h-100">
+      <div class="col-lg col-md-6 dash-col">
+
+        <div class="card shadow-sm">
+          <div class="card-header d-flex flex-wrap justify-content-between align-items-center gap-2">
+            <h6 class="mb-0">Recent Activity Logs</h6>
+          </div>
           <div class="card-body">
-            <h6 class="mb-3">Recent Activity Logs</h6>
             <ul class="list-group list-group-flush">
               <li v-if="recentLogsList.length === 0" class="list-group-item text-muted">
                 No activity logs yet
@@ -561,7 +1044,7 @@ eventContent(arg) {
               </li>
             </ul>
             <div class="mt-3">
-              <button class="btn btn-sm btn-outline-secondary" @click="router.push('/logs')">
+              <button class="btn btn-sm btn-secondary text-white" @click="router.push('/logs')">
                 View All Logs
               </button>
             </div>
@@ -570,43 +1053,29 @@ eventContent(arg) {
       </div>
     </div>
 
-    <!-- LOW STOCK + RECENT REQUESTS -->
-    <div class="row mt-2">
-      <!-- PENDING REQUESTS CARD -->
-      <template v-if="!isAdmin">
-        <div class="col-12 mb-3">
-          <div class="card p-3 shadow-sm h-100">
-            <h6 class="mb-3">Pending Requests</h6>
+    <!-- MY PENDING REQUESTS (non-admin) -->
+    <div v-if="!isAdmin" class="card p-3 shadow-sm">
+      <h6 class="mb-3">Pending Requests</h6>
 
-            <ul class="list-group list-group-flush">
-              <li v-if="recentRequestsList.length === 0" class="list-group-item text-center text-muted">
-                No pending requests
-              </li>
+      <ul class="list-group list-group-flush">
+        <li v-if="recentRequestsList.length === 0" class="list-group-item text-center text-muted">
+          No pending requests
+        </li>
 
-              <li v-for="r in recentRequestsList" :key="r.id"
-                class="list-group-item d-flex justify-content-between align-items-start">
-                <div>
-                  <strong>{{
-                    r.items.map((i) => i.itemName).join(", ")
-                  }}</strong>
-                  <br />
-                  <small class="text-muted">{{r.items.map((i) => i.category).join(", ")}}•
-                    {{ r.request_date }}</small>
-                </div>
-
-                <span class="badge" :class="(r.status || '').toLowerCase() === 'pending'
-                    ? 'bg-warning text-dark'
-                    : (r.status || '').toLowerCase() === 'approved'
-                      ? 'bg-success'
-                      : 'bg-danger'
-                  ">
-                  {{ r.status }}
-                </span>
-              </li>
-            </ul>
+        <li v-for="r in recentRequestsList" :key="r.id"
+          class="list-group-item d-flex justify-content-between align-items-start">
+          <div>
+            <strong>{{ requestTitle(r) }}</strong>
+            <br />
+            <small class="text-muted">{{ requestCategories(r) }} •
+              {{ r.request_date }}</small>
           </div>
-        </div>
-      </template>
+
+          <span class="badge flex-shrink-0" :class="statusBadgeClass(r.status)">
+            {{ r.status }}
+          </span>
+        </li>
+      </ul>
     </div>
   </div>
   <!-- DAY REQUEST MODAL -->
@@ -621,15 +1090,18 @@ eventContent(arg) {
 
         <div class="modal-body modal-scroll">
           <ul class="list-group">
-            <li v-for="r in selectedDayRequests" :key="r.id" class="list-group-item d-flex justify-content-between">
+            <li v-for="r in selectedDayRequests" :key="r.id" class="list-group-item d-flex justify-content-between align-items-start gap-3">
               <div>
                 <strong>
-                  {{r.items.map((i) => i.itemName).join(", ")}}
+                  {{ requestTitle(r) }}
                 </strong>
 
                 <ul class="small mb-1 mt-1">
                   <li v-for="item in r.items" :key="item.itemId">
                     {{ item.itemName }} × {{ item.qty }}
+                  </li>
+                  <li v-for="(u, ui) in r.uniforms || []" :key="'u' + ui">
+                    {{ uniformLabel(u) }} × {{ u.quantity }}
                   </li>
                 </ul>
 
@@ -638,12 +1110,7 @@ eventContent(arg) {
                 </small>
               </div>
 
-              <span class="badge" :class="(r.status || '').toLowerCase() === 'pending'
-                  ? 'bg-warning text-dark'
-                  : (r.status || '').toLowerCase() === 'approved'
-                    ? 'bg-success'
-                    : 'bg-danger'
-                ">
+              <span class="badge flex-shrink-0" :class="statusBadgeClass(r.status)">
                 {{ r.status }}
               </span>
             </li>
@@ -667,17 +1134,60 @@ eventContent(arg) {
         <ul class="list-group">
           <!-- Item rows -->
           <li v-for="item in lowStockItems" :key="item.id"
-            class="list-group-item d-flex justify-content-between align-items-start">
+            class="list-group-item d-flex justify-content-between align-items-start row-link"
+            role="link" tabindex="0" @click="goTo('/inventory')" @keydown.enter="goTo('/inventory')">
             <div>
               <strong>{{ item.name }}</strong><br />
               <small class="text-muted">{{ item.category }}</small>
             </div>
-            <span class="badge bg-danger rounded-pill">{{ item.qty }}</span>
+            <span class="d-flex align-items-center gap-2">
+              <StockBadge :level="item.stockLevel" />
+              <span class="badge bg-secondary rounded-pill">{{ item.qty }}</span>
+            </span>
           </li>
 
           <!-- Empty state -->
           <li v-if="!lowStockItems.length" class="list-group-item text-center text-muted">
             No low stock items 🎉
+          </li>
+        </ul>
+      </div>
+    </div>
+  </div>
+
+  <!-- OVERDUE RETURNS MODAL -->
+  <div v-if="overdueModal" class="modal-backdrop-custom">
+    <div class="modal-custom">
+      <div class="modal-header">
+        <h5 class="mb-0">Overdue Returns</h5>
+        <button class="btn-close" @click="overdueModal = false"></button>
+      </div>
+
+      <div class="modal-body modal-scroll">
+        <ul class="list-group">
+          <li
+            v-for="line in overdueLines"
+            :key="line.key"
+            class="list-group-item d-flex justify-content-between align-items-start"
+          >
+            <div>
+              <strong>{{ line.itemName }}</strong> × {{ line.borrowedQty }}<br />
+              <small class="text-muted">
+                {{ line.requester }} · Request #{{ line.requestId }}
+              </small>
+            </div>
+            <DueBadge
+              :due-date="line.dueDate"
+              :overdue="true"
+              :days-overdue="line.daysOverdue"
+            />
+          </li>
+
+          <li
+            v-if="!overdueLines.length"
+            class="list-group-item text-center text-muted"
+          >
+            Nothing is overdue 🎉
           </li>
         </ul>
       </div>
@@ -699,19 +1209,15 @@ eventContent(arg) {
           </li>
 
           <li v-for="r in recentRequestsList" :key="r.id"
-            class="list-group-item d-flex justify-content-between align-items-start">
+            class="list-group-item d-flex justify-content-between align-items-start row-link"
+            role="link" tabindex="0" @click="goTo('/pending-requests')" @keydown.enter="goTo('/pending-requests')">
             <div>
-              <strong>{{r.items.map((i) => i.itemName).join(", ")}}</strong><br />
+              <strong>{{ requestTitle(r) }}</strong><br />
               <small class="text-muted">
-                {{r.items.map((i) => i.category).join(", ")}} •
+                {{ requestCategories(r) }} •
                 {{ r.request_date }}</small>
             </div>
-            <span class="badge" :class="(r.status || '').toLowerCase() === 'pending'
-                ? 'bg-warning text-dark'
-                : (r.status || '').toLowerCase() === 'approved'
-                  ? 'bg-success'
-                  : 'bg-danger'
-              ">
+            <span class="badge flex-shrink-0" :class="statusBadgeClass(r.status)">
               {{ r.status }}
             </span>
           </li>
@@ -722,6 +1228,116 @@ eventContent(arg) {
 </template>
 
 <style scoped>
+/* KPI urgency: red / amber cards need action, a count of 0 goes quiet. */
+.kpi-card {
+  border-left: 4px solid transparent;
+}
+.kpi-danger {
+  border-left-color: var(--bs-danger);
+  background-color: var(--bs-danger-bg-subtle);
+}
+.kpi-warning {
+  border-left-color: var(--bs-warning);
+  background-color: var(--bs-warning-bg-subtle);
+}
+.kpi-ok {
+  border-left-color: var(--bs-success);
+  background-color: var(--bs-success-bg-subtle);
+}
+.row-link {
+  cursor: pointer;
+}
+.row-link:hover,
+.row-link:focus-visible {
+  background-color: var(--bs-tertiary-bg);
+  outline: none;
+}
+.kpi-pulse {
+  position: absolute;
+  top: 10px;
+  right: 12px;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--bs-danger);
+}
+.kpi-pulse::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  background: var(--bs-danger);
+  animation: kpi-ping 1.6s ease-out infinite;
+}
+@keyframes kpi-ping {
+  0% {
+    transform: scale(1);
+    opacity: 0.7;
+  }
+  100% {
+    transform: scale(2.8);
+    opacity: 0;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .kpi-pulse::after {
+    animation: none;
+  }
+}
+
+.dash-col:empty {
+  display: none;
+}
+
+/* The panels in this row share one height (the tallest, up to a cap);
+   anything longer scrolls inside its own card. */
+.dash-col:not(:empty) {
+  display: flex;
+  flex-direction: column;
+}
+.dash-col > #restock-panel {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+.dash-col :deep(.card) {
+  flex: 1 1 auto;
+  min-height: 0;
+  max-height: 460px;
+  margin-bottom: 0 !important;
+  display: flex;
+  flex-direction: column;
+}
+.dash-col :deep(.card-body) {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+}
+.dash-col :deep(.panel-scroll) {
+  max-height: none;
+}
+
+.cal-wrap {
+  position: relative;
+}
+.cal-panel {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  width: 620px;
+  max-width: 92vw;
+  max-height: 80vh;
+  overflow: auto;
+  padding: 14px 16px;
+  background: var(--bs-body-bg);
+  color: var(--bs-body-color);
+  border: 1px solid var(--bs-border-color);
+  border-radius: 12px;
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.22);
+  z-index: 1500;
+}
+
 /* keeps cards from causing sideways scroll */
 * {
   max-width: 100%;
@@ -756,45 +1372,88 @@ eventContent(arg) {
   overflow-y: auto;
 }
 
+/* Compact clock */
+.clock-pill {
+  line-height: 1.2;
+}
+.clock-time {
+  font-variant-numeric: tabular-nums;
+}
+.clock-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #6c757d;
+  flex-shrink: 0;
+}
+.clock-dot.synced {
+  background: #198754;
+}
+.clock-dot.syncing {
+  background: #ffc107;
+}
+.clock-dot.offline {
+  background: #dc3545;
+}
+
+/* KPI cards */
+.kpi-click {
+  cursor: pointer;
+  transition: transform 0.12s ease, box-shadow 0.12s ease;
+}
+.kpi-click:hover,
+.kpi-click:focus-visible {
+  transform: translateY(-2px);
+  box-shadow: 0 0.5rem 1rem rgba(0, 0, 0, 0.15) !important;
+  outline: none;
+}
+
+.urgent-card {
+  border-width: 1px 1px 1px 5px;
+}
+.min-w-0 {
+  min-width: 0;
+}
+
+/* Legend colour dots (no numbers) */
+.legend-dot {
+  display: inline-block;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+}
+
+/* The event itself is only a carrier for the count badges: no blue bar */
+:deep(.fc .fc-event) {
+  background: transparent !important;
+  border-color: transparent !important;
+  box-shadow: none !important;
+}
+:deep(.fc .fc-event:hover::after),
+:deep(.fc .fc-event:focus::after) {
+  display: none;
+}
+
+/* FullCalendar tweaks (it renders its own DOM, so :deep is needed) */
+:deep(.fc .fc-toolbar-title) {
+  font-size: 1.05rem;
+}
+:deep(.fc .fc-button) {
+  padding: 0.25rem 0.6rem;
+  font-size: 0.85rem;
+}
+:deep(.fc .fc-daygrid-day) {
+  cursor: pointer;
+}
+:deep(.fc .fc-daygrid-day-frame) {
+  min-height: 64px;
+}
+:deep(.fc .fc-more-link) {
+  font-size: 0.75rem;
+}
+
 .modal-scroll {
   max-height: 400px;
-  overflow-y: auto;
-}
-
-.modal-backdrop-custom {
-  position: fixed;
-  inset: 0;
-  background: rgba(0, 0, 0, 0.35);
-  display: grid;
-  place-items: center;
-  z-index: 2000;
-  padding: 16px;
-}
-
-.modal-custom {
-  background: #fff;
-  border-radius: 12px;
-  max-width: 700px;
-  width: 100%;
-  max-height: 80%;
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-  box-shadow: 0 18px 50px rgba(0, 0, 0, 0.25);
-}
-
-.modal-header,
-.modal-footer {
-  padding: 12px 16px;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  border-bottom: 1px solid #dee2e6;
-}
-
-.modal-body {
-  padding: 16px;
   overflow-y: auto;
 }
 
@@ -815,4 +1474,10 @@ eventContent(arg) {
   max-height: 400px;
   overflow-y: auto;
 }
+
+.modal-custom {
+  max-width: 700px;
+}
+.spin { display: inline-block; animation: spin 0.8s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
 </style>

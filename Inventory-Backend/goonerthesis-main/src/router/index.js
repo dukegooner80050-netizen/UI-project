@@ -2,23 +2,29 @@ import { createRouter, createWebHistory } from "vue-router";
 import { getCurrentUser } from "../services/storage";
 import AppLayout from "../layouts/AppLayout.vue";
 
+// Every page is loaded the first time it is opened (not all up front), so
+// the login screen and the first page appear much sooner.
+
 // Views
-import DashboardView from "../views/DashboardView.vue";
-import InventoryView from "../views/InventoryView.vue";
-import UniformsView from "../views/UniformsView.vue";
-import OfficeSuppliesView from "../views/OfficeSuppliesView.vue";
-import SchoolEquipmentView from "../views/SchoolEquipmentView.vue";
-import RequestView from "../views/RequestView.vue";
-import PendingRequestsView from "../views/PendingRequestsView.vue";
-import ReportsView from "../views/ReportsView.vue";
-import ActiveLogsView from "../views/ActiveLogsView.vue";
-import ItemLocatorView from "../views/ItemLocatorView.vue";
-import ConsumptionReportView from "../views/ConsumptionReportView.vue";
-import EquipmentDistributionView from "../views/EquipmentDistributionView.vue";
-import PendingInspectionView from "../views/PendingInspectionView.vue";
-import SettingsView from "../views/SettingsView.vue";
-import LoginView from "../views/LoginView.vue";
-import SignupView from "../views/SignupView.vue";
+const DashboardView = () => import("../views/DashboardView.vue");
+const InventoryView = () => import("../views/InventoryView.vue");
+const DisposalRecordsView = () => import("../views/DisposalRecordsView.vue");
+const UniformsView = () => import("../views/UniformsView.vue");
+const OfficeSuppliesView = () => import("../views/OfficeSuppliesView.vue");
+const SchoolEquipmentView = () => import("../views/SchoolEquipmentView.vue");
+const RequestView = () => import("../views/RequestView.vue");
+const PendingRequestsView = () => import("../views/PendingRequestsView.vue");
+const CoordinatorRequestsView = () => import("../views/CoordinatorRequestsView.vue");
+const ReportsView = () => import("../views/ReportsView.vue");
+const ActiveLogsView = () => import("../views/ActiveLogsView.vue");
+const ConsumptionReportView = () => import("../views/ConsumptionReportView.vue");
+const ChangePasswordView = () => import("../views/ChangePasswordView.vue");
+const EquipmentDistributionView = () => import("../views/EquipmentDistributionView.vue");
+const PendingInspectionView = () => import("../views/PendingInspectionView.vue");
+const EquipmentReportsView = () => import("../views/EquipmentReportsView.vue");
+const SettingsView = () => import("../views/SettingsView.vue");
+const LoginView = () => import("../views/LoginView.vue");
+const SignupView = () => import("../views/SignupView.vue");
 
 // Routes
 const routes = [
@@ -41,6 +47,15 @@ const routes = [
     },
   },
 
+
+  // Forced after the AMO resets a password (see the guard below).
+  {
+    path: "/change-password",
+    component: ChangePasswordView,
+    meta: {
+      requiresAuth: true,
+    },
+  },
 
   // PROTECTED ROUTES
 
@@ -69,7 +84,7 @@ const routes = [
         component: DashboardView,
         meta: {
           requiresAuth: true,
-          roles: ["admin", "dean", "cashier"],
+          roles: ["amo", "department_head", "admin", "instructor", "cashier"],
         },
       },
 
@@ -82,7 +97,16 @@ const routes = [
         component: InventoryView,
         meta: {
           requiresAuth: true,
-          roles: ["admin"],
+          roles: ["amo"],
+        },
+      },
+
+      {
+        path: "disposal-records",
+        component: DisposalRecordsView,
+        meta: {
+          requiresAuth: true,
+          roles: ["amo"],
         },
       },
 
@@ -91,7 +115,7 @@ const routes = [
         component: UniformsView,
         meta: {
           requiresAuth: true,
-          roles: ["admin"],
+          roles: ["amo"],
         },
       },
 
@@ -100,7 +124,7 @@ const routes = [
         component: OfficeSuppliesView,
         meta: {
           requiresAuth: true,
-          roles: ["admin"],
+          roles: ["amo"],
         },
       },
 
@@ -109,7 +133,16 @@ const routes = [
         component: SchoolEquipmentView,
         meta: {
           requiresAuth: true,
-          roles: ["admin"],
+          roles: ["amo"],
+        },
+      },
+
+      {
+        path: "coordinator-requests",
+        component: CoordinatorRequestsView,
+        meta: {
+          requiresAuth: true,
+          roles: ["department_head"],
         },
       },
 
@@ -118,7 +151,7 @@ const routes = [
         component: PendingRequestsView,
         meta: {
           requiresAuth: true,
-          roles: ["admin"],
+          roles: ["amo"],
         },
       },
 
@@ -127,7 +160,7 @@ const routes = [
         component: ReportsView,
         meta: {
           requiresAuth: true,
-          roles: ["admin"],
+          roles: ["amo"],
         },
       },
 
@@ -136,16 +169,7 @@ const routes = [
         component: ActiveLogsView,
         meta: {
           requiresAuth: true,
-          roles: ["admin"],
-        },
-      },
-
-      {
-        path: "item-locator",
-        component: ItemLocatorView,
-        meta: {
-          requiresAuth: true,
-          roles: ["admin"],
+          roles: ["amo"],
         },
       },
 
@@ -154,7 +178,7 @@ const routes = [
         component: ConsumptionReportView,
         meta: {
           requiresAuth: true,
-          roles: ["admin", "dean", "cashier"],
+          roles: ["amo", "department_head", "admin", "instructor", "cashier"],
         },
       },
 
@@ -163,7 +187,16 @@ const routes = [
         component: EquipmentDistributionView,
         meta: {
           requiresAuth: true,
-          roles: ["admin"],
+          roles: ["amo"],
+        },
+      },
+
+      {
+        path: "equipment-reports",
+        component: EquipmentReportsView,
+        meta: {
+          requiresAuth: true,
+          roles: ["amo", "department_head", "admin", "instructor", "cashier"],
         },
       },
 
@@ -172,7 +205,7 @@ const routes = [
         component: PendingInspectionView,
         meta: {
           requiresAuth: true,
-          roles: ["admin"],
+          roles: ["amo"],
         },
       },
 
@@ -181,7 +214,7 @@ const routes = [
         component: SettingsView,
         meta: {
           requiresAuth: true,
-          roles: ["admin"],
+          roles: ["amo", "department_head", "admin", "instructor", "cashier"],
         },
       },
 
@@ -194,7 +227,7 @@ const routes = [
         component: RequestView,
         meta: {
           requiresAuth: true,
-          roles: ["admin", "dean", "cashier"],
+          roles: ["amo", "department_head", "admin", "instructor", "cashier"],
         },
       },
     ],
@@ -252,6 +285,16 @@ router.beforeEach((to) => {
 
   if (to.meta?.requiresAuth && !user) {
     return "/login";
+  }
+
+  // TEMPORARY PASSWORD: nothing but the change-password page until it is changed
+
+  if (user?.must_change_password && to.path !== "/change-password") {
+    return "/change-password";
+  }
+
+  if (user && !user.must_change_password && to.path === "/change-password") {
+    return "/dashboard";
   }
 
   // ROLE CHECKING

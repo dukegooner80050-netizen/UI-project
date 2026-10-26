@@ -1,7 +1,31 @@
 import axios from "../axios";
 
+// Longest student ID number allowed (digits and '-'). Everyone can read it.
+export async function getStudentIdMaxLength() {
+    return (await axios.get("/settings/student-id-length", { silent: true })).data.student_id_max_length;
+}
+
+export async function updateStudentIdMaxLength(value) {
+    return (await axios.put("/settings/student-id-length", { student_id_max_length: value })).data;
+}
+
 export async function getMonthlyRequestLimit() {
     return (await axios.get("/settings/monthly-request-limit")).data;
+}
+
+// Default return period (days) per category for borrowed items (roadmap #8).
+// Both values are a whole number of days, or null for "no default".
+export async function getReturnPeriods() {
+    return (await axios.get("/settings/return-periods")).data;
+}
+
+export async function updateReturnPeriods({ office_supplies, school_equipment }) {
+    return (
+        await axios.put("/settings/return-periods", {
+            office_supplies,
+            school_equipment,
+        })
+    ).data;
 }
 
 export async function updateMonthlyRequestLimit(limit) {
@@ -10,4 +34,14 @@ export async function updateMonthlyRequestLimit(limit) {
             monthly_request_limit: limit,
         })
     ).data;
+}
+
+// Default stock levels (Critical / Minimum / Optimal) for School Equipment
+// and Type B office supplies. AMO only.
+export async function getStockLevels() {
+    return (await axios.get("/settings/stock-levels")).data;
+}
+
+export async function updateStockLevels(payload) {
+    return (await axios.put("/settings/stock-levels", payload)).data;
 }

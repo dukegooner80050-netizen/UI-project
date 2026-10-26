@@ -2,28 +2,180 @@
 import { ref, computed, onMounted } from "vue";
 import { getItems } from "../services/items";
 import { getRequests } from "../services/requests";
+import { returnToService } from "../services/inspections";
+import { disposeItem, DISPOSAL_METHODS } from "../services/disposals";
+import AlertMessage from "../components/AlertMessage.vue";
+import StockBadge from "../components/StockBadge.vue";
+import DueBadge from "../components/DueBadge.vue";
+import { isIssuedType, isReturnableType } from "../services/itemTypes";
 
 const search = ref("");
 const statusFilter = ref("ALL");
 const borrowerFilter = ref("ALL");
-const viewMode = ref("ALL_ITEMS");
+const activeTab = ref("INVENTORY");
+const locationFilter = ref("");
+const roomFilter = ref("");
+const LOCATIONS = ["SFB.Faculty", "SFB.Building 1", "SFB.Building 2", "SFB.Building 3"];
+const ROOMS = ["Room 201", "Room 202", "Room 203", "N/A"];
 
 const items = ref([]);
 const requests = ref([]);
 
-const isBorrowedView = computed(() => viewMode.value === "BORROWED");
-const isLocationView = computed(() => viewMode.value === "LOCATIONS");
+// "Item Locator" is a tab inside this same page (not a separate view) so
+// that borrowed/location lookups live in one place rather than being
+// duplicated across pages.
+const isLocationView = computed(() => activeTab.value === "LOCATOR");
 // The Status filter already had a "Damaged" option, but nothing ever set
 // item.status to "Damaged" -- damaged items are tracked separately via
 // damaged_quantity (from the Return Inspection feature). When that filter
-// is selected, show a dedicated damaged-items table instead.
+// is selected, show a dedicated damaged-items table instead. Displayed as
+// "Disposal" in the UI, matching the renamed inspection outcome.
 const isDamagedView = computed(
-  () => !isBorrowedView.value && !isLocationView.value && statusFilter.value === "Damaged",
+  () => !isLocationView.value && statusFilter.value === "Damaged",
 );
 
 const damagedItems = computed(() =>
   items.value.filter((item) => Number(item.damaged_quantity) > 0),
 );
+
+// Items marked "Need Maintenance" during inspection. Unlike Disposal,
+// these can be moved back into available stock later via "Return to
+// Service" once repaired.
+const isMaintenanceView = computed(
+  () => !isLocationView.value && statusFilter.value === "Maintenance",
+);
+
+const maintenanceItems = computed(() =>
+  items.value.filter((item) => Number(item.maintenance_quantity) > 0),
+);
+
+const returnQtyInputs = ref({}); // { [itemId]: quantity }
+
+const showAlert = ref(false);
+const alertType = ref("success");
+const alertMessage = ref("");
+
+const confirmModalOpen = ref(false);
+
+// Disposal step: formally dispose of units flagged for disposal at inspection.
+// Each disposal is saved as a permanent record (see Disposal Records).
+const disposeTarget = ref(null);
+const disposeForm = ref({ quantity: 1, method: "Discarded", disposed_on: "", notes: "" });
+const disposeError = ref("");
+const disposing = ref(false);
+
+function todayISO() {
+  const d = new Date();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${d.getFullYear()}-${m}-${day}`;
+}
+
+function openDispose(item) {
+  disposeTarget.value = item;
+  disposeForm.value = {
+    quantity: Number(item.damaged_quantity) || 1,
+    method: "Discarded",
+    disposed_on: todayISO(),
+    notes: "",
+  };
+  disposeError.value = "";
+}
+
+function closeDispose() {
+  disposeTarget.value = null;
+  disposeError.value = "";
+}
+
+async function confirmDispose() {
+  const item = disposeTarget.value;
+  const f = disposeForm.value;
+  const qty = Number(f.quantity);
+  const waiting = Number(item.damaged_quantity) || 0;
+
+  if (!Number.isInteger(qty) || qty < 1) {
+    disposeError.value = "Enter a quantity of at least 1.";
+    return;
+  }
+  if (qty > waiting) {
+    disposeError.value = `Only ${waiting} unit(s) are waiting for disposal.`;
+    return;
+  }
+  if (f.method === "Other" && !f.notes.trim()) {
+    disposeError.value = "Add a note explaining the disposal method.";
+    return;
+  }
+  if (f.disposed_on && f.disposed_on > todayISO()) {
+    disposeError.value = "The disposal date can't be in the future.";
+    return;
+  }
+
+  disposing.value = true;
+  try {
+    await disposeItem(item.id, {
+      quantity: qty,
+      method: f.method,
+      disposed_on: f.disposed_on || undefined,
+      notes: f.notes.trim() || undefined,
+    });
+    notify("success", `${qty} × ${item.name} disposed of and recorded.`);
+    closeDispose();
+    await loadData();
+  } catch (e) {
+    disposeError.value = errMsg(e);
+  } finally {
+    disposing.value = false;
+  }
+}
+const pendingReturnItem = ref(null);
+const pendingReturnQty = ref(0);
+
+function notify(type, message) {
+  alertType.value = type;
+  alertMessage.value = message;
+  showAlert.value = true;
+}
+
+function errMsg(e) {
+  return e?.response?.data?.message || e?.message || "Something went wrong.";
+}
+
+async function handleReturnToService(item) {
+  const qty = Number(returnQtyInputs.value[item.id]) || 0;
+  if (qty < 1) {
+    notify("warning", "Enter a quantity of at least 1.");
+    return;
+  }
+  if (qty > Number(item.maintenance_quantity)) {
+    notify("warning", `Only ${item.maintenance_quantity} unit(s) are currently under maintenance.`);
+    return;
+  }
+  pendingReturnItem.value = item;
+  pendingReturnQty.value = qty;
+  confirmModalOpen.value = true;
+}
+
+function closeConfirm() {
+  confirmModalOpen.value = false;
+  pendingReturnItem.value = null;
+  pendingReturnQty.value = 0;
+}
+
+async function confirmReturnToService() {
+  const item = pendingReturnItem.value;
+  const qty = pendingReturnQty.value;
+  closeConfirm();
+
+  if (!item || qty < 1) return;
+
+  try {
+    await returnToService(item.id, qty);
+    returnQtyInputs.value[item.id] = "";
+    await loadData();
+  } catch (e) {
+    notify("danger", errMsg(e));
+  }
+}
 
 async function loadData() {
   try {
@@ -67,6 +219,12 @@ const borrowedRows = computed(() => {
         continue;
       }
 
+      // Issued items (Consumable / Type A) are never returned, so they are
+      // not "borrowed".
+      if (isIssuedType(item.itemType)) {
+        continue;
+      }
+
       rows.push({
         id:
           `${request.id}-${item.requestItemId}`,
@@ -92,14 +250,32 @@ const borrowedRows = computed(() => {
         room:
           request.room || "N/A",
 
+        requestId: request.id ?? request.idrequest ?? "N/A",
+        purpose: request.purpose || "N/A",
+        itemId: item.itemId ?? item.iditems ?? null,
         date:
           request.borrowedAt ||
           request.request_date,
+        dueDate: item.dueDate || "",
+        overdue: !!item.overdue,
+        daysOverdue: item.daysOverdue || 0,
       });
     }
   }
 
-  return rows;
+  if (!isLocationView.value) return rows;
+
+  const locatableNames = new Set(
+    items.value
+      .filter((item) => {
+        const category = String(item.category || "").toLowerCase();
+        const type = item.itemType || item.item_type || item.subCategory || "";
+        return (category === "office supplies" || category === "school equipment") && isReturnableType(type);
+      })
+      .map((item) => String(item.name || "").toLowerCase()),
+  );
+
+  return rows.filter((row) => locatableNames.has(String(row.name || "").toLowerCase()));
 });
 
 
@@ -138,9 +314,16 @@ const filteredItems = computed(() => {
       category.includes(keyword) ||
       itemType.includes(keyword);
 
+    // Low Stock / Critical / Minimum / Out of Stock are driven by each
+    // item's own stock thresholds; everything else matches item.status.
+    const f = statusFilter.value;
     const matchesStatus =
-      statusFilter.value === "ALL" ||
-      item.status === statusFilter.value;
+      f === "ALL" ||
+      (f === "Low Stock"
+        ? ["Critical", "Minimum"].includes(item.stockLevel)
+        : f === "Critical" || f === "Minimum" || f === "Out of Stock"
+          ? item.stockLevel === f
+          : item.status === f);
 
     return (
       matchesSearch &&
@@ -156,6 +339,19 @@ const filteredDamagedItems = computed(() => {
   const keyword = search.value.trim().toLowerCase();
 
   return damagedItems.value.filter((item) => {
+    const name = String(item.name || "").toLowerCase();
+    const category = String(item.category || "").toLowerCase();
+    return !keyword || name.includes(keyword) || category.includes(keyword);
+  });
+});
+
+
+// FILTERED MAINTENANCE ITEMS
+
+const filteredMaintenanceItems = computed(() => {
+  const keyword = search.value.trim().toLowerCase();
+
+  return maintenanceItems.value.filter((item) => {
     const name = String(item.name || "").toLowerCase();
     const category = String(item.category || "").toLowerCase();
     return !keyword || name.includes(keyword) || category.includes(keyword);
@@ -192,7 +388,18 @@ const filteredBorrowedRows = computed(() => {
 
       String(row.room || "")
         .toLowerCase()
+        .includes(keyword) ||
+      String(row.purpose || "")
+        .toLowerCase()
+        .includes(keyword) ||
+      String(row.requestId || "")
+        .toLowerCase()
         .includes(keyword);
+
+    const matchesLocation =
+      !isLocationView.value ||
+      ((!locationFilter.value || row.location === locationFilter.value) &&
+       (!roomFilter.value || row.room === roomFilter.value));
 
     const matchesBorrower =
       borrowerFilter.value === "ALL" ||
@@ -200,11 +407,19 @@ const filteredBorrowedRows = computed(() => {
 
     return (
       matchesSearch &&
-      matchesBorrower
+      matchesBorrower &&
+      matchesLocation
     );
   });
 });
 
+
+function clearLocationFilters() {
+  search.value = "";
+  locationFilter.value = "";
+  roomFilter.value = "";
+  borrowerFilter.value = "ALL";
+}
 
 // STATUS BADGE
 
@@ -256,21 +471,81 @@ function formatDate(date) {
 
   <div>
 
-    <h3 class="mb-4">
-      Inventory
-    </h3>
+    <AlertMessage
+      v-model:show="showAlert"
+      :type="alertType"
+      :message="alertMessage"
+    />
 
+    <h3 class="mb-3">Inventory Management</h3>
 
-    <!-- FILTERS -->
+    <div class="d-flex gap-2 mb-3">
+      <button
+        type="button"
+        class="btn"
+        :class="activeTab === 'INVENTORY' ? 'btn-primary' : 'btn-outline-primary'"
+        @click="activeTab = 'INVENTORY'"
+      >
+        Inventory
+      </button>
+      <button
+        type="button"
+        class="btn"
+        :class="activeTab === 'LOCATOR' ? 'btn-primary' : 'btn-outline-primary'"
+        @click="activeTab = 'LOCATOR'"
+      >
+        Item Locator
+      </button>
+    </div>
 
-    <div class="row mb-3">
+    <p v-if="isLocationView" class="text-muted mb-4">
+      Search by item name or filter by building/room to find currently borrowed office supplies and school equipment.
+    </p>
+
+    <div v-if="isLocationView" class="card shadow-sm mb-4">
+      <div class="card-body">
+        <div class="row g-2 align-items-end">
+          <div class="col-md-5">
+            <label class="form-label">Search by item name</label>
+            <input v-model="search" class="form-control" placeholder="e.g. Projector, Chairs..." />
+          </div>
+          <div class="col-md-3">
+            <label class="form-label">Building / Location</label>
+            <select v-model="locationFilter" class="form-select">
+              <option value="">All locations</option>
+              <option v-for="loc in LOCATIONS" :key="loc" :value="loc">{{ loc }}</option>
+            </select>
+          </div>
+          <div class="col-md-2">
+            <label class="form-label">Room</label>
+            <select v-model="roomFilter" class="form-select">
+              <option value="">All rooms</option>
+              <option v-for="room in ROOMS" :key="room" :value="room">{{ room }}</option>
+            </select>
+          </div>
+          <div class="col-md-2">
+            <label class="form-label">Borrower</label>
+            <select v-model="borrowerFilter" class="form-select">
+              <option value="ALL">All Borrowers</option>
+              <option v-for="borrower in borrowerOptions" :key="borrower" :value="borrower">
+                {{ borrower }}
+              </option>
+            </select>
+          </div>
+          <div class="col-md-1">
+            <button type="button" class="btn btn-outline-secondary w-100" @click="clearLocationFilters">Clear filters</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- FILTERS (Inventory tab only -- Item Locator has its own search/filter card above) -->
+
+    <div v-if="!isLocationView" class="row mb-3">
 
       <!-- SEARCH -->
 
-      <div :class="isBorrowedView || isLocationView
-        ? 'col-md-5'
-        : 'col-md-6'
-        ">
+      <div class="col">
 
         <input v-model="search" class="form-control"
           placeholder="Search item name, category, borrower, or location..." />
@@ -280,7 +555,7 @@ function formatDate(date) {
 
       <!-- STATUS -->
 
-      <div v-if="!isBorrowedView && !isLocationView" class="col-md-3">
+      <div class="col-md-3">
 
         <select v-model="statusFilter" class="form-select">
 
@@ -296,8 +571,20 @@ function formatDate(date) {
             Damaged
           </option>
 
+          <option value="Maintenance">
+            Maintenance
+          </option>
+
           <option value="Low Stock">
-            Low Stock
+            Low Stock (Critical + Minimum)
+          </option>
+
+          <option value="Critical">
+            Critical
+          </option>
+
+          <option value="Minimum">
+            Minimum
           </option>
 
           <option value="Out of Stock">
@@ -309,56 +596,23 @@ function formatDate(date) {
       </div>
 
 
-      <!-- BORROWER FILTER -->
-
-      <div v-if="isBorrowedView || isLocationView" class="col-md-3">
-
-        <select v-model="borrowerFilter" class="form-select">
-
-          <option value="ALL">
-            All Borrowers
-          </option>
-
-          <option v-for="borrower in borrowerOptions" :key="borrower" :value="borrower">
-            {{ borrower }}
-          </option>
-
-        </select>
-
-      </div>
-
-
-      <!-- VIEW MODE -->
-
-      <div :class="isBorrowedView || isLocationView
-        ? 'col-md-4'
-        : 'col-md-3'
-        ">
-
-        <select v-model="viewMode" class="form-select">
-
-          <option value="ALL_ITEMS">
-            All Items
-          </option>
-
-          <option value="BORROWED">
-            Borrowed Items
-          </option>
-
-          <option value="LOCATIONS">
-            Item Locations
-          </option>
-
-        </select>
-
-      </div>
-
     </div>
 
 
     <!-- TABLE -->
 
     <div class="card shadow-sm">
+
+      <div v-if="isDamagedView" class="alert alert-light border d-flex justify-content-between align-items-center flex-wrap gap-2 m-3 mb-0">
+        <span>
+          Units flagged for disposal at inspection are listed here. Use
+          <strong>Dispose</strong> once they're actually gone: the disposal is
+          recorded permanently.
+        </span>
+        <RouterLink to="/disposal-records" class="btn btn-outline-secondary btn-sm">
+          View Disposal Records
+        </RouterLink>
+      </div>
 
       <div class="card-body table-scroll">
 
@@ -378,9 +632,9 @@ function formatDate(date) {
               <!-- NORMAL VIEW -->
 
               <template v-if="
-                !isBorrowedView &&
                 !isLocationView &&
-                !isDamagedView
+                !isDamagedView &&
+                !isMaintenanceView
               ">
 
                 <th>
@@ -389,6 +643,10 @@ function formatDate(date) {
 
                 <th>
                   Status
+                </th>
+
+                <th>
+                  Stock Level
                 </th>
 
                 <th>
@@ -413,60 +671,39 @@ function formatDate(date) {
                   Available Qty
                 </th>
 
+                <th style="width: 130px">
+                  Action
+                </th>
+
               </template>
 
+              <!-- MAINTENANCE ITEMS VIEW -->
 
-              <!-- BORROWED VIEW -->
-
-              <template v-if="isBorrowedView">
+              <template v-if="isMaintenanceView">
 
                 <th>
                   Category
                 </th>
 
                 <th>
-                  Borrowed Qty
+                  Under Maintenance
                 </th>
 
                 <th>
-                  Borrower
+                  Available Qty
                 </th>
 
-                <th>
-                  Location
-                </th>
-
-                <th>
-                  Date
+                <th style="width: 220px">
+                  Return to Service
                 </th>
 
               </template>
 
 
-              <!-- LOCATION VIEW -->
-
+              <!-- ITEM LOCATOR VIEW -->
               <template v-if="isLocationView">
-
-                <th>
-                  Borrower
-                </th>
-
-                <th>
-                  Location
-                </th>
-
-                <th>
-                  Room
-                </th>
-
-                <th>
-                  Qty
-                </th>
-
-                <th>
-                  Date
-                </th>
-
+                <th>Category</th><th>Qty Out</th><th>Requester</th><th>Request #</th>
+                <th>Location</th><th>Room</th><th>Purpose</th><th>Borrowed On</th><th>Return By</th>
               </template>
 
             </tr>
@@ -484,9 +721,9 @@ function formatDate(date) {
 
 
             <template v-if="
-              !isBorrowedView &&
               !isLocationView &&
-              !isDamagedView
+              !isDamagedView &&
+              !isMaintenanceView
             ">
 
               <tr v-for="item in filteredItems" :key="item.id">
@@ -511,6 +748,10 @@ function formatDate(date) {
                 </td>
 
                 <td>
+                  <StockBadge :level="item.stockLevel" />
+                </td>
+
+                <td>
                   {{ item.qty }}
                 </td>
 
@@ -521,7 +762,7 @@ function formatDate(date) {
                 filteredItems.length === 0
               ">
 
-                <td colspan="4" class="text-center text-muted py-4">
+                <td colspan="5" class="text-center text-muted py-4">
                   No items found.
                 </td>
 
@@ -554,118 +795,96 @@ function formatDate(date) {
                   {{ item.qty }}
                 </td>
 
-              </tr>
-
-              <tr v-if="filteredDamagedItems.length === 0">
-                <td colspan="4" class="text-center text-muted py-4">
-                  No damaged items on record.
-                </td>
-              </tr>
-
-            </template>
-
-
-
-            <!-- BORROWED VIEW -->
-
-
-            <template v-else-if="isBorrowedView">
-
-              <tr v-for="row in filteredBorrowedRows" :key="row.id">
-
                 <td>
-                  {{ row.name }}
-                </td>
-
-                <td>
-                  {{ row.category }}
-                </td>
-
-                <td>
-
-                  <span class="badge bg-primary">
-                    {{ row.qty }}
-                  </span>
-
-                </td>
-
-                <td>
-                  {{ row.borrower }}
-                </td>
-
-                <td>
-                  {{ row.location }}
-
-                  <small v-if="row.room" class="text-muted d-block">
-                    {{ row.room }}
-                  </small>
-
-                </td>
-
-                <td>
-                  {{ formatDate(row.date) }}
+                  <button class="btn btn-danger text-white btn-sm" @click="openDispose(item)">
+                    Dispose
+                  </button>
                 </td>
 
               </tr>
 
-
-              <tr v-if="
-                filteredBorrowedRows.length === 0
-              ">
-
-                <td colspan="6" class="text-center text-muted py-4">
-                  No borrowed items found.
-                </td>
-
-              </tr>
-
-            </template>
-
-            <!-- LOCATION VIEW -->
-
-            <template v-else-if="isLocationView">
-
-              <tr v-for="row in filteredBorrowedRows" :key="row.id">
-
-                <td>
-                  {{ row.name }}
-                </td>
-
-                <td>
-                  {{ row.borrower }}
-                </td>
-
-                <td>
-
-                  {{ row.location }}
-
-                  <small v-if="row.room" class="text-muted d-block">
-                    {{ row.room }}
-                  </small>
-
-                </td>
-
-                <td>
-                  {{ row.qty }}
-                </td>
-
-                <td>
-                  {{ formatDate(row.date) }}
-                </td>
-
-              </tr>
-
-
-              <tr v-if="
-                filteredBorrowedRows.length === 0
-              ">
-
+              <tr v-if="filteredDamagedItems.length === 0">
                 <td colspan="5" class="text-center text-muted py-4">
-                  No item locations found.
+                  No units are waiting for disposal.
+                </td>
+              </tr>
+
+            </template>
+
+            <!-- MAINTENANCE ITEMS VIEW -->
+
+            <template v-else-if="isMaintenanceView">
+
+              <tr v-for="item in filteredMaintenanceItems" :key="item.id">
+
+                <td>
+                  {{ item.name }}
+                </td>
+
+                <td>
+                  {{ item.category }}
+                </td>
+
+                <td>
+                  <span class="badge bg-warning text-dark">
+                    {{ item.maintenance_quantity }}
+                  </span>
+                </td>
+
+                <td>
+                  {{ item.qty }}
+                </td>
+
+                <td>
+                  <div class="d-flex gap-2">
+                    <input
+                      type="number"
+                      min="1"
+                      :max="item.maintenance_quantity"
+                      class="form-control form-control-sm"
+                      style="width: 80px"
+                      v-model="returnQtyInputs[item.id]"
+                      placeholder="Qty"
+                    />
+                    <button
+                      class="btn btn-sm btn-success"
+                      @click="handleReturnToService(item)"
+                    >
+                      Return to Service
+                    </button>
+                  </div>
                 </td>
 
               </tr>
 
+              <tr v-if="filteredMaintenanceItems.length === 0">
+                <td colspan="5" class="text-center text-muted py-4">
+                  No items currently under maintenance.
+                </td>
+              </tr>
+
+            </template>
+
+
+
+            <!-- ITEM LOCATOR VIEW -->
+            <template v-else-if="isLocationView">
+              <tr v-for="row in filteredBorrowedRows" :key="row.id">
+                <td>{{ row.name }}</td><td>{{ row.category }}</td><td>{{ row.qty }}</td>
+                <td>{{ row.borrower }}</td><td>{{ row.requestId }}</td>
+                <td>{{ row.location }}</td><td>{{ row.room }}</td><td>{{ row.purpose }}</td>
+                <td>{{ formatDate(row.date) }}</td>
+                <td>
+                  <DueBadge
+                    :due-date="row.dueDate"
+                    :overdue="row.overdue"
+                    :days-overdue="row.daysOverdue"
+                  />
+                </td>
+              </tr>
+              <tr v-if="filteredBorrowedRows.length === 0">
+                <td colspan="10" class="text-center text-muted py-4">No matching borrowed items found.</td>
+              </tr>
             </template>
 
           </tbody>
@@ -676,18 +895,113 @@ function formatDate(date) {
 
     </div>
 
-    <!-- DELETE BUTTON -->
+  </div>
 
-    <div class="mt-3 text-end">
+    <div v-if="confirmModalOpen" class="modal-backdrop-custom">
+      <div class="modal-custom">
+        <div class="modal-header">
+          <h5 class="mb-0">Confirm Return to Service</h5>
+          <button
+            type="button"
+            class="btn-close"
+            @click="closeConfirm"
+          ></button>
+        </div>
 
-      <button class="btn btn-danger" disabled>
-        Delete Inventory Data
-        (Coming Soon)
-      </button>
+        <div class="modal-body">
+          <p class="mb-0">
+            Return {{ pendingReturnQty }}x
+            "{{ pendingReturnItem?.name }}"
+            to available stock from maintenance?
+          </p>
+        </div>
 
+        <div class="modal-footer">
+          <button
+            type="button"
+            class="btn btn-secondary"
+            @click="closeConfirm"
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            class="btn btn-success"
+            @click="confirmReturnToService"
+          >
+            Confirm
+          </button>
+        </div>
+      </div>
     </div>
 
-  </div>
+    <!-- DISPOSE -->
+    <div v-if="disposeTarget" class="modal-backdrop-custom">
+      <div class="modal-custom">
+        <div class="modal-header">
+          <h5 class="mb-0">Dispose of units</h5>
+          <button type="button" class="btn-close" @click="closeDispose"></button>
+        </div>
+
+        <div class="modal-body">
+          <p class="mb-3">
+            <strong>{{ disposeTarget.name }}</strong>
+            <span class="text-muted">
+              — {{ disposeTarget.damaged_quantity }} unit(s) waiting for disposal
+            </span>
+          </p>
+
+          <label class="form-label" for="disp-qty">Quantity to dispose</label>
+          <input
+            id="disp-qty"
+            v-model.number="disposeForm.quantity"
+            type="number"
+            min="1"
+            :max="disposeTarget.damaged_quantity"
+            class="form-control mb-3"
+          />
+
+          <label class="form-label" for="disp-method">Method</label>
+          <select id="disp-method" v-model="disposeForm.method" class="form-select mb-3">
+            <option v-for="m in DISPOSAL_METHODS" :key="m" :value="m">{{ m }}</option>
+          </select>
+
+          <label class="form-label" for="disp-date">Date disposed</label>
+          <input
+            id="disp-date"
+            v-model="disposeForm.disposed_on"
+            type="date"
+            :max="todayISO()"
+            class="form-control mb-3"
+          />
+
+          <label class="form-label" for="disp-notes">
+            Notes<span v-if="disposeForm.method === 'Other'"> (required)</span>
+          </label>
+          <textarea
+            id="disp-notes"
+            v-model="disposeForm.notes"
+            rows="2"
+            maxlength="255"
+            class="form-control"
+            placeholder="e.g. Beyond repair, hauled away by the junk dealer"
+          ></textarea>
+
+          <div v-if="disposeError" class="alert alert-danger py-2 mt-3 mb-0">
+            {{ disposeError }}
+          </div>
+        </div>
+
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" :disabled="disposing" @click="closeDispose">
+            Cancel
+          </button>
+          <button type="button" class="btn btn-danger" :disabled="disposing" @click="confirmDispose">
+            {{ disposing ? "Saving..." : "Record disposal" }}
+          </button>
+        </div>
+      </div>
+    </div>
 
 </template>
 
@@ -703,4 +1017,7 @@ function formatDate(date) {
   top: 0;
   z-index: 1;
 }
+</style>
+
+<style scoped>
 </style>

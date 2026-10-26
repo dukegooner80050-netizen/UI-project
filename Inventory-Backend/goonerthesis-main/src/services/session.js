@@ -1,4 +1,4 @@
-import { getCurrentUser, clearCurrentUser } from "./storage";
+import { getCurrentUser } from "./storage";
 
 export function requireUser() {
   const user = getCurrentUser();
@@ -7,7 +7,7 @@ export function requireUser() {
 }
 
 export function isAdmin(user) {
-  return (user?.role || "").toLowerCase() === "admin";
+  return (user?.role || "").toLowerCase() === "amo";
 }
 
 export function requireAdmin() {

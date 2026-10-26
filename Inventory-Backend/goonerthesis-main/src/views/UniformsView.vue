@@ -4,8 +4,88 @@ import { useRoute } from "vue-router";
 
 import { listUniformTypes, listUniformVariants, createUniformType, updateUniformType, deleteUniformType,
   createUniformVariant, updateUniformVariant, deleteUniformVariant, restockUniformVariant, releaseUniformVariant,} from "../services/uniforms";
-import { getDepartments } from "../services/departments";
+import { getDepartments, createDepartment, updateDepartment, deleteDepartment } from "../services/departments";
+import AlertMessage from "../components/AlertMessage.vue";
+
+const showAlert = ref(false);
+const alertType = ref("success");
+const alertMessage = ref("");
+
+function notify(type, message) {
+  alertType.value = type;
+  alertMessage.value = message;
+  showAlert.value = true;
+}
 const route = useRoute();
+
+/* MANAGE COURSES: the AMO adds a missing course, renames or removes one */
+const courseModalOpen = ref(false);
+const newCourseName = ref("");
+const courseBusy = ref(false);
+const editCourseId = ref(null);
+const editCourseName = ref("");
+function announceCoursesChanged() {
+  // The sidebar listens and reloads its course links.
+  window.dispatchEvent(new Event("cims:courses-changed"));
+}
+async function reloadCourses() {
+  departments.value = (await getDepartments()) || [];
+  announceCoursesChanged();
+}
+async function addCourse() {
+  const name = newCourseName.value.trim();
+  if (!name) return;
+  courseBusy.value = true;
+  try {
+    await createDepartment({ dept_name: name });
+    newCourseName.value = "";
+    await reloadCourses();
+    notify("success", `Course '${name}' added.`);
+  } catch (e) {
+    notify("danger", e?.response?.data?.message || "Could not add the course.");
+  } finally {
+    courseBusy.value = false;
+  }
+}
+function startRename(d) {
+  editCourseId.value = d.iddept;
+  editCourseName.value = d.dept_name;
+}
+async function saveRename(d) {
+  const name = editCourseName.value.trim();
+  if (!name || name === d.dept_name) {
+    editCourseId.value = null;
+    return;
+  }
+  courseBusy.value = true;
+  try {
+    await updateDepartment(d.iddept, { dept_name: name });
+    editCourseId.value = null;
+    await reloadCourses();
+    await loadAll();
+    notify("success", "Course renamed.");
+  } catch (e) {
+    notify("danger", e?.response?.data?.message || "Could not rename the course.");
+  } finally {
+    courseBusy.value = false;
+  }
+}
+const deleteCourseTarget = ref(null);
+async function removeCourse() {
+  const d = deleteCourseTarget.value;
+  deleteCourseTarget.value = null;
+  if (!d) return;
+  courseBusy.value = true;
+  try {
+    await deleteDepartment(d.iddept);
+    await reloadCourses();
+    notify("success", `Course '${d.dept_name}' removed.`);
+  } catch (e) {
+    notify("danger", e?.response?.data?.message || "Could not remove the course.");
+  } finally {
+    courseBusy.value = false;
+  }
+}
 
 /* PAGE / FILTER */
 
@@ -61,7 +141,8 @@ async function loadAll() {
     departments.value = departmentList || [];
   } catch (e) {
     console.error("Failed to load uniform data:", e);
-    alert(
+    notify(
+      "danger",
       e?.response?.data?.message ||
         e?.message ||
         "Failed to load uniform data.",
@@ -127,7 +208,7 @@ async function confirmAddType() {
   const description = typeDescription.value.trim();
 
   if (!name) {
-    alert("Please enter a uniform name.");
+    notify("warning", "Please enter a uniform name.");
     return;
   }
 
@@ -143,7 +224,7 @@ async function proceedAddType() {
   const description = typeDescription.value.trim();
 
   if (!name) {
-    alert("Please enter a uniform name.");
+    notify("warning", "Please enter a uniform name.");
     closeTypeConfirm();
     return;
   }
@@ -161,7 +242,8 @@ async function proceedAddType() {
   } catch (e) {
     console.error("Failed to create uniform type:", e);
 
-    alert(
+    notify(
+      "danger",
       e?.response?.data?.message ||
         JSON.stringify(e?.response?.data?.errors) ||
         e?.message ||
@@ -172,34 +254,31 @@ async function proceedAddType() {
 
 /* EDIT UNIFORM TYPE */
 
-const editTypeModalOpen = ref(false);
+const editTypeConfirm = ref(false);
 const editingType = ref(null);
 
 const editTypeName = ref("");
 const editTypeDescription = ref("");
 
-function openEditType(type) {
-  editingType.value = type;
-  editTypeName.value = type.uniform_name || "";
-  editTypeDescription.value = type.description || "";
-  editTypeModalOpen.value = true;
+// Step 1: validate, then show the confirmation screen.
+function requestTypeEdit() {
+  if (!editingType.value) {
+    return;
+  }
+  if (!editTypeName.value.trim()) {
+    notify("warning", "Uniform name is required.");
+    return;
+  }
+  editTypeConfirm.value = true;
 }
 
-function closeEditType() {
-  editTypeModalOpen.value = false;
-  editingType.value = null;
-}
-
+// Step 2: the user confirmed, save it.
 async function saveTypeEdit() {
   if (!editingType.value) {
     return;
   }
   const name = editTypeName.value.trim();
   const description = editTypeDescription.value.trim();
-  if (!name) {
-    alert("Uniform name is required.");
-    return;
-  }
 
   try {
     await updateUniformType(editingType.value.idUniftype, {
@@ -207,10 +286,12 @@ async function saveTypeEdit() {
       description: description,
     });
     await loadAll();
-    closeEditType();
+    closeEditVariant();
   } catch (e) {
     console.error("Failed to update uniform type:", e);
-    alert(
+    editTypeConfirm.value = false;
+    notify(
+      "danger",
       e?.response?.data?.message ||
         JSON.stringify(e?.response?.data?.errors) ||
         e?.message ||
@@ -227,21 +308,37 @@ async function removeUniformType(type) {
     (variant) => String(variant.idUniftype) === String(type.idUniftype),
   );
   if (hasVariants) {
-    alert(
+    notify(
+      "warning",
       `Cannot delete "${typeName}" because it still has uniform variants. Delete its variants first.`,
     );
     return;
   }
 
-  if (!confirm(`Delete uniform type "${typeName}"?`)) {
+  pendingDeleteType.value = type;
+  deleteTypeConfirmModalOpen.value = true;
+}
+
+function closeDeleteTypeConfirm() {
+  deleteTypeConfirmModalOpen.value = false;
+  pendingDeleteType.value = null;
+}
+
+async function confirmDeleteUniformType() {
+  const type = pendingDeleteType.value;
+  closeDeleteTypeConfirm();
+
+  if (!type) {
     return;
   }
+
   try {
     await deleteUniformType(type.idUniftype);
     await loadAll();
   } catch (e) {
     console.error("Failed to delete uniform type:", e);
-    alert(
+    notify(
+      "danger",
       e?.response?.data?.message ||
         JSON.stringify(e?.response?.data?.errors) ||
         e?.message ||
@@ -255,14 +352,31 @@ async function removeUniformType(type) {
 const variantModalOpen = ref(false);
 const variantConfirmModalOpen = ref(false);
 const variantTypeId = ref("");
+
+// The type picked in the Add Variant dialog, to show its description.
+const variantType = computed(() =>
+  uniformTypes.value.find((t) => String(t.idUniftype) === String(variantTypeId.value)),
+);
 const variantDepartmentId = ref("");
 const variantSize = ref("");
+const variantGender = ref("Unisex");
 const variantPrice = ref(0);
 const variantQuantity = ref(1);
 
+// On a course page (e.g. BSMT) a new variant can only go to that course's
+// department; the "All Uniforms" page still offers every department.
+const addableDepartments = computed(() =>
+  isAllView.value
+    ? departments.value
+    : departments.value.filter((d) => d.dept_name === course.value),
+);
+
 function openAddVariant() {
   variantTypeId.value = "";
-  variantDepartmentId.value = "";
+  variantDepartmentId.value =
+    !isAllView.value && addableDepartments.value.length === 1
+      ? String(addableDepartments.value[0].iddept)
+      : "";
   variantSize.value = "";
   variantPrice.value = 0;
   variantQuantity.value = 1;
@@ -295,27 +409,28 @@ function confirmAddVariant() {
   const typeId = variantTypeId.value;
   const departmentId = variantDepartmentId.value;
   const size = variantSize.value.trim();
+  const gender = variantGender.value;
   const price = Number(variantPrice.value) || 0;
   const quantity = Number(variantQuantity.value) || 0;
 
   if (!typeId) {
-    alert("Please select a uniform type.");
+    notify("warning", "Please select a uniform type.");
     return;
   }
   if (!departmentId) {
-    alert("Please select a department.");
+    notify("warning", "Please select a department.");
     return;
   }
   if (!size) {
-    alert("Please enter a uniform size.");
+    notify("warning", "Please enter a uniform size.");
     return;
   }
   if (price < 0) {
-    alert("Price cannot be negative.");
+    notify("warning", "Price cannot be negative.");
     return;
   }
   if (quantity < 0) {
-    alert("Quantity cannot be negative.");
+    notify("warning", "Quantity cannot be negative.");
     return;
   }
   variantConfirmModalOpen.value = true;
@@ -326,6 +441,7 @@ async function createConfirmedVariant() {
       idUniftype: Number(variantTypeId.value),
       iddept: Number(variantDepartmentId.value),
       size: variantSize.value.trim(),
+      gender: variantGender.value,
       price: Number(variantPrice.value) || 0,
       quantity: Number(variantQuantity.value) || 0,
     });
@@ -337,7 +453,8 @@ async function createConfirmedVariant() {
   } catch (e) {
     console.error("Failed to create uniform variant:", e);
     variantConfirmModalOpen.value = false;
-    alert(
+    notify(
+      "danger",
       e?.response?.data?.message ||
         JSON.stringify(e?.response?.data?.errors) ||
         e?.message ||
@@ -351,15 +468,29 @@ async function createConfirmedVariant() {
 const editVariantModalOpen = ref(false);
 const editingVariant = ref(null);
 const editVariantPrice = ref(0);
+const editVariantGender = ref("Unisex");
 
 /* const editVariantTypeId = ref("");
 const editVariantDepartmentId = ref("");
 const editVariantSize = ref("");
 const editVariantQuantity = ref(0); */
 
+// One Edit dialog for both: the "Variant" tab edits this size/department's
+// price, the "Type" tab edits the uniform type it belongs to (name and
+// description, shared by every variant of that type).
+const editTab = ref("variant"); // "variant" | "type"
+
 function openEditVariant(variant) {
   editingVariant.value = variant;
   editVariantPrice.value = Number(variant.price) || 0;
+  editVariantGender.value = variant.gender || "Unisex";
+
+  editTab.value = "variant";
+  editingType.value = variant.type || null;
+  editTypeName.value = variant.type?.uniform_name || "";
+  editTypeDescription.value = variant.type?.description || "";
+  editTypeConfirm.value = false;
+
   editVariantModalOpen.value = true;
 }
 
@@ -367,7 +498,40 @@ function closeEditVariant() {
   editVariantModalOpen.value = false;
   editingVariant.value = null;
   editVariantPrice.value = 0;
+  editVariantGender.value = "Unisex";
+
+  editTab.value = "variant";
+  editingType.value = null;
+  editTypeConfirm.value = false;
 }
+
+function switchEditTab(tab) {
+  editTab.value = tab;
+  editTypeConfirm.value = false;
+}
+
+// A dot on a tab means it has changes that are not saved yet.
+const variantDirty = computed(
+  () =>
+    !!editingVariant.value &&
+    Number(editVariantPrice.value) !== Number(editingVariant.value.price || 0),
+);
+
+const typeDirty = computed(
+  () =>
+    !!editingType.value &&
+    (editTypeName.value.trim() !== (editingType.value.uniform_name || "") ||
+      editTypeDescription.value.trim() !== (editingType.value.description || "")),
+);
+
+// How many variants share the type being edited (the change applies to all).
+const typeVariantCount = computed(() =>
+  editingType.value
+    ? uniformVariants.value.filter(
+        (v) => String(v.idUniftype) === String(editingType.value.idUniftype),
+      ).length
+    : 0,
+);
 
 function saveVariantEdit() {
   if (!editingVariant.value) {
@@ -375,7 +539,7 @@ function saveVariantEdit() {
   }
   const price = Number(editVariantPrice.value) || 0;
   if (price < 0) {
-    alert("Price cannot be negative.");
+    notify("warning", "Price cannot be negative.");
     return;
   }
 
@@ -398,6 +562,9 @@ const stockQuantity = ref(1);
 const actionConfirmModalOpen = ref(false);
 const actionConfirmType = ref("");
 const actionConfirmVariant = ref(null);
+
+const deleteTypeConfirmModalOpen = ref(false);
+const pendingDeleteType = ref(null);
 
 function openActionConfirm(type, variant) {
   actionConfirmType.value = type;
@@ -459,7 +626,7 @@ async function confirmAction() {
     if (actionConfirmType.value === "release") {
       const quantity = Number(stockQuantity.value) || 0;
       if (quantity <= 0) {
-        alert("Quantity must be at least 1.");
+        notify("warning", "Quantity must be at least 1.");
         return;
       }
       await releaseUniformVariant(variant.idUnifvariant, quantity);
@@ -468,7 +635,7 @@ async function confirmAction() {
     /* RESTOCK */
       const quantity = Number(stockQuantity.value) || 0;
       if (quantity <= 0) {
-        alert("Quantity must be at least 1.");
+        notify("warning", "Quantity must be at least 1.");
         return;
       }
       await restockUniformVariant(variant.idUnifvariant, quantity);
@@ -477,17 +644,18 @@ async function confirmAction() {
     /* EDIT */
       const newPrice = Number(editVariantPrice.value);
       if (isNaN(newPrice)) {
-        alert("Please enter a valid price.");
+        notify("warning", "Please enter a valid price.");
         return;
       }
       if (newPrice < 0) {
-        alert("Price cannot be negative.");
+        notify("warning", "Price cannot be negative.");
         return;
       }
       await updateUniformVariant(variant.idUnifvariant, {
         idUniftype: variant.idUniftype,
         iddept: variant.iddept,
         size: variant.size,
+        gender: editVariantGender.value,
         price: newPrice,
         quantity: variant.quantity,
       });
@@ -511,7 +679,8 @@ async function confirmAction() {
     }
   } catch (e) {
     console.error("Uniform action failed:", e);
-    alert(
+    notify(
+      "danger",
       e?.response?.data?.message ||
         JSON.stringify(e?.response?.data?.errors) ||
         e?.message ||
@@ -536,23 +705,24 @@ function closeStockModal() {
 
 function confirmStockAction() {
   if (!stockVariant.value) {
-    alert("No uniform selected.");
+    notify("warning", "No uniform selected.");
     return;
   }
 
   const quantity = Number(stockQuantity.value) || 0;
   if (quantity <= 0) {
-    alert("Quantity must be at least 1.");
+    notify("warning", "Quantity must be at least 1.");
     return;
   }
 
   /* Prevents releasing more than available stock */
   if (
     stockMode.value === "release" &&
-    quantity > Number(stockVariant.value.quantity)
+    quantity > Math.max(0, Number(stockVariant.value.quantity) - Number(stockVariant.value.reserved_quantity || 0))
   ) {
-    alert(
-      `Cannot release ${quantity} unit(s). Only ${stockVariant.value.quantity} unit(s) are available.`,
+    notify(
+      "warning",
+      `Cannot release ${quantity} unit(s). Only ${Math.max(0, Number(stockVariant.value.quantity) - Number(stockVariant.value.reserved_quantity || 0))} unreserved unit(s) are available.`,
     );
     return;
   }
@@ -579,6 +749,8 @@ const visibleTypes = computed(() => {
 
 <template>
   <div>
+    <AlertMessage v-model:show="showAlert" :type="alertType" :message="alertMessage" />
+
     <!-- PAGE TITLE -->
 
     <h3 class="mb-4">
@@ -592,10 +764,16 @@ const visibleTypes = computed(() => {
         {{ isAllView ? "Manage all uniform variants" : "Manage uniforms for " + course }}
       </div>
 
+      <div class="d-flex gap-2 flex-wrap">
+        <button class="btn btn-outline-primary" @click="courseModalOpen = true">
+          Manage Courses
+        </button>
+      </div>
+
       <div class="d-flex gap-2" v-if="!isAllView">
         <!-- ADD TYPE -->
 
-        <button class="btn btn-outline-primary" @click="openAddType">
+        <button class="btn btn-primary text-white" @click="openAddType">
           + Add Uniform Type
         </button>
 
@@ -610,8 +788,7 @@ const visibleTypes = computed(() => {
     <!-- LOADING -->
 
     <div v-if="loading" class="text-center py-5">
-      <div class="spinner-border text-primary" role="status"></div>
-      <div class="mt-2 text-muted">Loading uniforms...</div>
+      <div class="text-muted">Loading uniforms...</div>
     </div>
 
     <!-- INVENTORY TABLE -->
@@ -623,6 +800,7 @@ const visibleTypes = computed(() => {
             <tr>
               <th>Uniform</th>
               <th>Department</th>
+              <th>Gender</th>
               <th>Size</th>
               <th style="width: 120px">Price</th>
               <th>Status</th>
@@ -638,12 +816,21 @@ const visibleTypes = computed(() => {
                 <strong>
                   {{ getTypeName(variant) }}
                 </strong>
+                <div
+                  v-if="variant.type?.description"
+                  class="small text-muted type-description"
+                >
+                  {{ variant.type.description }}
+                </div>
               </td>
 
               <!-- DEPARTMENT -->
               <td>
                 {{ getDepartmentName(variant) }}
               </td>
+
+              <!-- GENDER -->
+              <td>{{ variant.gender || "Unisex" }}</td>
 
               <!-- SIZE -->
               <td>
@@ -669,13 +856,8 @@ const visibleTypes = computed(() => {
 
               <td class="text-center">
                 <div class="d-flex justify-content-center gap-2 flex-wrap">
-                  <!-- RELEASE -->
-                  <button v-if="isAllView" class="btn btn-primary btn-sm"
-                    @click="openStockModal('release', variant)">
-                    Release</button>
-
-                  <!-- RESTOCK -->
-                  <button v-else class="btn btn-success btn-sm"
+                  <!-- RESTOCK (uniforms go out through requests, so there is no manual release) -->
+                  <button class="btn btn-success btn-sm"
                     @click="openStockModal('restock', variant)">
                     Restock</button>
 
@@ -686,7 +868,7 @@ const visibleTypes = computed(() => {
 
                   <!-- DELETE -->
                   <button class="btn btn-danger btn-sm" @click="removeVariant(variant)">
-                    Delete
+                    Remove
                   </button>
                 </div>
               </td>
@@ -704,6 +886,88 @@ const visibleTypes = computed(() => {
       </div>
     </div>
 
+    <!-- MANAGE COURSES MODAL -->
+    <div v-if="courseModalOpen" class="modal-backdrop-custom">
+      <div class="modal-custom">
+        <div class="modal-header">
+          <h5 class="mb-0">Manage Courses</h5>
+          <button type="button" class="btn-close" @click="courseModalOpen = false"></button>
+        </div>
+        <div class="modal-body">
+          <form class="d-flex gap-2 mb-3" @submit.prevent="addCourse">
+            <input
+              v-model="newCourseName"
+              id="un-new-course"
+              name="new_course"
+              class="form-control"
+              maxlength="255"
+              autocomplete="off"
+              placeholder="New course name, e.g. BSBA"
+            />
+            <button type="submit" class="btn btn-primary text-nowrap" :disabled="courseBusy || !newCourseName.trim()">
+              Add Course
+            </button>
+          </form>
+
+          <ul class="list-group" style="max-height: 360px; overflow-y: auto">
+            <li v-for="d in departments" :key="d.iddept" class="list-group-item d-flex align-items-center gap-2">
+              <template v-if="editCourseId === d.iddept">
+                <input
+                  v-model="editCourseName"
+                  :id="'un-edit-course-' + d.iddept"
+                  :name="'edit_course_' + d.iddept"
+                  class="form-control form-control-sm"
+                  maxlength="255"
+                  @keyup.enter="saveRename(d)"
+                  @keyup.esc="editCourseId = null"
+                />
+                <button class="btn btn-sm btn-success" :disabled="courseBusy" @click="saveRename(d)">Save</button>
+                <button class="btn btn-sm btn-secondary" @click="editCourseId = null">Cancel</button>
+              </template>
+              <template v-else>
+                <div class="flex-grow-1">
+                  <strong>{{ d.dept_name }}</strong>
+                  <span class="badge bg-secondary ms-2">{{ d.uniform_variants_count || 0 }} variant(s)</span>
+                </div>
+                <button class="btn btn-sm btn-outline-secondary" @click="startRename(d)">Rename</button>
+                <button
+                  class="btn btn-sm btn-outline-danger"
+                  :disabled="courseBusy || d.uniform_variants_count > 0"
+                  :title="d.uniform_variants_count > 0 ? 'Remove its uniform variants first' : 'Remove this course'"
+                  @click="deleteCourseTarget = d"
+                >
+                  Remove
+                </button>
+              </template>
+            </li>
+            <li v-if="!departments.length" class="list-group-item text-center text-muted">No courses yet.</li>
+          </ul>
+          <div class="form-text mt-2">
+            A new course gets its own page in the Uniforms menu. Add its uniform types and variants there.
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button class="btn btn-secondary" @click="courseModalOpen = false">Close</button>
+        </div>
+      </div>
+    </div>
+
+    <div v-if="deleteCourseTarget" class="modal-backdrop-custom">
+      <div class="modal-custom" style="max-width: 420px">
+        <div class="modal-header">
+          <h5 class="mb-0">Remove Course</h5>
+          <button class="btn-close" @click="deleteCourseTarget = null"></button>
+        </div>
+        <div class="modal-body">
+          <p class="mb-0">Remove <strong>{{ deleteCourseTarget.dept_name }}</strong>? This can't be undone.</p>
+        </div>
+        <div class="modal-footer">
+          <button class="btn btn-secondary" @click="deleteCourseTarget = null">Cancel</button>
+          <button class="btn btn-danger" @click="removeCourse">Remove</button>
+        </div>
+      </div>
+    </div>
+
     <!-- ADD UNIFORM TYPE MODAL -->
 
     <div v-if="typeModalOpen" class="modal-backdrop-custom">
@@ -714,12 +978,12 @@ const visibleTypes = computed(() => {
         </div>
 
         <div class="modal-body">
-          <label class="form-label"> Uniform Name </label>
-          <input class="form-control mb-3" v-model="typeName" placeholder="e.g. PE Uniform"/>
+          <label for="un-type-name" class="form-label"> Uniform Name </label>
+          <input class="form-control mb-3" v-model="typeName" placeholder="e.g. PE Uniform" id="un-type-name" name="type-name" />
 
-          <label class="form-label"> Description </label>
+          <label for="un-type-description" class="form-label"> Description </label>
 
-          <textarea class="form-control" rows="3" v-model="typeDescription" placeholder="Enter uniform description"></textarea>
+          <textarea class="form-control" rows="3" v-model="typeDescription" placeholder="Enter uniform description" id="un-type-description" name="type-description"></textarea>
         </div>
 
         <div class="modal-footer">
@@ -779,35 +1043,6 @@ const visibleTypes = computed(() => {
       </div>
     </div>
 
-    <!-- EDIT UNIFORM TYPE MODAL -->
-
-    <div v-if="editTypeModalOpen" class="modal-backdrop-custom">
-      <div class="modal-custom">
-        <div class="modal-header">
-          <h5 class="mb-0">Edit Uniform Type</h5>
-
-          <button type="button" class="btn-close" @click="closeEditType"></button>
-        </div>
-
-        <div class="modal-body">
-          <label class="form-label"> Uniform Name </label>
-          <input class="form-control mb-3" v-model="editTypeName" />
-          <label class="form-label"> Description </label>
-          <textarea class="form-control" rows="3" v-model="editTypeDescription"></textarea>
-        </div>
-
-        <div class="modal-footer">
-          <button class="btn btn-secondary" @click="closeEditType">
-            Cancel
-          </button>
-
-          <button class="btn btn-primary" @click="saveTypeEdit">
-            Save Changes
-          </button>
-        </div>
-      </div>
-    </div>
-
     <!-- ADD VARIANT MODAL -->
 
     <div v-if="variantModalOpen" class="modal-backdrop-custom">
@@ -820,39 +1055,49 @@ const visibleTypes = computed(() => {
         <div class="modal-body">
           <!-- TYPE -->
 
-          <label class="form-label"> Uniform Type </label>
-          <select class="form-select mb-3" v-model="variantTypeId">
+          <label for="un-variant-type-id" class="form-label"> Uniform Type </label>
+          <select class="form-select mb-3" v-model="variantTypeId" id="un-variant-type-id" name="variant-type-id">
             <option value="">Select uniform type</option>
 
             <option v-for="type in uniformTypes" :key="type.idUniftype" :value="String(type.idUniftype)">
               {{ type.uniform_name }}
             </option>
           </select>
+          <div v-if="variantType?.description" class="form-text mb-3">
+            {{ variantType.description }}
+          </div>
 
           <!-- DEPARTMENT -->
 
-          <label class="form-label"> Department </label>
-          <select class="form-select mb-3" v-model="variantDepartmentId">
+          <label for="un-variant-department-id" class="form-label"> Department </label>
+          <select class="form-select mb-3" v-model="variantDepartmentId" id="un-variant-department-id" name="variant-department-id">
             <option value="">Select department</option>
-            <option v-for="department in departments" :key="department.iddept" :value="String(department.iddept)">
+            <option v-for="department in addableDepartments" :key="department.iddept" :value="String(department.iddept)">
               {{ department.dept_name }}
             </option>
           </select>
 
           <!-- SIZE -->
 
-          <label class="form-label"> Size </label>
-          <input class="form-control mb-3" v-model="variantSize" placeholder="e.g. Small, Medium, Large"/>
+          <label for="un-variant-size" class="form-label"> Size </label>
+          <input class="form-control mb-3" v-model="variantSize" placeholder="e.g. Small, Medium, Large" id="un-variant-size" name="variant-size" />
+
+          <label for="un-variant-gender" class="form-label">Gender</label>
+          <select class="form-select mb-3" v-model="variantGender" id="un-variant-gender" name="variant-gender">
+            <option value="Male">Male</option>
+            <option value="Female">Female</option>
+            <option value="Unisex">Unisex</option>
+          </select>
 
           <!-- PRICE -->
 
-          <label class="form-label"> Price </label>
-          <input type="number" min="0" step="0.01" class="form-control mb-3" v-model.number="variantPrice"/>
+          <label for="un-variant-price" class="form-label"> Price </label>
+          <input type="number" min="0" step="0.01" class="form-control mb-3" v-model.number="variantPrice" id="un-variant-price" name="variant-price" />
 
           <!-- QUANTITY -->
 
-          <label class="form-label"> Quantity </label>
-          <input type="number" min="0" class="form-control" v-model.number="variantQuantity"/>
+          <label for="un-variant-quantity" class="form-label"> Quantity </label>
+          <input type="number" min="0" class="form-control" v-model.number="variantQuantity" id="un-variant-quantity" name="variant-quantity" />
         </div>
 
         <div class="modal-footer">
@@ -887,12 +1132,14 @@ const visibleTypes = computed(() => {
           <div class="mb-2">
             <strong>Size:</strong>{{ variantSize }}</div>
           <div class="mb-2">
+            <strong>Gender:</strong>{{ variantGender }}</div>
+          <div class="mb-2">
             <strong>Price:</strong>₱{{ Number(variantPrice || 0).toFixed(2) }}</div>
           <div class="mb-3"><strong>Quantity:</strong>{{ variantQuantity }}</div>
           <div class="alert alert-warning mb-0">
             <strong>Please confirm.</strong>
             Once this uniform variant is created, make sure that the uniform
-            type, department, size, price, and quantity are correct.
+            type, department, size, gender, price, and quantity are correct.
           </div>
         </div>
 
@@ -908,46 +1155,128 @@ const visibleTypes = computed(() => {
       </div>
     </div>
 
-    <!-- EDIT VARIANT MODAL -->
+    <!-- EDIT UNIFORM MODAL: "Variant" and "Type" tabs -->
 
     <div v-if="editVariantModalOpen" class="modal-backdrop-custom">
       <div class="modal-custom">
         <div class="modal-header">
-          <h5 class="mb-0">Edit Uniform Variant</h5>
+          <h5 class="mb-0">Edit Uniform</h5>
 
           <button type="button" class="btn-close" @click="closeEditVariant"></button>
         </div>
 
+        <!-- TABS -->
+        <div class="px-3 pt-3">
+          <div class="btn-group w-100" role="tablist" aria-label="What to edit">
+            <button
+              type="button"
+              class="btn"
+              :class="editTab === 'variant' ? 'btn-primary' : 'btn-outline-primary'"
+              role="tab"
+              :aria-selected="editTab === 'variant'"
+              @click="switchEditTab('variant')"
+            >
+              Variant<span v-if="variantDirty"> •</span>
+            </button>
+            <button
+              type="button"
+              class="btn"
+              :class="editTab === 'type' ? 'btn-primary' : 'btn-outline-primary'"
+              role="tab"
+              :aria-selected="editTab === 'type'"
+              :disabled="!editingType"
+              @click="switchEditTab('type')"
+            >
+              Type<span v-if="typeDirty"> •</span>
+            </button>
+          </div>
+        </div>
+
         <div class="modal-body">
+          <!-- VARIANT TAB -->
+          <template v-if="editTab === 'variant'">
           <!-- TYPE -->
-          <label class="form-label"> Uniform Type </label>
-          <input class="form-control mb-3" :value="editingVariant ? getTypeName(editingVariant) : ''" disabled/>
+          <label for="un-input" class="form-label"> Uniform Type </label>
+          <input class="form-control mb-3" :value="editingVariant ? getTypeName(editingVariant) : ''" disabled id="un-input" name="input" />
 
           <!-- DEPARTMENT -->
-          <label class="form-label"> Department </label>
-          <input class="form-control mb-3" :value="editingVariant ? getDepartmentName(editingVariant) : ''"disabled/>
+          <label for="un-input-2" class="form-label"> Department </label>
+          <input class="form-control mb-3" :value="editingVariant ? getDepartmentName(editingVariant) : ''"disabled id="un-input-2" name="input" />
 
           <!-- SIZE -->
-          <label class="form-label"> Size </label>
-          <input class="form-control mb-3" :value="editingVariant ? editingVariant.size : ''" disabled/>
+          <label for="un-input-3" class="form-label"> Size </label>
+          <input class="form-control mb-3" :value="editingVariant ? editingVariant.size : ''" disabled id="un-input-3" name="input" />
 
           <!-- PRICE -->
-          <label class="form-label"> Price </label>
-          <input type="number" min="0" step="0.01" class="form-control mb-3" v-model.number="editVariantPrice"/>
+          <label for="un-edit-variant-price" class="form-label"> Price </label>
+          <input type="number" min="0" step="0.01" class="form-control mb-3" v-model.number="editVariantPrice" id="un-edit-variant-price" name="edit-variant-price" />
 
           <!-- QUANTITY -->
-          <label class="form-label"> Quantity </label>
-          <input type="number" class="form-control" :value="editingVariant ? editingVariant.quantity : 0" disabled/>
+          <label for="un-input-4" class="form-label"> Quantity </label>
+          <input type="number" class="form-control" :value="editingVariant ? editingVariant.quantity : 0" disabled id="un-input-4" name="input" />
+          </template>
+
+          <!-- TYPE TAB -->
+          <template v-else-if="!editTypeConfirm">
+            <div class="alert alert-info py-2 small">
+              This is the uniform type, shared by
+              <strong>{{ typeVariantCount }}</strong>
+              variant{{ typeVariantCount === 1 ? "" : "s" }}. Changes here apply to all of them.
+            </div>
+
+            <label for="un-edit-type-name" class="form-label"> Uniform Name </label>
+            <input class="form-control mb-3" v-model="editTypeName" id="un-edit-type-name" name="edit-type-name" />
+
+            <label for="un-edit-type-description" class="form-label"> Description </label>
+            <textarea class="form-control" rows="3" maxlength="255" v-model="editTypeDescription" id="un-edit-type-description" name="edit-type-description"></textarea>
+          </template>
+
+          <!-- TYPE CONFIRMATION -->
+          <div v-else class="alert alert-warning mb-0">
+            <h6 class="mb-3">Confirm Action</h6>
+            Save changes to
+            <strong>{{ editingType?.uniform_name }}</strong>
+            for all {{ typeVariantCount }} of its variants?
+            <div v-if="editTypeName.trim() !== editingType?.uniform_name" class="mt-2">
+              New name: <strong>{{ editTypeName.trim() }}</strong>
+            </div>
+          </div>
         </div>
 
         <div class="modal-footer">
-          <button type="button" class="btn btn-secondary" @click="closeEditVariant">
-            Cancel
-          </button>
+          <!-- VARIANT TAB -->
+          <template v-if="editTab === 'variant'">
+            <button type="button" class="btn btn-secondary" @click="closeEditVariant">
+              Cancel
+            </button>
 
-          <button type="button" class="btn btn-primary" @click="saveVariantEdit">
-            Save Changes
-          </button>
+            <button type="button" class="btn btn-primary" @click="saveVariantEdit">
+              Save Changes
+            </button>
+          </template>
+
+          <!-- TYPE TAB -->
+          <template v-else>
+            <button
+              type="button"
+              class="btn btn-secondary"
+              @click="editTypeConfirm ? (editTypeConfirm = false) : closeEditVariant()"
+            >
+              {{ editTypeConfirm ? "Back" : "Cancel" }}
+            </button>
+
+            <button
+              v-if="!editTypeConfirm"
+              type="button"
+              class="btn btn-primary"
+              @click="requestTypeEdit"
+            >
+              Save Changes
+            </button>
+            <button v-else type="button" class="btn btn-success" @click="saveTypeEdit">
+              Confirm
+            </button>
+          </template>
         </div>
       </div>
     </div>
@@ -982,9 +1311,9 @@ const visibleTypes = computed(() => {
             }}
           </div>
 
-          <label class="form-label"> Quantity </label>
+          <label for="un-stock-quantity" class="form-label"> Quantity </label>
           <input type="number" min="1" :max=" stockMode === 'release' && stockVariant
-                ? stockVariant.quantity : undefined" class="form-control" v-model.number="stockQuantity"/>
+                ? stockVariant.quantity : undefined" class="form-control" v-model.number="stockQuantity" id="un-stock-quantity" name="stock-quantity" />
           <div v-if="stockMode === 'release' && stockVariant" class="text-muted small mt-2">
             Current stock:
             {{ Number(stockVariant.quantity) || 0 }}
@@ -1002,6 +1331,45 @@ const visibleTypes = computed(() => {
         </div>
       </div>
     </div>
+    <!-- DELETE UNIFORM TYPE CONFIRMATION MODAL -->
+
+    <div v-if="deleteTypeConfirmModalOpen" class="modal-backdrop-custom">
+      <div class="modal-custom">
+        <div class="modal-header">
+          <h5 class="mb-0">Confirm Delete</h5>
+          <button
+            type="button"
+            class="btn-close"
+            @click="closeDeleteTypeConfirm"
+          ></button>
+        </div>
+
+        <div class="modal-body">
+          <p class="mb-0">
+            Delete uniform type
+            "{{ pendingDeleteType?.uniform_name || 'this uniform' }}"?
+          </p>
+        </div>
+
+        <div class="modal-footer">
+          <button
+            type="button"
+            class="btn btn-secondary"
+            @click="closeDeleteTypeConfirm"
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            class="btn btn-danger"
+            @click="confirmDeleteUniformType"
+          >
+            Confirm Delete
+          </button>
+        </div>
+      </div>
+    </div>
+
     <!-- ACTION CONFIRMATION MODAL -->
 
     <div v-if="actionConfirmModalOpen" class="modal-backdrop-custom">
@@ -1033,6 +1401,7 @@ const visibleTypes = computed(() => {
               <strong> Size: </strong>
               {{ actionConfirmVariant.size }}
             </div>
+            <div class="mb-2"><strong>Gender:</strong> {{ actionConfirmVariant.gender || "Unisex" }}</div>
           </div>
 
           <!-- RELEASE / RESTOCK -->
@@ -1055,11 +1424,19 @@ const visibleTypes = computed(() => {
               ₱{{ Number(actionConfirmVariant?.price || 0).toFixed(2) }}
             </div>
             <div class="mb-3">
+              <label for="edit-variant-gender" class="form-label"><strong>Gender</strong></label>
+              <select id="edit-variant-gender" class="form-select" v-model="editVariantGender">
+                <option value="Male">Male</option>
+                <option value="Female">Female</option>
+                <option value="Unisex">Unisex</option>
+              </select>
+            </div>
+            <div class="mb-3">
               <strong>New Price:</strong>
               ₱{{ Number(editVariantPrice || 0).toFixed(2) }}
             </div>
             <div class="alert alert-warning mb-0">
-              Only the price will be changed. Uniform type, department, size,
+              Only the price and gender will be changed. Uniform type, department, size,
               and quantity will remain unchanged.
             </div>
           </div>
@@ -1101,44 +1478,5 @@ const visibleTypes = computed(() => {
   top: 0;
   background: #f8f9fa;
   z-index: 2;
-}
-
-/* MODALS */
-.modal-backdrop-custom {
-  position: fixed;
-  inset: 0;
-  background: rgba(0, 0, 0, 0.35);
-  display: grid;
-  place-items: center;
-  z-index: 2000;
-  padding: 16px;
-}
-.modal-custom {
-  background: #fff;
-  width: 100%;
-  max-width: 520px;
-  max-height: 90vh;
-  border-radius: 12px;
-  overflow: hidden;
-  box-shadow: 0 18px 50px rgba(0, 0, 0, 0.25);
-}
-.modal-header,
-.modal-footer {
-  padding: 12px 16px;
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-}
-.modal-header {
-  border-bottom: 1px solid #dee2e6;
-}
-.modal-footer {
-  border-top: 1px solid #dee2e6;
-  justify-content: flex-end;
-  gap: 8px;
-}
-.modal-body {
-  padding: 16px;
-  overflow-y: auto;
 }
 </style>

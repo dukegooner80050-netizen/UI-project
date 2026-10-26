@@ -4,8 +4,22 @@ import { computed, ref, onMounted, onBeforeUnmount, watch } from "vue"
 import { useRoute, useRouter } from "vue-router"
 import { getCurrentUser } from "../services/storage"
 import { logout as doLogout } from "../services/auth"
+import { startPolling, throttled } from "../services/poller"
+import appAxios from "../axios"
 
 const showUniforms = ref(false)
+
+// Course links come from the database so a course the AMO adds shows up
+// here too. The old fixed list is only used if the request fails.
+const FALLBACK_COURSES = ["BSMT", "BSCrim", "BSHM", "BSIT", "Senior High School"]
+const courses = ref(FALLBACK_COURSES)
+async function loadCourses() {
+  try {
+    const { data } = await appAxios.get("/departments", { silent: true })
+    const names = (Array.isArray(data) ? data : []).map((d) => d.dept_name).filter(Boolean)
+    if (names.length) courses.value = names
+  } catch { /* keep the current list */ }
+}
 
 const toggleUniforms = () => {
   if (!props.collapsed) {
@@ -21,6 +35,9 @@ const props = defineProps({
 const emit = defineEmits(["toggle", "closeMobile"])
 
 const pendingCount = ref(0)
+const pendingInspectionCount = ref(0)
+const accountRequestCount = ref(0)
+const equipmentReportCount = ref(0)
 
 const router = useRouter()
 const route = useRoute()
@@ -28,31 +45,32 @@ const route = useRoute()
 const user = computed(() => getCurrentUser())
 
 const isAdmin = computed(
-  () => (user.value?.role || "").toLowerCase() === "admin"
+  () => (user.value?.role || "").toLowerCase() === "amo"
 )
+const isDean = computed(() => (user.value?.role || "").toLowerCase() === "department_head")
 
-/* PENDING REQUEST COUNT */
+/* SIDEBAR BADGES
+ * One cheap request returns all four counts (the server just COUNTs rows).
+ * It used to download the full request, inspection and report lists every
+ * 2 seconds. */
 
-async function refreshPendingCount() {
+async function refreshCounts() {
   if (!isAdmin.value) {
     pendingCount.value = 0
+    pendingInspectionCount.value = 0
+    accountRequestCount.value = 0
+    equipmentReportCount.value = 0
     return
   }
 
   try {
-    const response = await axios.get("/requests")
-
-    const requests = Array.isArray(response.data)
-      ? response.data
-      : response.data?.data || []
-
-    pendingCount.value = requests.filter(
-      request =>
-        (request.status || "").toLowerCase() === "pending"
-    ).length
-
+    const { data } = await axios.get("/nav-counts")
+    pendingCount.value = Number(data.pending_requests) || 0
+    pendingInspectionCount.value = Number(data.pending_inspections) || 0
+    accountRequestCount.value = Number(data.account_requests) || 0
+    equipmentReportCount.value = Number(data.open_equipment_reports) || 0
   } catch (error) {
-    console.error("Failed to load pending request count:", error)
+    console.error("Failed to load sidebar counts:", error)
   }
 }
 
@@ -69,23 +87,31 @@ const active = (path) => route.path === path
 
 /* AUTO REFRESH */
 
-let pendingRefreshTimer = null
+// Every 30 s while the tab is visible, plus right away when something on
+// screen changes a count (pages fire these events) or the user navigates.
+const refreshSoon = throttled(refreshCounts, 3000)
+let stopPolling = null
 
-onMounted(async () => {
-  // Load immediately
-  await refreshPendingCount()
+onMounted(() => {
+  loadCourses()
+  window.addEventListener('cims:courses-changed', loadCourses)
+  refreshCounts()
+  stopPolling = startPolling(refreshCounts, 30000)
 
-  // Check the backend every 5 seconds
-  pendingRefreshTimer = setInterval(() => {
-    refreshPendingCount()
-  }, 2000)
+  window.addEventListener("cims:counts-changed", refreshCounts)
+  window.addEventListener("cims:accounts-changed", refreshCounts)
+  window.addEventListener("cims:equipment-reports-changed", refreshCounts)
 })
 
 onBeforeUnmount(() => {
-  if (pendingRefreshTimer) {
-    clearInterval(pendingRefreshTimer)
-  }
+  if (stopPolling) stopPolling()
+  window.removeEventListener("cims:courses-changed", loadCourses)
+  window.removeEventListener("cims:counts-changed", refreshCounts)
+  window.removeEventListener("cims:accounts-changed", refreshCounts)
+  window.removeEventListener("cims:equipment-reports-changed", refreshCounts)
 })
+
+watch(() => route.fullPath, refreshSoon)
 </script>
 
 <template>
@@ -140,6 +166,11 @@ onBeforeUnmount(() => {
       <span class="label" v-if="!props.collapsed">Inventory</span>
     </RouterLink>
 
+    <RouterLink v-if="isAdmin" class="sidebar-link" :class="{ active: active('/disposal-records') }" to="/disposal-records">
+      <span class="icon">🗑️</span>
+      <span class="label" v-if="!props.collapsed">Disposal Records</span>
+    </RouterLink>
+
 <!-- Uniforms dropdown (CLICK VERSION) -->
 <div v-if="isAdmin" class="sidebar-item">
 
@@ -167,13 +198,12 @@ onBeforeUnmount(() => {
     v-if="showUniforms && !props.collapsed"
     class="dropdown-menu-click"
   >  <RouterLink class="dropdown-link" to="/uniforms">All Uniforms</RouterLink>
-    <RouterLink class="dropdown-link" to="/uniforms?course=BSMT">BSMT</RouterLink>
-    <RouterLink class="dropdown-link" to="/uniforms?course=BSCrim">BSCrim</RouterLink>
-    <RouterLink class="dropdown-link" to="/uniforms?course=BSHM">BSHM</RouterLink>
-    <RouterLink class="dropdown-link" to="/uniforms?course=BSIT">BSIT</RouterLink>
-    <RouterLink class="dropdown-link" to="/uniforms?course=Senior%20High%20School">
-      Senior High School
-    </RouterLink>
+    <RouterLink
+      v-for="c in courses"
+      :key="c"
+      class="dropdown-link"
+      :to="{ path: '/uniforms', query: { course: c } }"
+    >{{ c }}</RouterLink>
   </div>
 
 </div>
@@ -188,11 +218,6 @@ onBeforeUnmount(() => {
       <span class="label" v-if="!props.collapsed">School Equipments</span>
     </RouterLink>
 
-    <RouterLink v-if="isAdmin" class="sidebar-link" :class="{ active: active('/item-locator') }" to="/item-locator">
-      <span class="icon">📍</span>
-      <span class="label" v-if="!props.collapsed">Item Locator</span>
-    </RouterLink>
-
     <RouterLink class="sidebar-link" :class="{ active: active('/consumption-report') }" to="/consumption-report">
       <span class="icon">📅</span>
       <span class="label" v-if="!props.collapsed">Monthly Consumption</span>
@@ -203,19 +228,67 @@ onBeforeUnmount(() => {
       <span class="label" v-if="!props.collapsed">Equipment Distribution</span>
     </RouterLink>
 
-    <RouterLink v-if="isAdmin" class="sidebar-link" :class="{ active: active('/pending-inspection') }" to="/pending-inspection">
-      <span class="icon">🔍</span>
-      <span class="label" v-if="!props.collapsed">Pending Inspection</span>
+    <RouterLink
+      v-if="isDean"
+      class="sidebar-link d-flex justify-content-between align-items-center"
+      :class="{ active: active('/coordinator-requests') }"
+      to="/coordinator-requests"
+    >
+      <span class="d-flex align-items-center gap-2">
+        <span class="icon">🧭</span>
+        <span class="label" v-if="!props.collapsed">Coordinator Review</span>
+      </span>
     </RouterLink>
 
-    <RouterLink v-if="isAdmin" class="sidebar-link" :class="{ active: active('/settings') }" to="/settings">
-      <span class="icon">⚙️</span>
-      <span class="label" v-if="!props.collapsed">Settings</span>
+    <RouterLink
+      v-if="isAdmin"
+      class="sidebar-link d-flex justify-content-between align-items-center"
+      :class="{ active: active('/pending-inspection') }"
+      to="/pending-inspection"
+    >
+      <span class="d-flex align-items-center gap-2">
+        <span class="icon">🔍</span>
+        <span class="label" v-if="!props.collapsed">Pending Inspection</span>
+      </span>
+
+      <span v-if="!props.collapsed" class="badge bg-danger">{{ pendingInspectionCount }}</span>
+    </RouterLink>
+
+    <RouterLink
+      class="sidebar-link d-flex justify-content-between align-items-center"
+      :class="{ active: active('/settings') }"
+      to="/settings"
+    >
+      <span class="d-flex align-items-center gap-2">
+        <span class="icon">⚙️</span>
+        <span class="label" v-if="!props.collapsed">Settings</span>
+      </span>
+
+      <span
+        v-if="isAdmin && !props.collapsed && accountRequestCount > 0"
+        class="badge bg-danger"
+      >{{ accountRequestCount }}</span>
     </RouterLink>
 
     <RouterLink class="sidebar-link" :class="{ active: active('/request') }" to="/request">
       <span class="icon">📝</span>
       <span class="label" v-if="!props.collapsed">Request Item</span>
+    </RouterLink>
+
+    <RouterLink
+      class="sidebar-link d-flex justify-content-between align-items-center"
+      :class="{ active: active('/equipment-reports') }"
+      to="/equipment-reports"
+    >
+      <span class="d-flex align-items-center gap-2">
+        <span class="icon">🛠️</span>
+        <span class="label" v-if="!props.collapsed">Report Equipment</span>
+      </span>
+
+      <span
+        v-if="isAdmin && !props.collapsed && equipmentReportCount > 0"
+        class="badge bg-danger"
+      >{{ equipmentReportCount }}</span>
     </RouterLink>
 
     <RouterLink

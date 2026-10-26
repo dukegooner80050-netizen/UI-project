@@ -1,9 +1,14 @@
 <script setup>
 import { ref, onMounted, onBeforeUnmount } from "vue";
 import Sidebar from "../components/Sidebar.vue";
+import CriticalStockAlert from "../components/CriticalStockAlert.vue";
+import OverdueAlert from "../components/OverdueAlert.vue";
+import NotificationBell from "../components/NotificationBell.vue";
 
 const sidebarCollapsed = ref(false);
 const mobileOpen = ref(false);
+// One bell only: in the mobile top bar on phones, above the page on desktop.
+const isMobile = ref(window.innerWidth < 768);
 
 function toggleSidebar() {
   sidebarCollapsed.value = !sidebarCollapsed.value;
@@ -17,6 +22,7 @@ function closeMobile() {
 
 // close drawer when resizing to desktop
 function onResize() {
+  isMobile.value = window.innerWidth < 768;
   if (window.innerWidth >= 768) mobileOpen.value = false;
 }
 
@@ -30,7 +36,9 @@ onBeforeUnmount(() => window.removeEventListener("resize", onResize));
     <div class="mobile-topbar d-md-none">
       <button class="menu-btn" @click="toggleMobile">☰</button>
       <div class="fw-bold">C.I.M.S</div>
-      <div style="width: 42px"></div>
+      <div class="topbar-bell">
+        <NotificationBell v-if="isMobile" />
+      </div>
     </div>
 
     <!-- overlay (tap to close) -->
@@ -48,6 +56,11 @@ onBeforeUnmount(() => window.removeEventListener("resize", onResize));
     />
 
     <main class="main-content">
+      <div v-if="!isMobile" class="main-topbar">
+        <NotificationBell />
+      </div>
+      <CriticalStockAlert />
+      <OverdueAlert />
       <RouterView />
     </main>
   </div>
@@ -80,10 +93,22 @@ onBeforeUnmount(() => window.removeEventListener("resize", onResize));
   z-index: 1500;
 }
 
+.topbar-bell {
+  min-width: 42px;
+  display: flex;
+  justify-content: flex-end;
+}
+
+.main-topbar {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: 0.5rem;
+}
+
 /* main content */
 .main-content {
   flex: 1;
-  background-color: #f4f6f9;
+  background-color: var(--app-main-bg, #f4f6f9);
   min-height: 100vh;
   padding: 1.5rem;
 }

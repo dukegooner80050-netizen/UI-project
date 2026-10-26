@@ -16,7 +16,7 @@ class AdminMiddleware
             ], 401);
         }
 
-        if ($request->user()->role !== 'admin') {
+        if ($request->user()->role !== 'amo') {
             return response()->json([
                 'message' => 'Forbidden. Admin access only.'
             ], 403);

@@ -1,12 +1,105 @@
 <script setup>
-import { ref, computed, onMounted } from "vue";
-import { getRequests, approveRequest, rejectRequest,} from "../services/requests";
+import { ref, reactive, computed, onMounted, watch } from "vue";
+import { getRequests, approveRequest, rejectRequest, releaseRequest, cancelApprovedRequest } from "../services/requests";
 import { getCurrentUser } from "../services/storage";
 import { requireAdmin } from "../services/session";
+import AlertMessage from "../components/AlertMessage.vue";
+import DueBadge from "../components/DueBadge.vue";
+import { getErrorMessage } from "../services/errors";
+import { isReturnableType } from "../services/itemTypes";
+import { getStudentIdMaxLength } from "../services/settings";
+import { printBorrowerForm, hasBorrowedItems } from "../services/borrowerForm";
+import { fulfilmentState } from "../services/requestState";
+
+const showAlert = ref(false);
+const alertType = ref("success");
+const alertMessage = ref("");
+
+function notify(type, message) {
+  alertType.value = type;
+  alertMessage.value = message;
+  showAlert.value = true;
+}
 
 const requests = ref([]);
-const showAll = ref(false);
 const admin = getCurrentUser();
+const userFilter = ref("");
+const expandedId = ref(null);
+
+// Tabs: Approving a request no longer means it's released -- those are
+// two separate admin actions now, so they get two separate tabs instead
+// of living in the same undifferentiated list.
+const activeTab = ref("pending"); // "pending" | "release" | "all"
+
+// On the All tab the Actions buttons are collapsed behind a small toggle
+// so the table stays compact. Keyed by request id; other tabs always show
+// their buttons.
+const actionsOpen = reactive({});
+function toggleActions(id) {
+  actionsOpen[id] = !actionsOpen[id];
+}
+watch(activeTab, () => {
+  for (const key of Object.keys(actionsOpen)) delete actionsOpen[key];
+});
+
+// Due dates the admin picks per borrowed line before approving
+// (roadmap #8). Keyed "requestId:requestItemId". Blank = item default.
+const dueDates = ref({});
+
+function dueKey(r, item) {
+  return `${r.id}:${item.requestItemId}`;
+}
+
+function ymd(date) {
+  const p = (n) => String(n).padStart(2, "0");
+  return `${date.getFullYear()}-${p(date.getMonth() + 1)}-${p(date.getDate())}`;
+}
+
+const todayYmd = computed(() => ymd(new Date()));
+
+// Prefill with today + the item's default return period, when it has one.
+function defaultDue(item) {
+  if (!item.defaultReturnDays) return "";
+  const d = new Date();
+  d.setDate(d.getDate() + Number(item.defaultReturnDays));
+  return ymd(d);
+}
+
+function dueValue(r, item) {
+  const key = dueKey(r, item);
+  return key in dueDates.value ? dueDates.value[key] : defaultDue(item);
+}
+
+function setDue(r, item, value) {
+  dueDates.value = { ...dueDates.value, [dueKey(r, item)]: value };
+}
+// Cancel an approved request nothing was handed over for.
+const cancelModal = ref(false);
+const cancelReason = ref("");
+const cancelTargetId = ref(null);
+const cancelBusy = ref(false);
+function openCancelModal(id) {
+  cancelTargetId.value = id;
+  cancelReason.value = "";
+  cancelModal.value = true;
+}
+async function confirmCancel() {
+  const reason = cancelReason.value.trim();
+  if (reason.length < 3 || cancelBusy.value) return;
+  cancelBusy.value = true;
+  try {
+    const res = await cancelApprovedRequest(cancelTargetId.value, reason);
+    cancelModal.value = false;
+    notify("success", res.message || "Request cancelled.");
+    await refresh();
+  } catch (e) {
+    cancelModal.value = false;
+    notify("danger", getErrorMessage(e));
+  } finally {
+    cancelBusy.value = false;
+  }
+}
+
 const rejectModal = ref(false);
 const rejectReason = ref("");
 const rejectTargetId = ref(null);
@@ -16,25 +109,54 @@ const confirmMessage = ref("");
 const confirmButton = ref("Confirm");
 const confirmButtonClass = ref("btn-primary");
 const confirmAction = ref(null);
+// Optional note the approver can attach (only shown for Approve).
+const confirmAskRemarks = ref(false);
+const approvalRemarks = ref("");
 
 onMounted(async () => {
   requireAdmin();
+  getStudentIdMaxLength().then((n) => (studentIdMax.value = n)).catch(() => {});
 
   await refresh();
 });
 
 async function refresh() {
   requests.value = await getRequests();
+  // Approving/rejecting changes the sidebar's pending badge.
+  window.dispatchEvent(new Event("cims:counts-changed"));
 }
 
 const pendingRequests = computed(() =>
-  requests.value.filter((r) => (r.status || "").toLowerCase() === "pending"),
+  requests.value.filter((r) => ["with inventory", "pending"].includes((r.status || "").toLowerCase())),
 );
 
+// Approved, but Inventory hasn't recorded For Pick Up / For Delivery yet.
+const releaseRequests = computed(() =>
+  requests.value.filter(
+    (r) => (r.status || "").toLowerCase() === "approved" && !r.releasedAt,
+  ),
+);
+
+const uniqueRequesters = computed(() => {
+  const names = requests.value
+    .map((r) => r.requester)
+    .filter((name) => !!name);
+
+  return [...new Set(names)].sort((a, b) => a.localeCompare(b));
+});
+
+const tabBase = computed(() => {
+  if (activeTab.value === "release") return releaseRequests.value;
+  if (activeTab.value === "all") return requests.value;
+  return pendingRequests.value;
+});
+
 const displayedRequests = computed(() => {
-  const data = showAll.value
-    ? [...requests.value]
-    : [...pendingRequests.value];
+  let data = [...tabBase.value];
+
+  if (userFilter.value) {
+    data = data.filter((r) => r.requester === userFilter.value);
+  }
 
   return data.sort(
     (a, b) =>
@@ -46,6 +168,38 @@ const requestRows = computed(() => {
   return displayedRequests.value;
 });
 
+const emptyMessage = computed(() => {
+  if (activeTab.value === "release") return "No approved requests waiting to be released.";
+  if (activeTab.value === "all") return "No requests found.";
+  return "No pending requests.";
+});
+
+function totalQty(r) {
+  return (
+    (r.items || []).reduce((sum, item) => sum + Number(item.qty || 0), 0) +
+    (r.uniforms || []).reduce(
+      (sum, uniform) => sum + Number(uniform.quantity || 0),
+      0,
+    )
+  );
+}
+
+function itemSummary(r) {
+  const names = [
+    ...(r.items || []).map((item) => item.itemName),
+    ...(r.uniforms || []).map((uniform) => uniform.uniformName || "Uniform"),
+  ].filter(Boolean);
+
+  if (names.length === 0) return "—";
+  if (names.length === 1) return names[0];
+
+  return `${names[0]} +${names.length - 1} more`;
+}
+
+function toggleExpand(id) {
+  expandedId.value = expandedId.value === id ? null : id;
+}
+
 async function approve(id) {
   confirmTitle.value = "Approve Request";
   confirmMessage.value =
@@ -53,9 +207,24 @@ async function approve(id) {
 
   confirmButton.value = "Approve";
   confirmButtonClass.value = "btn-success";
+  confirmAskRemarks.value = true;
+  approvalRemarks.value = "";
+
+  const target = requests.value.find((r) => r.id === id);
+  const chosen = {};
+  for (const item of target?.items || []) {
+    if (!isReturnableType(item.itemType)) continue;
+    const value = dueValue(target, item);
+    if (!value) continue;
+    if (value < todayYmd.value) {
+      notify("warning", `Due date for ${item.itemName} cannot be in the past.`);
+      return;
+    }
+    chosen[item.requestItemId] = value;
+  }
 
   confirmAction.value = async () => {
-    await approveRequest(id);
+    await approveRequest(id, chosen, approvalRemarks.value.trim());
     await refresh();
   };
 
@@ -70,7 +239,7 @@ function openRejectModal(id) {
 
 async function confirmReject() {
   if (!rejectReason.value.trim()) {
-    alert("Rejection reason is required.");
+    notify("warning", "Rejection reason is required.");
     return;
   }
 
@@ -85,6 +254,7 @@ async function confirmReject() {
 
   confirmButton.value = "Reject";
   confirmButtonClass.value = "btn-danger";
+  confirmAskRemarks.value = false;
 
   confirmAction.value = async () => {
     await rejectRequest(id, reason);
@@ -104,42 +274,151 @@ async function executeConfirm() {
       await confirmAction.value();
     }
   } catch (e) {
-    alert(String(e.message || e));
+    notify("danger", getErrorMessage(e));
   }
 
   confirmModal.value = false;
 }
 
+// RELEASE (roadmap #15 / #19) //
+// Once a request is Approved, Inventory records whether the requester
+// is picking the items up or having them delivered.
+
+const releaseModal = ref(false);
+const releaseTarget = computed(() => requests.value.find((r) => r.id === releaseTargetId.value) || null);
+const releaseTargetId = ref(null);
+const releaseMethod = ref("For Pick Up");
+const releaseStudent = ref("");
+const releaseStudentId = ref("");
+const studentIdMax = ref(15);
+watch(releaseStudentId, (v) => {
+  const clean = String(v).replace(/[^0-9-]/g, "").slice(0, studentIdMax.value);
+  if (clean !== v) releaseStudentId.value = clean;
+});
+
+
+// Uniform requests are handed to a student at the AMO office: the AMO checks
+// the student's ID and records who collected it. Stock is deducted then.
+const releaseIsUniform = computed(() => {
+  const t = requests.value.find((r) => r.id === releaseTargetId.value);
+  return !!t && (t.uniforms || []).length > 0;
+});
+
+function openReleaseModal(id) {
+  const target = requests.value.find((r) => r.id === id);
+  releaseTargetId.value = id;
+  releaseMethod.value = target?.releaseMethod || "For Pick Up";
+  releaseStudent.value = target?.studentName || "";
+  releaseStudentId.value = target?.studentNumber || "";
+  releaseModal.value = true;
+}
+
+async function confirmRelease() {
+  const id = releaseTargetId.value;
+  const method = releaseMethod.value;
+  const uniform = releaseIsUniform.value;
+
+  if (uniform && (!releaseStudent.value.trim() || !releaseStudentId.value.trim())) {
+    notify("danger", "Enter the student's full name and the student ID you checked.");
+    return;
+  }
+
+  releaseModal.value = false;
+
+  try {
+    if (uniform) {
+      await releaseRequest(id, "For Pick Up", releaseStudent.value.trim(), releaseStudentId.value.trim());
+    } else {
+      await releaseRequest(id, method);
+    }
+    notify("success", `Request marked as released: ${method}.`);
+    await refresh();
+  } catch (e) {
+    notify("danger", getErrorMessage(e));
+  }
+}
+
+function releaseBadgeText(r) {
+  if (!r.releasedAt) return "";
+  return r.releaseMethod || "Released";
+}
+
+async function resendNotification(id) {
+  try {
+    const { data } = await (await import('../axios')).default.post(`/requests/${id}/resend-notification`)
+    notify('success', data.message || 'In-app notification recorded.')
+    await refresh()
+  } catch (e) { notify('danger', e.response?.data?.message || 'Unable to record notification.') }
+}
+
 function statusBadgeClass(status) {
   const s = (status || "").toLowerCase();
-  if (s === "pending") return "bg-warning text-dark";
+  if (s === "pending" || s === "with inventory") return "bg-warning text-dark";
+  if (s === "with coordinator") return "bg-info text-dark";
   if (s === "approved") return "bg-success";
   if (s === "rejected") return "bg-danger";
+  if (s === "cancelled") return "bg-secondary";
   return "bg-secondary";
 }
 </script>
 
 <template>
   <div>
+    <AlertMessage v-model:show="showAlert" :type="alertType" :message="alertMessage" />
+
     <div
       class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3"
     >
       <div>
-        <h3 class="mb-0">Pending Requests</h3>
+        <h3 class="mb-0">Requests</h3>
         <div class="text-muted small">
           Pending: <strong>{{ pendingRequests.length }}</strong>
+          &nbsp;·&nbsp;
+          Awaiting release: <strong>{{ releaseRequests.length }}</strong>
         </div>
       </div>
 
-      <div class="form-check form-switch">
-        <input
-          class="form-check-input"
-          type="checkbox"
-          id="showAll"
-          v-model="showAll"
-        />
-        <label class="form-check-label" for="showAll">Show all requests</label>
+      <div class="d-flex align-items-center gap-3 flex-wrap">
+        <select
+          class="form-select form-select-sm"
+          style="width: auto; min-width: 180px"
+          v-model="userFilter"
+        >
+          <option value="">All requesters</option>
+          <option v-for="name in uniqueRequesters" :key="name" :value="name">
+            {{ name }}
+          </option>
+        </select>
       </div>
+    </div>
+
+    <div class="d-flex flex-wrap gap-2 mb-3">
+      <button
+        type="button"
+        class="btn"
+        :class="activeTab === 'pending' ? 'btn-primary' : 'btn-outline-primary'"
+        @click="activeTab = 'pending'; expandedId = null"
+      >
+        Pending
+        <span class="badge bg-warning text-dark ms-1">{{ pendingRequests.length }}</span>
+      </button>
+      <button
+        type="button"
+        class="btn"
+        :class="activeTab === 'release' ? 'btn-primary' : 'btn-outline-primary'"
+        @click="activeTab = 'release'; expandedId = null"
+      >
+        For Release
+        <span class="badge bg-info text-dark ms-1">{{ releaseRequests.length }}</span>
+      </button>
+      <button
+        type="button"
+        class="btn"
+        :class="activeTab === 'all' ? 'btn-primary' : 'btn-outline-primary'"
+        @click="activeTab = 'all'; expandedId = null"
+      >
+        All
+      </button>
     </div>
 
     <div class="card shadow-sm">
@@ -147,132 +426,249 @@ function statusBadgeClass(status) {
         <table class="table table-hover align-middle mb-0">
           <thead class="table-light">
             <tr>
-              <th>Items</th>
-              <th style="width: 90px">Qty</th>
-              <th style="width: 100px">Total Qty</th>
-              
-              <th>Category</th>
-              <th>Type</th>
-              <th>Purpose</th>
-              <th>Location</th>
-              <th>Room</th>
+              <th style="width: 36px"></th>
               <th>Requester</th>
+              <th>Items</th>
+              <th style="width: 100px">Total Qty</th>
               <th style="width: 120px">Status</th>
               <th style="width: 130px">Date</th>
-              <th style="width: 220px">Actions</th>
+              <th :style="{ width: activeTab === 'all' ? '130px' : '250px' }">Actions</th>
             </tr>
           </thead>
 
           <tbody>
-            <tr v-for="r in displayedRequests" :key="r.id">
-<td>
-  <!-- Normal inventory items -->
-  <div v-for="item in r.items || []" :key="'item-' + item.itemId"class="mb-1">
-    {{ item.itemName }}
-  </div>
-  <!-- Uniforms -->
-  <div v-for="uniform in r.uniforms || []" :key="'uniform-' + uniform.uniformVariantId" class="mb-1">
-    <strong>{{ uniform.uniformName || "Uniform" }}</strong>
-    <div class="text-muted small">
-      {{ uniform.department || "N/A" }}
-      — Size {{ uniform.size || "N/A" }}
-    </div>
-  </div>
-</td>
-<td>
-  <!-- Normal inventory quantities -->
-  <div v-for="item in r.items || []" :key="'item-qty-' + item.itemId" class="mb-1">
-    {{ item.qty }}
-  </div>
-
-  <!-- Uniform quantities -->
-  <div v-for="uniform in r.uniforms || []" :key="'uniform-qty-' + uniform.uniformVariantId" class="mb-1">
-    {{ uniform.quantity }}
-  </div>
-</td>
-<td>
-  {{
-    (r.items || []).reduce(
-      (sum, item) => sum + Number(item.qty || 0),
-      0
-    )
-    +
-    (r.uniforms || []).reduce(
-      (sum, uniform) => sum + Number(uniform.quantity || 0),
-      0
-    )
-  }}
-</td>
-
-<td>
-  <div v-for="item in r.items || []" :key="'category-item-' + item.itemId">
-    {{ item.category }}
-  </div>
-  <div v-for="uniform in r.uniforms || []" :key="'category-uniform-' + uniform.uniformVariantId">
-    Uniforms
-  </div>
-</td>
-<td>
-  <div v-for="item in r.items || []" :key="'type-item-' + item.itemId">
-    {{ item.itemType }}
-  </div>
-
-  <div v-for="uniform in r.uniforms || []" :key="'type-uniform-' + uniform.uniformVariantId">
-    Uniform
-  </div>
-</td>
-              <td style="max-width: 260px">
-                <div class="text-truncate" :title="r.purpose">
-                  {{ r.purpose }}
-                </div>
-              </td>
-              <td>{{ r.location }}</td>
-              <td>{{ r.room }}</td>
-              <td>
-  <div>{{ r.requester }}</div>
-  <div class="text-muted small">{{ r.role }}</div>
-</td>
-              <td>
-                <span class="badge" :class="statusBadgeClass(r.status)">
-                  {{ r.status }}
-                </span>
-                <div
-                  v-if="
-                    (r.status || '').toLowerCase() === 'rejected' &&
-                    r.rejectReason
-                  "
-                  class="text-danger small mt-1"
-                >
-                  Reason: {{ r.rejectReason }}
-                </div>
-              </td>
-              <td>
-  {{ r.request_date || "—" }}
-</td>
-              <td>
-                <div class="d-flex gap-2">
-                  <button
-                    class="btn btn-sm btn-success"
-                    :disabled="(r.status || '').toLowerCase() !== 'pending'"
-                    @click="approve(r.id)"
+            <template v-for="r in displayedRequests" :key="r.id">
+              <tr style="cursor: pointer" @click="toggleExpand(r.id)">
+                <td class="text-center text-muted">
+                  <span :class="{ rotated: expandedId === r.id }" class="chevron">▶&#xFE0E;</span>
+                </td>
+                <td>
+                  <div>{{ r.requester }}</div>
+                  <div class="text-muted small">{{ r.role }}</div>
+                </td>
+                <td>{{ itemSummary(r) }}</td>
+                <td>{{ totalQty(r) }}</td>
+                <td>
+                  <span class="badge" :class="statusBadgeClass(r.status)">
+                    {{ r.status }}
+                  </span>
+                  <div
+                    v-if="releaseBadgeText(r)"
+                    class="badge bg-info text-dark mt-1"
                   >
-                    Approve
-                  </button>
-
+                    {{ releaseBadgeText(r) }}
+                  </div>
+                  <div v-if="r.directReason" class="badge bg-warning text-dark mt-1" :title="r.directReason">
+                    Direct to AMO
+                  </div>
+                  <div v-if="r.directReason && r.coordReview" class="badge mt-1 ms-1" :class="r.coordReview === 'Flagged' ? 'bg-danger' : 'bg-success'" :title="r.coordReviewNote || ''">
+                    Dept. head: {{ r.coordReview }}
+                  </div>
+                  <div v-else-if="r.directReason" class="badge bg-secondary mt-1 ms-1">Dept. head: not reviewed</div>
+                  <div v-if="fulfilmentState(r)" class="badge mt-1" :class="fulfilmentState(r).cls">
+                    {{ fulfilmentState(r).text }}
+                  </div>
+                  <div v-if="r.receivedAt" class="badge bg-success mt-1">
+                    Received
+                  </div>
+                </td>
+                <td>{{ r.request_date || "—" }}</td>
+                <td @click.stop>
                   <button
-                    class="btn btn-sm btn-outline-danger"
-                    :disabled="(r.status || '').toLowerCase() !== 'pending'"
-                    @click="openRejectModal(r.id)"
+                    v-if="activeTab === 'all'"
+                    class="btn btn-sm btn-secondary text-white"
+                    :aria-expanded="!!actionsOpen[r.id]"
+                    @click="toggleActions(r.id)"
                   >
-                    Reject
+                    Actions
+                    <span :class="{ rotated: actionsOpen[r.id] }" class="chevron ms-1">▶&#xFE0E;</span>
                   </button>
-                </div>
-              </td>
-            </tr>
+                  <div
+                    v-if="activeTab !== 'all' || actionsOpen[r.id]"
+                    :class="activeTab === 'all' ? 'd-flex flex-column align-items-stretch gap-1 mt-2 text-nowrap' : 'd-flex gap-1 text-nowrap'"
+                  >
+                    <button
+                      v-if="activeTab !== 'release'"
+                      class="btn btn-sm btn-success"
+                      :disabled="!['with inventory', 'pending'].includes((r.status || '').toLowerCase())"
+                      @click="approve(r.id)"
+                    >
+                      Approve
+                    </button>
+
+                    <button
+                      v-if="activeTab !== 'release'"
+                      class="btn btn-sm btn-danger text-white"
+                      :disabled="!['with inventory', 'pending'].includes((r.status || '').toLowerCase())"
+                      @click="openRejectModal(r.id)"
+                    >
+                      Reject
+                    </button>
+                    <button
+                      v-if="(r.status || '').toLowerCase() === 'approved' && !r.releasedAt"
+                      class="btn btn-sm btn-danger text-white"
+                      title="Cancel this approval and free the held stock"
+                      @click="openCancelModal(r.id)"
+                    >
+                      Cancel approval
+                    </button>
+                    <button
+                      v-if="(r.status || '').toLowerCase() === 'approved'"
+                      class="btn btn-sm btn-info text-dark"
+                      @click="openReleaseModal(r.id)"
+                      :title="r.releasedAt ? 'Change how this request is being released' : 'Mark items as released to the requester'"
+                    >
+                      {{ r.releasedAt ? "Change Release" : "Release" }}
+                    </button>
+
+                    <button
+                      v-if="(r.status || '').toLowerCase() === 'approved' && hasBorrowedItems(r)"
+                      class="btn btn-sm btn-dark text-white"
+                      @click="printBorrowerForm(r)"
+                      title="Print the Borrower's Form for this request"
+                    >Print Form</button>
+
+                    <button
+                      v-if="['approved', 'rejected'].includes((r.status || '').toLowerCase())"
+                      class="btn btn-sm btn-secondary text-white"
+                      @click="resendNotification(r.id)"
+                      title="Create another in-app notification for the requester"
+                    >Notify</button>
+                  </div>
+                </td>
+              </tr>
+
+              <tr v-if="expandedId === r.id" class="detail-row">
+                <td></td>
+                <td colspan="6">
+                  <div class="detail-panel">
+                    <div class="row g-3">
+                      <div class="col-md-7">
+                        <div class="fw-semibold small text-muted mb-1">
+                          Requested Items
+                        </div>
+
+                        <table class="table table-sm mb-0">
+                          <thead>
+                            <tr>
+                              <th>Item</th>
+                              <th>Category</th>
+                              <th>Type</th>
+                              <th style="width: 70px">Qty</th>
+                              <th style="width: 170px">Due Date</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            <tr v-for="item in r.items || []" :key="'item-' + item.itemId">
+                              <td>{{ item.itemName }}</td>
+                              <td>{{ item.category }}</td>
+                              <td>{{ item.itemType }}</td>
+                              <td>{{ item.qty }}</td>
+                              <td>
+                                <input
+                                  v-if="isReturnableType(item.itemType) && ['Pending', 'With Inventory'].includes(r.status)"
+                                  type="date"
+                                  class="form-control form-control-sm"
+                                  :min="todayYmd"
+                                  :value="dueValue(r, item)"
+                                  @input="setDue(r, item, $event.target.value)"
+                                />
+                                <DueBadge
+                                  v-else-if="isReturnableType(item.itemType) && item.dueDate"
+                                  :due-date="item.dueDate"
+                                  :overdue="item.overdue"
+                                  :days-overdue="item.daysOverdue"
+                                />
+                                <span v-else class="text-muted">—</span>
+                              </td>
+                            </tr>
+                            <tr
+                              v-for="uniform in r.uniforms || []"
+                              :key="'uniform-' + uniform.uniformVariantId"
+                            >
+                              <td>
+                                {{ uniform.uniformName || "Uniform" }}
+                                <div class="text-muted detail-sub">
+                                  {{ uniform.department || "N/A" }}
+                                  — Size {{ uniform.size || "N/A" }}
+                                </div>
+                              </td>
+                              <td>Uniforms</td>
+                              <td>Uniform</td>
+                              <td>{{ uniform.quantity }}</td>
+                              <td class="text-muted">—</td>
+                            </tr>
+                            <tr v-if="(r.items || []).length === 0 && (r.uniforms || []).length === 0">
+                              <td colspan="5" class="text-muted">No items listed.</td>
+                            </tr>
+                          </tbody>
+                        </table>
+                      </div>
+
+                      <div class="col-md-5">
+                        <div class="fw-semibold small text-muted mb-1">Details</div>
+                        <div class="mb-1"><strong>Purpose:</strong> {{ r.purpose || "—" }}</div>
+                        <div v-if="r.directReason" class="mb-1 text-warning-emphasis"><strong>Sent directly (skipped department head):</strong> {{ r.directReason }}</div>
+                        <div v-if="r.coordReview" class="mb-1" :class="r.coordReview === 'Flagged' ? 'text-danger' : 'text-success'">
+                          <strong>Department head {{ r.coordReview.toLowerCase() }}</strong>
+                          <span v-if="r.coordReviewedBy"> ({{ r.coordReviewedBy }})</span>
+                          <span v-if="r.coordReviewNote"> — {{ r.coordReviewNote }}</span>
+                        </div>
+                        <div v-if="r.studentName" class="mb-1"><strong>Student:</strong> {{ r.studentName }}<span v-if="r.studentNumber"> (ID {{ r.studentNumber }})</span></div>
+                        <div class="mb-1"><strong>Location:</strong> {{ r.location || "—" }}</div>
+                        <div class="mb-1"><strong>Room:</strong> {{ r.room || "—" }}</div>
+
+                        <div
+                          v-if="(r.status || '').toLowerCase() === 'approved'"
+                          class="mb-1"
+                        >
+                          <strong>Release:</strong>
+                          <span v-if="r.releasedAt">
+                            {{ r.releaseMethod }} —
+                            {{ new Date(r.releasedAt).toLocaleString("en-PH") }}
+                            <span v-if="r.releasedToStudent && (r.uniforms || []).length" class="d-block"><strong>Picked up by:</strong> {{ r.releasedToStudent }}<span v-if="r.releasedStudentId"> (ID {{ r.releasedStudentId }})</span></span>
+                            <span v-if="r.releasedBy" class="text-muted">
+                              (by {{ r.releasedBy }})
+                            </span>
+                          </span>
+                          <span v-else class="text-muted">Not yet released</span>
+                        </div>
+
+                        <div
+                          v-if="r.releasedAt && (r.status || '').toLowerCase() !== 'rejected'"
+                          class="mb-1"
+                        >
+                          <strong>Received:</strong>
+                          <span v-if="r.receivedAt">
+                            Confirmed by requester —
+                            {{ new Date(r.receivedAt).toLocaleString("en-PH") }}
+                          </span>
+                          <span v-else class="text-muted">Not yet confirmed by the requester</span>
+                        </div>
+
+                        <div
+                          v-if="(r.status || '').toLowerCase() === 'approved' && r.approvalRemarks"
+                          class="mb-1"
+                        >
+                          <strong>Approval remarks:</strong> {{ r.approvalRemarks }}
+                        </div>
+
+                        <div
+                          v-if="['rejected', 'cancelled'].includes((r.status || '').toLowerCase()) && r.rejectReason"
+                          class="text-danger mt-2"
+                        >
+                          {{ (r.status || '').toLowerCase() === 'cancelled' ? 'Cancelled' : 'Rejection' }} reason: {{ r.rejectReason }}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </td>
+              </tr>
+            </template>
 
             <tr v-if="displayedRequests.length === 0">
-              <td colspan="12" class="text-center text-muted py-4">
-                {{ showAll ? "No requests found." : "No pending requests." }}
+              <td colspan="7" class="text-center text-muted py-4">
+                {{ emptyMessage }}
               </td>
             </tr>
           </tbody>
@@ -280,7 +676,34 @@ function statusBadgeClass(status) {
       </div>
     </div>
   </div>
-  <div v-if="rejectModal" class="modal-backdrop-custom">
+  <div v-if="cancelModal" class="modal-backdrop-custom">
+  <div class="modal-custom" style="max-width: 460px">
+    <div class="modal-header">
+      <h5 class="mb-0">Cancel Approval</h5>
+      <button class="btn-close" @click="cancelModal = false"></button>
+    </div>
+    <div class="modal-body">
+      <p class="mb-2">Request <strong>#{{ cancelTargetId }}</strong> will be cancelled and its held stock returned to the shelf. The requester is notified.</p>
+      <label for="cancel-reason" class="form-label">Reason</label>
+      <textarea
+        id="cancel-reason"
+        name="cancel_reason"
+        v-model="cancelReason"
+        class="form-control"
+        rows="3"
+        maxlength="255"
+        placeholder="e.g. Student did not pick it up"
+      ></textarea>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary text-white" @click="cancelModal = false">Back</button>
+      <button class="btn btn-danger" :disabled="cancelBusy || cancelReason.trim().length < 3" @click="confirmCancel">
+        Cancel approval
+      </button>
+    </div>
+  </div>
+</div>
+<div v-if="rejectModal" class="modal-backdrop-custom">
   <div class="modal-custom">
 
     <div class="modal-header">
@@ -299,12 +722,86 @@ function statusBadgeClass(status) {
     </div>
 
     <div class="modal-footer">
-      <button class="btn btn-outline-secondary" @click="rejectModal = false">
+      <button class="btn btn-secondary text-white" @click="rejectModal = false">
         Cancel
       </button>
 
       <button class="btn btn-danger" @click="confirmReject" :disabled="!rejectReason.trim()">
         Reject
+      </button>
+    </div>
+
+  </div>
+</div>
+<div v-if="releaseModal" class="modal-backdrop-custom">
+  <div class="modal-custom">
+
+    <div class="modal-header">
+      <h5 class="mb-0">Release Request</h5>
+      <button class="btn-close" @click="releaseModal = false"></button>
+    </div>
+
+    <div class="modal-body" v-if="releaseIsUniform">
+      <p class="small text-muted">
+        Hand the uniform to the student at the office. Check their ID first;
+        stock is deducted when you confirm and the cashier is notified.
+      </p>
+      <label class="form-label" for="release-student-name">Student's full name</label>
+      <input id="release-student-name" name="release_student_name" type="text" class="form-control mb-2" v-model="releaseStudent" maxlength="255" autocomplete="off" />
+      <label class="form-label" for="release-student-id">Student ID checked</label>
+      <div v-if="releaseStudentId" class="form-text mt-0 mb-1">Prefilled from the cashier's request; correct it if the ID shown is different.</div>
+      <input id="release-student-id" name="release_student_id" type="text" class="form-control" v-model="releaseStudentId" :maxlength="studentIdMax" autocomplete="off" placeholder="e.g. 2021-00123" />
+      <div class="form-text">Numbers and a dash only, up to {{ studentIdMax }} characters.</div>
+    </div>
+
+    <div class="modal-body" v-else>
+      <div v-if="releaseTarget && hasBorrowedItems(releaseTarget)" class="alert alert-warning py-2">
+        <div class="fw-semibold mb-1">This request includes borrowed items</div>
+        <div class="small mb-2">
+          Print the Borrower's Form, have the borrower sign it when they receive
+          the items, and keep the signed copy on file.
+        </div>
+        <button type="button" class="btn btn-sm btn-dark text-white" @click="printBorrowerForm(releaseTarget)">
+          Print Borrower's Form
+        </button>
+      </div>
+
+      <label class="form-label">How are these items going out?</label>
+
+      <div class="form-check">
+        <input
+          class="form-check-input"
+          type="radio"
+          id="release-pickup"
+          value="For Pick Up"
+          v-model="releaseMethod"
+        />
+        <label class="form-check-label" for="release-pickup">
+          For Pick Up — the requester collects it themselves
+        </label>
+      </div>
+
+      <div class="form-check">
+        <input
+          class="form-check-input"
+          type="radio"
+          id="release-delivery"
+          value="For Delivery"
+          v-model="releaseMethod"
+        />
+        <label class="form-check-label" for="release-delivery">
+          For Delivery — delivered to the request's location/room
+        </label>
+      </div>
+    </div>
+
+    <div class="modal-footer">
+      <button class="btn btn-secondary text-white" @click="releaseModal = false">
+        Cancel
+      </button>
+
+      <button class="btn btn-info text-dark" @click="confirmRelease">
+        Confirm Release
       </button>
     </div>
 
@@ -321,11 +818,23 @@ function statusBadgeClass(status) {
       <p class="mb-0">
         {{ confirmMessage }}
       </p>
+
+      <div v-if="confirmAskRemarks" class="mt-3">
+        <label class="form-label small mb-1">Remarks (optional)</label>
+        <textarea
+          v-model="approvalRemarks"
+          class="form-control"
+          rows="3"
+          maxlength="500"
+          placeholder="Request Approved but won't be released yet."
+        ></textarea>
+        <div class="form-text">The requester will see this with the approval.</div>
+      </div>
     </div>
 
     <div class="modal-footer">
       <button
-        class="btn btn-outline-secondary"
+        class="btn btn-secondary text-white"
         @click="confirmModal = false"
       >
         Cancel
@@ -345,41 +854,6 @@ function statusBadgeClass(status) {
 </template>
 
 <style scoped>
-.modal-backdrop-custom {
-  position: fixed;
-  inset: 0;
-  background: rgba(0,0,0,.35);
-  display: grid;
-  place-items: center;
-  z-index: 2000;
-  padding: 16px;
-}
-
-.modal-custom {
-  background: white;
-  width: 100%;
-  max-width: 500px;
-  border-radius: 12px;
-  overflow: hidden;
-  box-shadow: 0 18px 50px rgba(0,0,0,.25);
-}
-
-.modal-header,
-.modal-footer {
-  padding: 12px 16px;
-  border-bottom: 1px solid #dee2e6;
-}
-
-.modal-footer {
-  border-top: 1px solid #dee2e6;
-  border-bottom: none;
-  display: flex;
-  justify-content: flex-end;
-}
-
-.modal-body {
-  padding: 16px;
-}
 .table-scroll {
   max-height: 520px;
   overflow-y: auto;
@@ -391,5 +865,37 @@ function statusBadgeClass(status) {
   background: #f8f9fa;
   z-index: 2;
   box-shadow: 0 1px 0 #dee2e6;
+}
+
+.chevron {
+  display: inline-block;
+  transition: transform 0.15s ease;
+  font-size: 0.75rem;
+}
+
+.chevron.rotated {
+  transform: rotate(90deg);
+}
+
+.detail-row td {
+  background: var(--bs-tertiary-bg, #f8f9fa);
+  border-top: none;
+}
+
+.detail-panel {
+  /* width 0 + min-width 100%: fills the row but can never make the table wider */
+  width: 0;
+  min-width: 100%;
+  max-height: 340px;
+  overflow: auto;
+  padding: 0.75rem 0.75rem;
+  font-size: 1rem;
+  overflow-wrap: anywhere;
+}
+.detail-panel .table {
+  font-size: 0.95rem;
+}
+.detail-panel .detail-sub {
+  font-size: 0.85rem;
 }
 </style>

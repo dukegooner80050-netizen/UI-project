@@ -6,6 +6,9 @@ use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\DB;
+use Laravel\Sanctum\PersonalAccessToken;
+use Carbon\Carbon;
 
 class AuthController extends Controller
 {
@@ -13,21 +16,26 @@ class AuthController extends Controller
     {
         $validated = $request->validate([
             'full_name' => 'required',
-            'username' => 'required|unique:Users,username',
+            'username' => 'required|unique:users,username',
             'password' => 'required|min:6',
         ]);
 
-$user = User::create([
+$user = new User([
     'full_name' => $validated['full_name'],
     'username'  => $validated['username'],
     'password'  => Hash::make($validated['password']),
-    'role'      => 'dean',
+    'role'      => 'instructor',
 ]);
 
+        // Self sign-ups cannot sign in until an admin approves them.
+        // (status is not mass assignable, so it is set explicitly.)
+        $user->status = 'pending';
+        $user->save();
+
         return response()->json([
-            'message' => 'Account created successfully.',
-            'user' => $user,
-        ]);
+            'message' => 'Your account has been created and is waiting for administrator approval.',
+            'status'  => 'pending',
+        ], 201);
     }
 
     public function login(Request $request)
@@ -45,13 +53,127 @@ $user = User::create([
         ], 401);
     }
 
-$token = $user->createToken('cims')->plainTextToken;
+// Checked after the password on purpose, so only someone who knows
+// the password can learn that the account is still waiting.
+if (($user->status ?? 'active') === 'pending') {
+    return response()->json([
+        'message' => 'Your account is waiting for administrator approval. Please try again once an admin has approved it.',
+        'code' => 'account_pending',
+    ], 403);
+}
+
+if (($user->status ?? 'active') !== 'active') {
+    return response()->json([
+        'message' => 'Your account is not active. Please contact the administrator.',
+    ], 403);
+}
+
+// Only Admin accounts share the two-session limit. Other roles are unaffected.
+// Admin tokens expire after 30 minutes without activity; stale tokens are
+// removed before checking the limit so abandoned sessions release their slots.
+$token = DB::transaction(function () use ($user) {
+    $idleCutoff = now()->subMinutes(30);
+
+    if (strtolower((string) $user->role) === 'amo') {
+        // Lock the same admin row for every admin login attempt. This serializes
+        // concurrent logins so two simultaneous requests cannot both take the last slot.
+        $adminIds = User::whereRaw('LOWER(role) = ?', ['amo'])
+            ->orderBy('idUsers')
+            ->lockForUpdate()
+            ->pluck('idUsers');
+
+        $adminTokens = PersonalAccessToken::where('tokenable_type', User::class)
+            ->whereIn('tokenable_id', $adminIds);
+
+        // A token with no recorded use is measured from creation time.
+        $adminTokens->where(function ($query) use ($idleCutoff) {
+            $query->where('last_used_at', '>=', $idleCutoff)
+                ->orWhere(function ($query) use ($idleCutoff) {
+                    $query->whereNull('last_used_at')
+                        ->where('created_at', '>=', $idleCutoff);
+                });
+        });
+        $activeAdminTokens = $adminTokens->count();
+
+        // Delete stale Admin tokens to release slots and prevent old credentials
+        // from continuing to work after the inactivity timeout.
+        PersonalAccessToken::where('tokenable_type', User::class)
+            ->whereIn('tokenable_id', $adminIds)
+            ->where(function ($query) use ($idleCutoff) {
+                $query->where('last_used_at', '<', $idleCutoff)
+                    ->orWhere(function ($query) use ($idleCutoff) {
+                        $query->whereNull('last_used_at')
+                            ->where('created_at', '<', $idleCutoff);
+                    });
+            })->delete();
+
+        if ($activeAdminTokens >= 2) {
+            return null;
+        }
+    }
+
+    return $user->createToken(
+        strtolower((string) $user->role) === 'amo' ? 'cims-admin-session' : 'cims'
+    )->plainTextToken;
+});
+
+if ($token === null) {
+    return response()->json([
+        'message' => 'The maximum of 2 simultaneous Admin sessions has been reached. Please try again after an Admin logs out or their session expires after 30 minutes of inactivity.',
+        'code' => 'admin_session_limit',
+    ], 429);
+}
 
 return response()->json([
     'message' => 'Login successful.',
     'user' => $user,
     'token' => $token,
 ]);
+}
+
+// Any signed-in user changes their own password. Needs the current one,
+// so a stolen/left-open session alone can't take the account over.
+public function changePassword(Request $request)
+{
+    $validated = $request->validate([
+        'current_password' => 'required|string',
+        'password' => 'required|string|min:8|max:100|confirmed',
+    ]);
+
+    $user = $request->user();
+
+    if (!Hash::check($validated['current_password'], $user->password)) {
+        return response()->json([
+            'message' => 'Your current password is not correct.',
+            'errors' => ['current_password' => ['Your current password is not correct.']],
+        ], 422);
+    }
+
+    if (Hash::check($validated['password'], $user->password)) {
+        return response()->json([
+            'message' => 'Your new password must be different from the current one.',
+            'errors' => ['password' => ['Your new password must be different from the current one.']],
+        ], 422);
+    }
+
+    $user->password = $validated['password']; // hashed by the model cast
+    $user->must_change_password = false;
+    $user->save();
+
+    // Sign every other device/session out; keep the one used right now.
+    $currentId = $request->user()->currentAccessToken()->id ?? null;
+    $user->tokens()->when($currentId, fn ($q) => $q->where('id', '!=', $currentId))->delete();
+
+    \App\Models\Log::create([
+        'idUsers' => $user->idUsers,
+        'activity_description' => 'Changed own password',
+        'timestamp' => now()->toDateTimeString(),
+    ]);
+
+    return response()->json([
+        'message' => 'Your password was changed.',
+        'user' => $user->fresh(),
+    ]);
 }
 
 public function logout(Request $request)

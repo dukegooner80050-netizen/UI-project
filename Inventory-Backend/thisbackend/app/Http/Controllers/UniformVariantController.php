@@ -37,6 +37,7 @@ class UniformVariantController extends Controller
             'idUniftype' => 'required|exists:uniformType,idUniftype',
             'iddept'     => 'required|exists:dept,iddept',
             'size'       => 'required|string|max:50',
+            'gender'     => 'required|in:Male,Female,Unisex',
             'price'      => 'required|numeric|min:0',
             'quantity'   => 'required|integer|min:0',
         ]);
@@ -70,6 +71,7 @@ class UniformVariantController extends Controller
             'idUniftype' => 'required|exists:uniformType,idUniftype',
             'iddept'     => 'required|exists:dept,iddept',
             'size'       => 'required|string|max:50',
+            'gender'     => 'required|in:Male,Female,Unisex',
             'price'      => 'required|numeric|min:0',
             'quantity'   => 'required|integer|min:0',
         ]);
@@ -144,6 +146,63 @@ class UniformVariantController extends Controller
         $variant->quantity += $validated['quantity'];
         $variant->save();
 
+        // Fulfil the oldest waiting reservations that the new stock covers.
+        // The student already paid, so each one becomes an Approved request
+        // for the AMO right away (stock held), ready for pickup. The cashier
+        // is notified through the bell.
+        $available = max(0, (int) $variant->quantity - (int) ($variant->reserved_quantity ?? 0));
+        $waiting = \App\Models\UniformReservation::where('idUnifvariant', $variant->idUnifvariant)
+            ->where('status', 'Waiting')
+            ->orderBy('created_at')
+            ->orderBy('idreservation')
+            ->get();
+        $actorId = request()->user()->idUsers ?? null;
+        $variant->load(['type', 'department']);
+        $label = $variant->type->uniform_name . ' (' . $variant->department->dept_name . ' - ' . ($variant->gender ?? 'Unisex') . ' - ' . $variant->size . ')';
+        foreach ($waiting as $reservation) {
+            if ((int) $reservation->quantity > $available) {
+                continue;
+            }
+            $available -= (int) $reservation->quantity;
+            // Hold the stock until the AMO hands the uniform over.
+            $variant->reserved_quantity = (int) ($variant->reserved_quantity ?? 0) + (int) $reservation->quantity;
+
+            \Illuminate\Support\Facades\DB::transaction(function () use ($reservation, $actorId, $label) {
+                $req = \App\Models\Request::create([
+                    'idUsers' => $reservation->idUsers,
+                    'approved_by' => $actorId,
+                    'request_date' => now(),
+                    'status' => 'Approved',
+                    'location' => 'AMO Office',
+                    'room' => 'N/A',
+                    'purpose' => 'Reserved uniform (paid) - stock arrived',
+                    'approval_remarks' => 'Created automatically from a paid reservation.',
+                    'borrowed_at' => now(),
+                    'notified_at' => now(),
+                    'notified_by' => $actorId,
+                    'student_name' => $reservation->student_name,
+                    'student_number' => $reservation->student_number,
+                    'paid_at' => $reservation->paid_at ?? now(),
+                    'paid_by' => $reservation->idUsers,
+                ]);
+                \App\Models\RequestUniform::create([
+                    'idrequest' => $req->idrequest,
+                    'idUnifvariant' => $reservation->idUnifvariant,
+                    'quantity' => $reservation->quantity,
+                ]);
+                $reservation->update(['status' => 'Submitted', 'notified_at' => now(), 'submitted_at' => now()]);
+                \Illuminate\Support\Facades\DB::table('request_notifications')->insert([
+                    'idrequest' => $req->idrequest,
+                    'recipient_idUsers' => (int) $reservation->idUsers,
+                    'created_by' => $actorId,
+                    'event_type' => 'reservation_ready',
+                    'message' => mb_substr("Your reserved uniform arrived: {$reservation->quantity} x {$label}. Request #{$req->idrequest} is ready; the student can pick it up at the AMO office.", 0, 500),
+                    'created_at' => now(),
+                ]);
+            });
+        }
+        $variant->save();
+
         $variant->load(['department', 'type']);
 
         $this->logActivity(
@@ -177,9 +236,9 @@ class UniformVariantController extends Controller
             ], 404);
         }
 
-        if ($variant->quantity < $validated['quantity']) {
+        if (((int) $variant->quantity - (int) ($variant->reserved_quantity ?? 0)) < $validated['quantity']) {
             return response()->json([
-                'message' => 'Insufficient uniform stock.'
+                'message' => 'Insufficient unreserved uniform stock. Some units are reserved for approved requests.'
             ], 400);
         }
 
