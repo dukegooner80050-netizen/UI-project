@@ -443,11 +443,29 @@ const amTemp = ref(null); // { name, username, password }
 const amCopied = ref(false);
 
 async function amCopyTemp() {
+  const text = amTemp.value.password;
+  // navigator.clipboard only works on https or localhost. On a plain
+  // http://192.168.x.x address it is undefined, so fall back to the old way.
   try {
-    await navigator.clipboard.writeText(amTemp.value.password);
-    amCopied.value = true;
+    if (navigator.clipboard && window.isSecureContext) {
+      await navigator.clipboard.writeText(text);
+      amCopied.value = true;
+      return;
+    }
   } catch {
-    /* clipboard blocked: the password is still on screen to read out */
+    /* fall through to the fallback */
+  }
+  try {
+    const el = document.getElementById("temp-password");
+    el.focus();
+    el.select();
+    el.setSelectionRange(0, text.length);
+    amCopied.value = document.execCommand("copy");
+  } catch {
+    amCopied.value = false;
+  }
+  if (!amCopied.value) {
+    notify("warning", "Could not copy automatically. Select the password and press Ctrl+C.");
   }
 }
 
