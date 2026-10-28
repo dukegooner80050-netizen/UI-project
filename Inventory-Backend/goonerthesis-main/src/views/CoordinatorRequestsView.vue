@@ -24,17 +24,35 @@ async function refresh() {
 }
 // Asks first (app modal, not the browser's native confirm), then forwards.
 const confirmTarget = ref(null)
-function forward(r) { confirmTarget.value = r }
+const forwardNote = ref('')
+function forward(r) { forwardNote.value = ''; confirmTarget.value = r }
 async function doForward() {
   const r = confirmTarget.value
   confirmTarget.value = null
   if (!r) return
   busyId.value = r.id
   try {
-    const { data } = await axios.put(`/requests/${r.id}/forward-to-inventory`)
+    const { data } = await axios.put(`/requests/${r.id}/forward-to-inventory`, { note: forwardNote.value.trim() })
     notify('success', data.message || 'Request forwarded.')
     await refresh()
   } catch (e) { notify('danger', e.response?.data?.message || 'Could not forward request.') }
+  finally { busyId.value = null }
+}
+// Return (reject) a waiting request with a reason; the instructor is notified.
+const rejectTarget = ref(null)
+const rejectReason = ref('')
+function openReject(r) { rejectTarget.value = r; rejectReason.value = '' }
+async function doReject() {
+  const r = rejectTarget.value
+  if (!r || rejectReason.value.trim().length < 3) return
+  busyId.value = r.id
+  try {
+    const { data } = await axios.put(`/requests/${r.id}/coordinator-reject`, { reason: rejectReason.value.trim() })
+    notify('success', data.message || 'Request returned.')
+    rejectTarget.value = null
+    rejectReason.value = ''
+    await refresh()
+  } catch (e) { notify('danger', e.response?.data?.message || 'Could not return the request.') }
   finally { busyId.value = null }
 }
 // Review of requests an instructor sent straight to the AMO. Neither action
@@ -196,7 +214,10 @@ onMounted(refresh)
           <td class="fw-semibold">#{{ r.id }}</td><td>{{ r.requester || 'Unknown' }}</td><td>{{ r.request_date ? new Date(r.request_date).toLocaleString('en-PH') : '—' }}</td>
           <td class="request-summary">{{ summary(r) }}</td><td><div>{{ r.purpose || '—' }}</div><small class="text-muted">{{ r.location || '—' }} / {{ r.room || '—' }}</small></td>
           <td><span class="badge text-bg-warning">With Coordinator</span></td>
-          <td><button class="btn btn-sm btn-success" :disabled="busyId === r.id" @click="forward(r)">{{ busyId === r.id ? 'Forwarding…' : 'Forward to Inventory' }}</button></td>
+          <td class="text-nowrap">
+            <button class="btn btn-sm btn-success me-1" :disabled="busyId === r.id" @click="forward(r)">{{ busyId === r.id ? 'Working…' : 'Forward to Inventory' }}</button>
+            <button class="btn btn-sm btn-danger text-white" :disabled="busyId === r.id" @click="openReject(r)">Return</button>
+          </td>
         </tr></tbody>
       </table>
     </div>
@@ -219,6 +240,24 @@ onMounted(refresh)
       </div>
     </div>
 
+    <div v-if="rejectTarget" class="modal-backdrop-custom">
+      <div class="modal-custom" style="max-width: 460px">
+        <div class="modal-header">
+          <h5 class="mb-0">Return request #{{ rejectTarget.id }}</h5>
+          <button class="btn-close" @click="rejectTarget = null"></button>
+        </div>
+        <div class="modal-body">
+          <p class="small text-muted mb-2">The request is closed as Rejected and the instructor is notified with your reason.</p>
+          <label for="reject-reason" class="form-label">Reason</label>
+          <textarea id="reject-reason" name="reject_reason" v-model="rejectReason" class="form-control" rows="3" maxlength="500" placeholder="Tell the instructor why."></textarea>
+        </div>
+        <div class="modal-footer">
+          <button class="btn btn-secondary" @click="rejectTarget = null">Cancel</button>
+          <button class="btn btn-danger" :disabled="busyId === rejectTarget.id || rejectReason.trim().length < 3" @click="doReject">Return request</button>
+        </div>
+      </div>
+    </div>
+
     <div v-if="confirmTarget" class="modal-backdrop-custom">
       <div class="modal-custom" style="max-width: 420px">
         <div class="modal-header">
@@ -226,7 +265,9 @@ onMounted(refresh)
           <button class="btn-close" @click="confirmTarget = null"></button>
         </div>
         <div class="modal-body">
-          <p class="mb-0">Forward request #{{ confirmTarget.id }} to Inventory Management?</p>
+          <p class="mb-2">Forward request #{{ confirmTarget.id }} to Inventory Management?</p>
+          <label for="forward-note" class="form-label small mb-1">Note for the AMO (optional)</label>
+          <textarea id="forward-note" name="forward_note" v-model="forwardNote" class="form-control" rows="2" maxlength="500" placeholder="e.g. Needed for the lab activity on Friday."></textarea>
         </div>
         <div class="modal-footer">
           <button class="btn btn-secondary" @click="confirmTarget = null">Cancel</button>

@@ -255,6 +255,8 @@ public function consumption()
                 'name' => "{$name} ({$dept} - {$size})",
                 'type' => 'Uniform',
                 'qty' => (int) $u->quantity,
+                'studentName' => $r->released_to_student ?: $r->student_name,
+                'studentNumber' => $r->released_student_id ?: $r->student_number,
                 'requester' => $requester,
                 'requestId' => $r->idrequest,
                 'date' => $r->released_at,
@@ -1019,9 +1021,46 @@ public function coordinatorReview(HttpRequest $httpRequest, $id)
     ]);
 }
 
-public function forwardToInventory($id)
+// Department head declines a request that is waiting for their review.
+// Nothing was reserved yet, so no stock changes. The requester is told why.
+public function coordinatorReject(HttpRequest $httpRequest, $id)
 {
-    $actor = request()->user();
+    $actor = $httpRequest->user();
+    if (strtolower((string) $actor->role) !== 'department_head') {
+        return response()->json(['message' => 'Only the Dean/Academic Coordinator can return these requests.'], 403);
+    }
+    $validated = $httpRequest->validate(['reason' => 'required|string|min:3|max:500']);
+    $reason = trim($validated['reason']);
+
+    return DB::transaction(function () use ($id, $actor, $reason) {
+        $r = Request::with('user')->where('idrequest', $id)->lockForUpdate()->first();
+        if (!$r) return response()->json(['message' => 'Request not found.'], 404);
+        if ($r->status !== 'With Coordinator') {
+            return response()->json(['message' => 'Only requests awaiting coordinator review can be returned.'], 422);
+        }
+        if (!$this->headCanHandle($actor, $r->user)) {
+            return response()->json(['message' => 'This request is from another department. Only that department\'s head can return it.'], 403);
+        }
+        $r->update([
+            'status' => 'Rejected',
+            'rejectReason' => $reason,
+            'coord_review_status' => 'Rejected',
+            'coord_reviewed_by' => $actor->idUsers,
+            'coord_reviewed_at' => now(),
+            'coord_review_note' => $reason,
+            'notified_at' => now(),
+            'notified_by' => $actor->idUsers,
+        ]);
+        $this->createRequestNotification($r, (int) $r->idUsers, 'decision', 'Your request #' . $r->idrequest . ' was returned by the department head. Reason: ' . $reason, (int) $actor->idUsers);
+        $this->logActivity($actor->idUsers, "Returned Request #{$r->idrequest} (department head): {$reason}");
+        return response()->json(['message' => 'Request returned. The instructor has been notified.']);
+    });
+}
+
+public function forwardToInventory(HttpRequest $httpRequest, $id)
+{
+    $actor = $httpRequest->user();
+    $note = trim((string) $httpRequest->validate(['note' => 'nullable|string|max:500'])['note'] ?? '');
     if (strtolower((string) $actor->role) !== 'department_head') {
         return response()->json(['message' => 'Only the Dean/Academic Coordinator can forward requests.'], 403);
     }
@@ -1033,7 +1072,15 @@ public function forwardToInventory($id)
         if (!$this->headCanHandle($actor, $r->user)) {
             return response()->json(['message' => 'This request is from another department. Only that department\'s head can forward it.'], 403);
         }
-        $r->update(['status' => 'With Inventory', 'coordinator_forwarded_by' => $actor->idUsers, 'coordinator_forwarded_at' => now()]);
+        $r->update([
+            'status' => 'With Inventory',
+            'coordinator_forwarded_by' => $actor->idUsers,
+            'coordinator_forwarded_at' => now(),
+            'coord_review_status' => 'Forwarded',
+            'coord_reviewed_by' => $actor->idUsers,
+            'coord_reviewed_at' => now(),
+            'coord_review_note' => $note !== '' ? $note : null,
+        ]);
         $r->load('user');
         $this->createRequestNotification($r, (int) $r->idUsers, 'forwarded', 'Your request #' . $r->idrequest . ' was forwarded to Inventory Management.');
         $this->notifyInventoryOfRequest($r, (int) $actor->idUsers);

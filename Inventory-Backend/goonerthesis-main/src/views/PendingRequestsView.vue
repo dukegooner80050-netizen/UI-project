@@ -627,7 +627,7 @@ function statusBadgeClass(status) {
                         </div>
                         <div class="mb-1"><strong>Purpose:</strong> {{ r.purpose || "—" }}</div>
                         <div v-if="r.directReason" class="mb-1 text-warning-emphasis"><strong>Sent directly (skipped department head):</strong> {{ r.directReason }}</div>
-                        <div v-if="r.coordReview" class="mb-1" :class="r.coordReview === 'Flagged' ? 'text-danger' : 'text-success'">
+                        <div v-if="r.coordReview" class="mb-1" :class="['Flagged', 'Rejected'].includes(r.coordReview) ? 'text-danger' : 'text-success'">
                           <strong>Department head {{ r.coordReview.toLowerCase() }}</strong>
                           <span v-if="r.coordReviewedBy"> ({{ r.coordReviewedBy }})</span>
                           <span v-if="r.coordReviewNote"> — {{ r.coordReviewNote }}</span>

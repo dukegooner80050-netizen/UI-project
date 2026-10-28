@@ -128,6 +128,14 @@ const byItem = computed(() => {
   return [...map.values()].sort((a, b) => a.name.localeCompare(b.name));
 });
 
+// Uniforms issued by a cashier are for a student: show who.
+function studentLabel(r) {
+  const name = (r.studentName || "").trim();
+  const id = (r.studentNumber || "").trim();
+  if (name && id) return `${name} (${id})`;
+  return name || id || "—";
+}
+
 // REQUESTER-FOCUSED: group by requester
 const byRequester = computed(() => {
   const map = new Map();
@@ -271,6 +279,7 @@ function toggleExpand(key) {
                 <th v-if="isInventoryManagement">User</th>
                 <th>Item / Uniform</th>
                 <th>Type</th>
+                <th>Student</th>
                 <th style="width: 100px">Qty</th>
                 <th style="width: 110px">Request</th>
               </tr>
@@ -281,11 +290,12 @@ function toggleExpand(key) {
                 <td v-if="isInventoryManagement">{{ r.requester }}</td>
                 <td>{{ r.name }}</td>
                 <td>{{ r.type }}</td>
+                <td>{{ studentLabel(r) }}</td>
                 <td>{{ r.qty }}</td>
                 <td>#{{ r.requestId }}</td>
               </tr>
               <tr v-if="sortedRecords.length === 0">
-                <td :colspan="isInventoryManagement ? 6 : 5" class="text-center text-muted py-4">
+                <td :colspan="isInventoryManagement ? 7 : 6" class="text-center text-muted py-4">
                   {{ emptyText }}
                 </td>
               </tr>
@@ -334,7 +344,7 @@ function toggleExpand(key) {
                       :key="b.key"
                       class="d-flex justify-content-between border-bottom py-1 small"
                     >
-                      <span>Req #{{ b.requestId }} — {{ b.requester }}</span>
+                      <span>Req #{{ b.requestId }} — {{ b.requester }}<template v-if="studentLabel(b) !== '—'"> · {{ studentLabel(b) }}</template></span>
                       <span>Qty: {{ b.qty }}</span>
                       <span>{{ formatDate(b.date) }}</span>
                     </div>

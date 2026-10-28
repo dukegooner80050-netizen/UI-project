@@ -114,6 +114,7 @@ Route::middleware([AdminSessionTimeoutMiddleware::class, 'auth:sanctum', \App\Ht
         Route::get('/requests/coordinator-history', [RequestController::class, 'coordinatorHistory'])->middleware('role:department_head');
         Route::get('/requests/direct-queue', [RequestController::class, 'directQueue'])->middleware('role:department_head');
         Route::put('/requests/{id}/coordinator-review', [RequestController::class, 'coordinatorReview'])->middleware('role:department_head');
+        Route::put('/requests/{id}/coordinator-reject', [RequestController::class, 'coordinatorReject'])->middleware('role:department_head');
         Route::put('/requests/{id}/forward-to-inventory', [RequestController::class, 'forwardToInventory'])->middleware('role:department_head');
         Route::put('/requests/{id}/confirm-received', [RequestController::class, 'confirmReceived']);
         Route::get('/requests/{id}', [RequestController::class, 'show']);
@@ -196,6 +197,7 @@ Route::middleware('role:amo,department_head,admin,instructor,cashier')->group(fu
         Route::post('/users', [UserController::class, 'store']);
         Route::put('/users/{id}', [UserController::class, 'update']);
         Route::put('/users/{id}/status', [UserController::class, 'setStatus']);
+        Route::put('/users/{id}/username', [UserController::class, 'setUsername']);
         Route::put('/users/{id}/department', [UserController::class, 'setDepartment']);
         Route::delete('/users/{id}', [UserController::class, 'destroy']);
         Route::post('/users/{id}/reset-password', [UserController::class, 'resetPassword']);
