@@ -1661,10 +1661,6 @@ watch(activeTab, async () => {
                               </tr>
                             </tbody>
                           </table>
-                          <div class="small"><strong>Purpose:</strong> {{ r.purpose || "—" }}</div>
-                          <div v-if="!(r.uniforms || []).length" class="small">
-                            <strong>Location:</strong> {{ r.location || "—" }} / {{ r.room || "—" }}
-                          </div>
                           <div v-if="r.studentName" class="small">
                             <strong>Student:</strong> {{ r.studentName }}<span v-if="r.studentNumber"> (ID {{ r.studentNumber }})</span>
                           </div>

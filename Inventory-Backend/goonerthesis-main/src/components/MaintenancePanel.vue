@@ -216,7 +216,7 @@ async function confirmResolve() {
                     Mark repaired
                   </button>
                   <button
-                    class="btn btn-sm btn-outline-danger"
+                    class="btn btn-sm btn-danger text-white"
                     @click="openResolve(r, 'unrepairable')"
                   >
                     Can't be repaired

@@ -192,7 +192,7 @@ onMounted(load);
           <div class="d-flex flex-wrap gap-2 mt-2">
             <button
               v-if="r.status === 'Open'"
-              class="btn btn-outline-primary btn-sm"
+              class="btn btn-primary text-white btn-sm"
               @click="setStatus(r, 'Ordered')"
             >
               Mark ordered
@@ -200,7 +200,7 @@ onMounted(load);
             <button class="btn btn-success btn-sm" @click="openReceive(r)">
               Receive
             </button>
-            <button class="btn btn-outline-danger btn-sm" @click="setStatus(r, 'Cancelled')">
+            <button class="btn btn-danger text-white btn-sm" @click="setStatus(r, 'Cancelled')">
               Cancel
             </button>
           </div>
