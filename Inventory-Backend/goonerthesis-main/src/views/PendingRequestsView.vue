@@ -284,6 +284,18 @@ async function executeConfirm() {
 // Once a request is Approved, Inventory records whether the requester
 // is picking the items up or having them delivered.
 
+const ROLE_NAMES = {
+  amo: "AMO",
+  department_head: "Department Head",
+  admin: "Admin",
+  instructor: "Instructor",
+  cashier: "Cashier",
+};
+function roleLabel(role) {
+  const k = String(role || "").toLowerCase();
+  return ROLE_NAMES[k] || role || "";
+}
+
 const releaseModal = ref(false);
 const releaseTarget = computed(() => requests.value.find((r) => r.id === releaseTargetId.value) || null);
 const releaseTargetId = ref(null);
@@ -443,8 +455,10 @@ function statusBadgeClass(status) {
                   <span :class="{ rotated: expandedId === r.id }" class="chevron">▶&#xFE0E;</span>
                 </td>
                 <td>
-                  <div>{{ r.requester }}</div>
-                  <div class="text-muted small">{{ r.role }}</div>
+                  <div>{{ r.requesterName || r.requester }}</div>
+                  <div class="text-muted small">
+                    {{ roleLabel(r.role) }}<template v-if="r.requesterDept"> · {{ r.requesterDept }}</template>
+                  </div>
                 </td>
                 <td>{{ itemSummary(r) }}</td>
                 <td>{{ totalQty(r) }}</td>
@@ -607,6 +621,10 @@ function statusBadgeClass(status) {
 
                       <div class="col-md-5">
                         <div class="fw-semibold small text-muted mb-1">Details</div>
+                        <div class="mb-1">
+                          <strong>Requested by:</strong> {{ r.requesterName || r.requester }}
+                          ({{ roleLabel(r.role) }}<template v-if="r.requesterDept">, {{ r.requesterDept }}</template>)
+                        </div>
                         <div class="mb-1"><strong>Purpose:</strong> {{ r.purpose || "—" }}</div>
                         <div v-if="r.directReason" class="mb-1 text-warning-emphasis"><strong>Sent directly (skipped department head):</strong> {{ r.directReason }}</div>
                         <div v-if="r.coordReview" class="mb-1" :class="r.coordReview === 'Flagged' ? 'text-danger' : 'text-success'">

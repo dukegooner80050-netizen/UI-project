@@ -18,6 +18,50 @@ class RequestController extends Controller
 {
     use ActivityLogger;
 
+/** Department name for a user's iddept (looked up once per id). */
+private static function deptNameFor($iddept)
+{
+    static $cache = [];
+    if (!$iddept) return null;
+    if (!array_key_exists($iddept, $cache)) {
+        $cache[$iddept] = optional(\App\Models\Department::find($iddept))->dept_name;
+    }
+    return $cache[$iddept];
+}
+
+/** idUsers of the department heads who handle this requester's department. */
+private function headIdsFor($requester)
+{
+    $heads = \App\Models\User::whereRaw('LOWER(role) = ?', ['department_head'])->get(['idUsers', 'iddept']);
+    $dept = optional($requester)->iddept;
+    if (!$dept) return $heads->pluck('idUsers')->all();               // requester has no department: all heads
+    $match = $heads->filter(fn ($h) => !$h->iddept || (int) $h->iddept === (int) $dept);
+    $hasOwnHead = $heads->contains(fn ($h) => (int) $h->iddept === (int) $dept);
+    if (!$hasOwnHead) return $heads->pluck('idUsers')->all();         // department has no head: don't strand the request
+    return $match->pluck('idUsers')->all();
+}
+
+/** May this department head review/forward this requester's request? */
+private function headCanHandle($head, $requester)
+{
+    return in_array((int) $head->idUsers, array_map('intval', $this->headIdsFor($requester)), true);
+}
+
+/** Limit a Request query to the requesters this head handles. */
+private function scopeToHead($query, $head)
+{
+    if (!$head->iddept) return $query;                                 // head with no department sees all
+    $headDepts = \App\Models\User::whereRaw('LOWER(role) = ?', ['department_head'])
+        ->whereNotNull('iddept')->select('iddept');
+    return $query->whereHas('user', function ($u) use ($head, $headDepts) {
+        $u->where(function ($w) use ($head, $headDepts) {
+            $w->whereNull('iddept')
+              ->orWhere('iddept', $head->iddept)
+              ->orWhereNotIn('iddept', $headDepts);
+        });
+    });
+}
+
 public function index()
 {
 $requests = Request::with([
@@ -45,6 +89,7 @@ return response()->json(
             'notedBy' => optional($request->forwardedByUser)->full_name,
 
             'role' => optional($request->user)->role,
+            'requesterDept' => self::deptNameFor(optional($request->user)->iddept),
 
             'purpose' => $request->purpose,
             'rejectReason' => $request->rejectReason,
@@ -254,6 +299,7 @@ public function show($id)
         'requester' => optional($request->user)->username,
 
         'role' => optional($request->user)->role,
+        'requesterDept' => self::deptNameFor(optional($request->user)->iddept),
 
         'purpose' => $request->purpose,
         'rejectReason' => $request->rejectReason,
@@ -516,12 +562,12 @@ if ($newRequest->status === 'With Inventory' && strtolower((string) $role) !== '
 if ($newRequest->direct_to_amo_reason) {
     // The department head was skipped: tell them so they can review it afterwards.
     $who = optional($newRequest->user)->username ?? 'An instructor';
-    foreach (\App\Models\User::whereRaw('LOWER(role) = ?', ['department_head'])->pluck('idUsers') as $headId) {
+    foreach ($this->headIdsFor($newRequest->user) as $headId) {
         $this->createRequestNotification($newRequest, (int) $headId, 'direct_review', "Request #{$newRequest->idrequest} from {$who} was sent straight to the AMO ({$newRequest->direct_to_amo_reason}). Please review it.", (int) $idUsers);
     }
 }
 if ($newRequest->status === 'With Coordinator') {
-    $coordinators = \App\Models\User::whereRaw('LOWER(role) = ?', ['department_head'])->pluck('idUsers');
+    $coordinators = $this->headIdsFor($newRequest->user);
     foreach ($coordinators as $coordinatorId) {
         $this->createRequestNotification($newRequest, (int) $coordinatorId, 'coordinator_review', 'Request #' . $newRequest->idrequest . ' is waiting for coordinator review.', (int) $idUsers);
     }
@@ -854,7 +900,7 @@ public function coordinatorQueue()
     if (strtolower((string) $user->role) !== 'department_head') {
         return response()->json(['message' => 'Only the Dean/Academic Coordinator can forward requests.'], 403);
     }
-    return response()->json(Request::with(['user', 'items.item', 'uniforms.uniformVariant.type', 'uniforms.uniformVariant.department'])
+    return response()->json($this->scopeToHead(Request::with(['user', 'items.item', 'uniforms.uniformVariant.type', 'uniforms.uniformVariant.department']), $user)
         ->where('status', 'With Coordinator')->orderBy('request_date')->get()->map(fn ($r) => $this->formatWorkflowRequest($r)));
 }
 
@@ -866,7 +912,7 @@ public function directQueue()
     if (strtolower((string) $user->role) !== 'department_head') {
         return response()->json(['message' => 'Only the Dean/Academic Coordinator can review these requests.'], 403);
     }
-    return response()->json(Request::with(['user', 'items.item', 'uniforms.uniformVariant.type', 'uniforms.uniformVariant.department'])
+    return response()->json($this->scopeToHead(Request::with(['user', 'items.item', 'uniforms.uniformVariant.type', 'uniforms.uniformVariant.department']), $user)
         ->whereNotNull('direct_to_amo_reason')->orderByDesc('request_date')->limit(100)->get()
         ->map(fn ($r) => array_merge($this->formatWorkflowRequest($r), [
             'directReason' => $r->direct_to_amo_reason,
@@ -949,6 +995,9 @@ public function coordinatorReview(HttpRequest $httpRequest, $id)
     if (!$r || !$r->direct_to_amo_reason) {
         return response()->json(['message' => 'This request was not sent directly to the AMO.'], 404);
     }
+    if (!$this->headCanHandle($actor, $r->user)) {
+        return response()->json(['message' => 'This request is from another department. Only that department\'s head can review it.'], 403);
+    }
 
     $status = $validated['action'] === 'flag' ? 'Flagged' : 'Acknowledged';
     $r->update([
@@ -980,6 +1029,10 @@ public function forwardToInventory($id)
         $r = Request::where('idrequest', $id)->lockForUpdate()->first();
         if (!$r) return response()->json(['message' => 'Request not found.'], 404);
         if ($r->status !== 'With Coordinator') return response()->json(['message' => 'Only requests awaiting coordinator review can be forwarded.'], 422);
+        $r->loadMissing('user');
+        if (!$this->headCanHandle($actor, $r->user)) {
+            return response()->json(['message' => 'This request is from another department. Only that department\'s head can forward it.'], 403);
+        }
         $r->update(['status' => 'With Inventory', 'coordinator_forwarded_by' => $actor->idUsers, 'coordinator_forwarded_at' => now()]);
         $r->load('user');
         $this->createRequestNotification($r, (int) $r->idUsers, 'forwarded', 'Your request #' . $r->idrequest . ' was forwarded to Inventory Management.');

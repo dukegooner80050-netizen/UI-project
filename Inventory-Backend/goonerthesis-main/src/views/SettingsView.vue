@@ -19,7 +19,7 @@ import {
   approveAccountRequest,
   declineAccountRequest,
 } from "../services/accountRequests";
-import { getUsers, updateUser, deleteUser, resetUserPassword, setUserDepartment, setUserStatus } from "../services/users";
+import { getUsers, updateUser, deleteUser, resetUserPassword, setUserDepartment, setUserStatus, setUserUsername } from "../services/users";
 import { getDepartments } from "../services/departments";
 import ChangePasswordForm from "../components/ChangePasswordForm.vue";
 import { getErrorMessage } from "../services/errors";
@@ -338,6 +338,14 @@ async function arRunConfirmed() {
 
 const amLoading = ref(true);
 const amUsers = ref([]);
+// Instructors / department heads with no department: their requests can't be
+// routed to one department's head, so the AMO is reminded to set it.
+const amNoDept = computed(() =>
+  amUsers.value.filter(
+    (u) => ["instructor", "department_head"].includes(String(u.role || "").toLowerCase())
+      && u.status !== "inactive" && u.status !== "pending" && !u.iddept,
+  ),
+);
 const deptList = ref([]);
 const amDeptChoice = reactive({}); // { [idUsers]: iddept | "" }
 async function saveDept(user) {
@@ -415,6 +423,57 @@ function amOpenRoleChange(user) {
   amConfirmAction.value = "role";
   amConfirmTarget.value = user;
   amConfirmOpen.value = true;
+}
+
+const unOpen = ref(false);
+const unTarget = ref(null);
+const unValue = ref("");
+const unError = ref("");
+const unWorking = ref(false);
+
+function openUsernameChange(user) {
+  unTarget.value = user;
+  unValue.value = user.username || "";
+  unError.value = "";
+  unOpen.value = true;
+}
+
+function closeUsernameChange() {
+  if (unWorking.value) return;
+  unOpen.value = false;
+  unTarget.value = null;
+}
+
+async function saveUsernameChange() {
+  if (unWorking.value || !unTarget.value) return;
+  const next = unValue.value.trim();
+  if (next.length < 3) {
+    unError.value = "Username must be at least 3 characters.";
+    return;
+  }
+  if (!/^[A-Za-z0-9._-]+$/.test(next)) {
+    unError.value = "Use only letters, numbers, dots, dashes and underscores (no spaces).";
+    return;
+  }
+  unWorking.value = true;
+  unError.value = "";
+  try {
+    const user = unTarget.value;
+    await setUserUsername(user.idUsers, next);
+    notify(
+      "success",
+      isSelf(user)
+        ? `Your username is now "${next}". Use it the next time you sign in.`
+        : `${user.full_name}'s username is now "${next}". They were signed out and must sign in with it.`,
+    );
+    unWorking.value = false;
+    unOpen.value = false;
+    unTarget.value = null;
+    await loadUsers();
+  } catch (e) {
+    unWorking.value = false;
+    unError.value = getErrorMessage(e);
+  }
 }
 
 function amOpenToggle(user) {
@@ -890,6 +949,11 @@ onMounted(async () => {
 
       <div v-else class="card shadow-sm">
         <div class="card-body">
+          <div v-if="amNoDept.length" class="alert alert-warning py-2 small">
+            {{ amNoDept.length }} instructor / department head account(s) have no department
+            ({{ amNoDept.map((u) => u.full_name).join(", ") }}). Their requests go to every
+            department head until a department is set.
+          </div>
           <div class="table-responsive">
             <table class="table table-striped table-hover align-middle mb-0">
               <thead class="table-light">
@@ -962,6 +1026,13 @@ onMounted(async () => {
                         @click="amOpenRoleChange(u)"
                       >
                         Save Role
+                      </button>
+                      <button
+                        class="btn btn-sm btn-outline-secondary"
+                        title="Change this account's login username"
+                        @click="openUsernameChange(u)"
+                      >
+                        Change Username
                       </button>
                       <button
                         class="btn btn-sm btn-outline-secondary"
@@ -1240,6 +1311,41 @@ onMounted(async () => {
                         ? "Reactivate"
                         : "Remove"
             }}
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <div v-if="unOpen" class="modal-backdrop-custom">
+      <div class="modal-custom">
+        <div class="modal-header">
+          <h5 class="modal-title">Change Username</h5>
+        </div>
+        <div class="modal-body">
+          <p class="mb-2">
+            Account: <strong>{{ unTarget?.full_name }}</strong>
+          </p>
+          <label for="new-username" class="form-label">New username</label>
+          <input
+            id="new-username"
+            v-model="unValue"
+            type="text"
+            class="form-control"
+            maxlength="50"
+            autocomplete="off"
+            :disabled="unWorking"
+            @keyup.enter="saveUsernameChange"
+          />
+          <div class="form-text">
+            Letters, numbers, dots, dashes and underscores. The person is signed out
+            and must use the new username to sign in.
+          </div>
+          <div v-if="unError" class="text-danger small mt-2">{{ unError }}</div>
+        </div>
+        <div class="modal-footer">
+          <button class="btn btn-outline-secondary" :disabled="unWorking" @click="closeUsernameChange">Cancel</button>
+          <button class="btn btn-primary" :disabled="unWorking" @click="saveUsernameChange">
+            {{ unWorking ? "Saving..." : "Save Username" }}
           </button>
         </div>
       </div>
