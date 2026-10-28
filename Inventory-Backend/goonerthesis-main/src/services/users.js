@@ -28,6 +28,12 @@ export async function setUserStatus(id, status) {
   return data;
 }
 
+// AMO: change an account's login username.
+export async function setUserUsername(id, username) {
+  const { data } = await axios.put(`/users/${id}/username`, { username });
+  return data;
+}
+
 export async function deleteUser(id) {
     return (await axios.delete(`/users/${id}`)).data;
 }

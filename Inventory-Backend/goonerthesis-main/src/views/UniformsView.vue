@@ -765,7 +765,7 @@ const visibleTypes = computed(() => {
       </div>
 
       <div class="d-flex gap-2 flex-wrap">
-        <button class="btn btn-outline-primary" @click="courseModalOpen = true">
+        <button class="btn btn-primary text-white" @click="courseModalOpen = true">
           Manage Courses
         </button>
       </div>
@@ -929,9 +929,9 @@ const visibleTypes = computed(() => {
                   <strong>{{ d.dept_name }}</strong>
                   <span class="badge bg-secondary ms-2">{{ d.uniform_variants_count || 0 }} variant(s)</span>
                 </div>
-                <button class="btn btn-sm btn-outline-secondary" @click="startRename(d)">Rename</button>
+                <button class="btn btn-sm btn-secondary text-white" @click="startRename(d)">Rename</button>
                 <button
-                  class="btn btn-sm btn-outline-danger"
+                  class="btn btn-sm btn-danger text-white"
                   :disabled="courseBusy || d.uniform_variants_count > 0"
                   :title="d.uniform_variants_count > 0 ? 'Remove its uniform variants first' : 'Remove this course'"
                   @click="deleteCourseTarget = d"

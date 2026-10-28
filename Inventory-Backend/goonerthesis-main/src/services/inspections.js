@@ -12,6 +12,4 @@ export async function evaluateInspection(id, { fitForUse, needMaintenance, dispo
     })).data;
 }
 
-export async function returnToService(itemId, quantity) {
-    return (await axios.put(`/items/${itemId}/return-to-service`, { quantity })).data;
-}
+

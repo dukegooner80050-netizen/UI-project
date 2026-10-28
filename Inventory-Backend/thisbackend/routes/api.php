@@ -22,6 +22,7 @@ use App\Http\Controllers\RestockRequestController;
 use App\Http\Controllers\EquipmentReportController;
 use App\Http\Controllers\InspectionController;
 use App\Http\Controllers\DisposalController;
+use App\Http\Controllers\MaintenanceController;
 use App\Http\Controllers\AccountRequestController;
 use App\Http\Middleware\AdminSessionTimeoutMiddleware;
 
@@ -257,6 +258,8 @@ Route::middleware('role:amo,department_head,admin,instructor,cashier')->group(fu
 
         Route::put('/items/{id}/restock', [ItemController::class, 'restock']);
         Route::post('/items/{id}/adjust-stock', [ItemController::class, 'adjustStock']);
+        Route::get('/missing-stock', [ItemController::class, 'missingStock']);
+        Route::put('/missing-stock/{id}/found', [ItemController::class, 'markStockFound']);
 
         // Disposal step + permanent disposal records (AMO only)
         Route::post('/items/{id}/dispose', [DisposalController::class, 'dispose']);
@@ -332,7 +335,8 @@ Route::middleware('role:amo,department_head,admin,instructor,cashier')->group(fu
         Route::get('/nav-counts', [\App\Http\Controllers\NavCountController::class, 'index']);
         Route::get('/inspections', [InspectionController::class, 'index']);
         Route::put('/inspections/{id}', [InspectionController::class, 'inspect']);
-        Route::put('/items/{itemId}/return-to-service', [InspectionController::class, 'returnToService']);
+        Route::get('/maintenance-records', [MaintenanceController::class, 'index']);
+        Route::put('/maintenance-records/{id}/resolve', [MaintenanceController::class, 'resolve']);
 
 
         /*

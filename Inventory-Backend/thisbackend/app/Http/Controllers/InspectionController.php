@@ -4,6 +4,8 @@ namespace App\Http\Controllers;
 
 use App\Models\PendingInspection;
 use App\Models\EquipmentReport;
+use App\Models\MaintenanceRecord;
+use App\Models\Room;
 use App\Models\Item;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -97,6 +99,7 @@ class InspectionController extends Controller
 
             if ($validated['need_maintenance'] > 0) {
                 $item->maintenance_quantity += $validated['need_maintenance'];
+                $this->recordMaintenance($inspection, $item, $validated['need_maintenance']);
             }
 
             if ($validated['disposal'] > 0) {
@@ -137,44 +140,63 @@ class InspectionController extends Controller
         });
     }
 
-    // Move quantity that was under maintenance back into available stock
-    // once it's been fixed.
-    public function returnToService(Request $request, $itemId)
+    // Roadmap: maintenance records. Each batch sent for repair keeps the
+    // problem that was reported and the room it came from, so repaired units
+    // can go back there later (see MaintenanceController).
+    private function recordMaintenance(PendingInspection $inspection, Item $item, int $quantity): void
     {
-        $item = Item::find($itemId);
+        $report = EquipmentReport::where('idinspection', $inspection->idinspection)->first();
+        $fromRoom = $inspection->idrequestItem === null;
 
-        if (!$item) {
-            return response()->json([
-                'message' => 'Item not found.'
-            ], 404);
+        $building = $report->building_name ?? ($fromRoom ? $inspection->source_building : null);
+        $roomName = $report->room_name ?? ($fromRoom ? $inspection->source_room : null);
+
+        // Which room do repaired units go back to? Prefer the report's room;
+        // otherwise match by building + room name, only when it's unambiguous.
+        $idroom = null;
+
+        if ($report && $report->idroom && Room::find($report->idroom)) {
+            $idroom = $report->idroom;
+        } elseif ($fromRoom && $roomName) {
+            $rooms = Room::where('room_name', $roomName)
+                ->when($building, fn ($q) => $q->whereHas(
+                    'building',
+                    fn ($b) => $b->where('building_name', $building)
+                ))
+                ->get();
+
+            if ($rooms->count() === 1) {
+                $idroom = $rooms->first()->idroom;
+            }
         }
 
-        $validated = $request->validate([
-            'quantity' => 'required|integer|min:1',
+        if ($fromRoom && $roomName) {
+            $origin = trim(($building ? $building . ' / ' : '') . $roomName);
+            $source = 'Room';
+        } else {
+            $requestId = optional($inspection->requestItem)->idrequest;
+            $origin = $requestId ? "Returned from request #{$requestId}" : 'Returned item';
+            $source = 'Request';
+        }
+
+        $user = request()->user();
+
+        MaintenanceRecord::create([
+            'iditems' => $item->iditems,
+            'item_name' => $item->item_name,
+            'category' => $item->category,
+            'idinspection' => $inspection->idinspection,
+            'source' => $source,
+            'origin' => $origin,
+            'idroom' => $idroom,
+            'building_name' => $building,
+            'room_name' => $roomName,
+            'problem' => optional($report)->description,
+            'quantity' => $quantity,
+            'status' => 'In repair',
+            'sent_at' => now(),
+            'sent_by_name' => $user->full_name ?? $user->username,
         ]);
-
-        if ($validated['quantity'] > $item->maintenance_quantity) {
-            return response()->json([
-                'message' => "Only {$item->maintenance_quantity} unit(s) of '{$item->item_name}' are currently under maintenance."
-            ], 400);
-        }
-
-        return DB::transaction(function () use ($validated, $item) {
-            $item->maintenance_quantity -= $validated['quantity'];
-            $item->quantity += $validated['quantity'];
-            $item->refreshStatus();
-            $item->save();
-
-            $this->logActivity(
-                request()->user()->idUsers,
-                "Returned {$validated['quantity']} '{$item->item_name}' to service from maintenance"
-            );
-
-            return response()->json([
-                'message' => 'Item returned to service successfully.',
-                'item' => $item,
-            ]);
-        });
     }
 
 }

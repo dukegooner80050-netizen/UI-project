@@ -2,7 +2,8 @@
 import { ref, computed, onMounted } from "vue";
 import { getItems } from "../services/items";
 import { getRequests } from "../services/requests";
-import { returnToService } from "../services/inspections";
+import MaintenancePanel from "../components/MaintenancePanel.vue";
+import MissingStockPanel from "../components/MissingStockPanel.vue";
 import { disposeItem, DISPOSAL_METHODS } from "../services/disposals";
 import AlertMessage from "../components/AlertMessage.vue";
 import StockBadge from "../components/StockBadge.vue";
@@ -38,24 +39,18 @@ const damagedItems = computed(() =>
   items.value.filter((item) => Number(item.damaged_quantity) > 0),
 );
 
-// Items marked "Need Maintenance" during inspection. Unlike Disposal,
-// these can be moved back into available stock later via "Return to
-// Service" once repaired.
+// Items marked "Need Maintenance" during inspection. The Maintenance view is
+// its own component (MaintenancePanel) with a record per batch sent for repair.
 const isMaintenanceView = computed(
   () => !isLocationView.value && statusFilter.value === "Maintenance",
 );
-
-const maintenanceItems = computed(() =>
-  items.value.filter((item) => Number(item.maintenance_quantity) > 0),
+const isMissingView = computed(
+  () => !isLocationView.value && statusFilter.value === "Missing",
 );
-
-const returnQtyInputs = ref({}); // { [itemId]: quantity }
 
 const showAlert = ref(false);
 const alertType = ref("success");
 const alertMessage = ref("");
-
-const confirmModalOpen = ref(false);
 
 // Disposal step: formally dispose of units flagged for disposal at inspection.
 // Each disposal is saved as a permanent record (see Disposal Records).
@@ -127,9 +122,6 @@ async function confirmDispose() {
     disposing.value = false;
   }
 }
-const pendingReturnItem = ref(null);
-const pendingReturnQty = ref(0);
-
 function notify(type, message) {
   alertType.value = type;
   alertMessage.value = message;
@@ -138,43 +130,6 @@ function notify(type, message) {
 
 function errMsg(e) {
   return e?.response?.data?.message || e?.message || "Something went wrong.";
-}
-
-async function handleReturnToService(item) {
-  const qty = Number(returnQtyInputs.value[item.id]) || 0;
-  if (qty < 1) {
-    notify("warning", "Enter a quantity of at least 1.");
-    return;
-  }
-  if (qty > Number(item.maintenance_quantity)) {
-    notify("warning", `Only ${item.maintenance_quantity} unit(s) are currently under maintenance.`);
-    return;
-  }
-  pendingReturnItem.value = item;
-  pendingReturnQty.value = qty;
-  confirmModalOpen.value = true;
-}
-
-function closeConfirm() {
-  confirmModalOpen.value = false;
-  pendingReturnItem.value = null;
-  pendingReturnQty.value = 0;
-}
-
-async function confirmReturnToService() {
-  const item = pendingReturnItem.value;
-  const qty = pendingReturnQty.value;
-  closeConfirm();
-
-  if (!item || qty < 1) return;
-
-  try {
-    await returnToService(item.id, qty);
-    returnQtyInputs.value[item.id] = "";
-    await loadData();
-  } catch (e) {
-    notify("danger", errMsg(e));
-  }
 }
 
 async function loadData() {
@@ -339,19 +294,6 @@ const filteredDamagedItems = computed(() => {
   const keyword = search.value.trim().toLowerCase();
 
   return damagedItems.value.filter((item) => {
-    const name = String(item.name || "").toLowerCase();
-    const category = String(item.category || "").toLowerCase();
-    return !keyword || name.includes(keyword) || category.includes(keyword);
-  });
-});
-
-
-// FILTERED MAINTENANCE ITEMS
-
-const filteredMaintenanceItems = computed(() => {
-  const keyword = search.value.trim().toLowerCase();
-
-  return maintenanceItems.value.filter((item) => {
     const name = String(item.name || "").toLowerCase();
     const category = String(item.category || "").toLowerCase();
     return !keyword || name.includes(keyword) || category.includes(keyword);
@@ -574,6 +516,9 @@ function formatDate(date) {
           <option value="Maintenance">
             Maintenance
           </option>
+          <option value="Missing">
+            Missing / Lost / Stolen
+          </option>
 
           <option value="Low Stock">
             Low Stock (Critical + Minimum)
@@ -614,7 +559,10 @@ function formatDate(date) {
         </RouterLink>
       </div>
 
-      <div class="card-body table-scroll">
+      <MaintenancePanel v-if="isMaintenanceView" :search="search" @changed="loadData" />
+      <MissingStockPanel v-if="isMissingView" :search="search" @changed="loadData" />
+
+      <div v-if="!isMaintenanceView && !isMissingView" class="card-body table-scroll">
 
         <table class="table table-hover align-middle">
 
@@ -634,7 +582,8 @@ function formatDate(date) {
               <template v-if="
                 !isLocationView &&
                 !isDamagedView &&
-                !isMaintenanceView
+                !isMaintenanceView &&
+                !isMissingView
               ">
 
                 <th>
@@ -677,29 +626,6 @@ function formatDate(date) {
 
               </template>
 
-              <!-- MAINTENANCE ITEMS VIEW -->
-
-              <template v-if="isMaintenanceView">
-
-                <th>
-                  Category
-                </th>
-
-                <th>
-                  Under Maintenance
-                </th>
-
-                <th>
-                  Available Qty
-                </th>
-
-                <th style="width: 220px">
-                  Return to Service
-                </th>
-
-              </template>
-
-
               <!-- ITEM LOCATOR VIEW -->
               <template v-if="isLocationView">
                 <th>Category</th><th>Qty Out</th><th>Requester</th><th>Request #</th>
@@ -717,14 +643,13 @@ function formatDate(date) {
 
 
 
-            <!-- NORMAL INVENTORY -->
+            <!-- NORMAL INVENTORY -->              <template v-if="
+                !isLocationView &&
+                !isDamagedView &&
+                !isMaintenanceView &&
+                !isMissingView
+              ">
 
-
-            <template v-if="
-              !isLocationView &&
-              !isDamagedView &&
-              !isMaintenanceView
-            ">
 
               <tr v-for="item in filteredItems" :key="item.id">
 
@@ -811,62 +736,6 @@ function formatDate(date) {
 
             </template>
 
-            <!-- MAINTENANCE ITEMS VIEW -->
-
-            <template v-else-if="isMaintenanceView">
-
-              <tr v-for="item in filteredMaintenanceItems" :key="item.id">
-
-                <td>
-                  {{ item.name }}
-                </td>
-
-                <td>
-                  {{ item.category }}
-                </td>
-
-                <td>
-                  <span class="badge bg-warning text-dark">
-                    {{ item.maintenance_quantity }}
-                  </span>
-                </td>
-
-                <td>
-                  {{ item.qty }}
-                </td>
-
-                <td>
-                  <div class="d-flex gap-2">
-                    <input
-                      type="number"
-                      min="1"
-                      :max="item.maintenance_quantity"
-                      class="form-control form-control-sm"
-                      style="width: 80px"
-                      v-model="returnQtyInputs[item.id]"
-                      placeholder="Qty"
-                    />
-                    <button
-                      class="btn btn-sm btn-success"
-                      @click="handleReturnToService(item)"
-                    >
-                      Return to Service
-                    </button>
-                  </div>
-                </td>
-
-              </tr>
-
-              <tr v-if="filteredMaintenanceItems.length === 0">
-                <td colspan="5" class="text-center text-muted py-4">
-                  No items currently under maintenance.
-                </td>
-              </tr>
-
-            </template>
-
-
-
             <!-- ITEM LOCATOR VIEW -->
             <template v-else-if="isLocationView">
               <tr v-for="row in filteredBorrowedRows" :key="row.id">
@@ -896,44 +765,6 @@ function formatDate(date) {
     </div>
 
   </div>
-
-    <div v-if="confirmModalOpen" class="modal-backdrop-custom">
-      <div class="modal-custom">
-        <div class="modal-header">
-          <h5 class="mb-0">Confirm Return to Service</h5>
-          <button
-            type="button"
-            class="btn-close"
-            @click="closeConfirm"
-          ></button>
-        </div>
-
-        <div class="modal-body">
-          <p class="mb-0">
-            Return {{ pendingReturnQty }}x
-            "{{ pendingReturnItem?.name }}"
-            to available stock from maintenance?
-          </p>
-        </div>
-
-        <div class="modal-footer">
-          <button
-            type="button"
-            class="btn btn-secondary"
-            @click="closeConfirm"
-          >
-            Cancel
-          </button>
-          <button
-            type="button"
-            class="btn btn-success"
-            @click="confirmReturnToService"
-          >
-            Confirm
-          </button>
-        </div>
-      </div>
-    </div>
 
     <!-- DISPOSE -->
     <div v-if="disposeTarget" class="modal-backdrop-custom">

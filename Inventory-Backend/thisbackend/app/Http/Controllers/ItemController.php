@@ -274,6 +274,113 @@ $item->save();
     return response()->json($item);
 }
 
+// AMO: outstanding Missing / Lost / Stolen write-offs and recovered history.
+public function missingStock()
+{
+    $query = StockAdjustment::with([
+        'item:iditems,item_name,category',
+        'user:idUsers,full_name,username',
+    ])->whereIn('reason', ['Missing', 'Lost', 'Stolen']);
+
+    $open = (clone $query)
+        ->whereColumn('found_quantity', '<', 'quantity')
+        ->orderByDesc('created_at')
+        ->get();
+
+    $history = (clone $query)
+        ->whereColumn('found_quantity', '>=', 'quantity')
+        ->orderByDesc('found_at')
+        ->limit(500)
+        ->get();
+
+    return response()->json([
+        'open' => $open->map(fn ($record) => $this->formatMissingStock($record))->values(),
+        'history' => $history->map(fn ($record) => $this->formatMissingStock($record))->values(),
+        'missing_total' => (int) $open->sum(fn ($record) => max(0, (int) $record->quantity - (int) $record->found_quantity)),
+    ]);
+}
+
+// Record units that have turned up again; return them to available inventory.
+public function markStockFound(Request $request, $id)
+{
+    $validated = $request->validate([
+        'quantity' => 'required|integer|min:1',
+    ]);
+
+    $user = $request->user();
+    $userName = $user->full_name ?? $user->username;
+
+    return DB::transaction(function () use ($id, $validated, $user, $userName) {
+        $record = StockAdjustment::whereIn('reason', ['Missing', 'Lost', 'Stolen'])
+            ->lockForUpdate()
+            ->find($id);
+
+        if (!$record) {
+            return response()->json(['message' => 'Missing-stock record not found.'], 404);
+        }
+
+        $remaining = max(0, (int) $record->quantity - (int) $record->found_quantity);
+        $quantity = (int) $validated['quantity'];
+
+        if ($quantity > $remaining) {
+            return response()->json([
+                'message' => "Only {$remaining} unit(s) remain marked missing in this record.",
+            ], 422);
+        }
+
+        $item = Item::lockForUpdate()->find($record->iditems);
+
+        if (!$item) {
+            return response()->json(['message' => 'The inventory item no longer exists.'], 422);
+        }
+
+        $item->quantity += $quantity;
+        $item->refreshStatus();
+        $item->save();
+
+        $record->found_quantity = (int) $record->found_quantity + $quantity;
+        $record->found_at = now();
+        $record->found_by_name = $userName;
+        $record->save();
+
+        $itemName = $record->item?->item_name ?? $item->item_name;
+        $this->logActivity(
+            $user->idUsers,
+            "Marked {$quantity} of '{$itemName}' found from {$record->reason} stock report #{$record->idstockadj}"
+        );
+
+        return response()->json([
+            'message' => "{$quantity} unit(s) returned to available stock.",
+            'remaining' => max(0, (int) $record->quantity - (int) $record->found_quantity),
+        ]);
+    });
+}
+
+private function formatMissingStock(StockAdjustment $record): array
+{
+    $sentAt = $record->created_at;
+    $daysMissing = $sentAt
+        ? (int) $sentAt->copy()->startOfDay()->diffInDays(now()->startOfDay())
+        : null;
+
+    return [
+        'id' => $record->idstockadj,
+        'item_id' => $record->iditems,
+        'item_name' => $record->item?->item_name ?? 'Deleted item',
+        'category' => $record->item?->category,
+        'quantity' => (int) $record->quantity,
+        'found_quantity' => (int) $record->found_quantity,
+        'remaining' => max(0, (int) $record->quantity - (int) $record->found_quantity),
+        'reason' => $record->reason,
+        'notes' => $record->notes,
+        'reported_at' => optional($sentAt)->format('Y-m-d H:i:s'),
+        'reported_by' => $record->user?->full_name ?? $record->user?->username ?? 'Unknown user',
+        'days_missing' => $daysMissing,
+        'found_at' => optional($record->found_at)->format('Y-m-d H:i:s'),
+        'found_by' => $record->found_by_name,
+    ];
+}
+
 // Roadmap #11: write off stock that went missing / lost / stolen. Admin
 // only and applied immediately; every adjustment is stored in
 // stock_adjustments (status 'Applied', so an approval step can be added

@@ -21,6 +21,14 @@ class StockAdjustment extends Model
         'reason',
         'notes',
         'status',
+        'found_quantity',
+        'found_at',
+        'found_by_name',
+    ];
+
+    protected $casts = [
+        'created_at' => 'datetime',
+        'found_at' => 'datetime',
     ];
 
     public function item()
