@@ -548,7 +548,7 @@ function formatDate(date) {
       <div class="col">
 
         <input v-model="search" class="form-control"
-          placeholder="Search item name, category, borrower, or location..." />
+          placeholder="Search item name, category, or type..." />
 
       </div>
 

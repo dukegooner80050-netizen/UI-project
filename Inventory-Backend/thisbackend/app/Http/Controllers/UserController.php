@@ -129,6 +129,46 @@ public function resetPassword($id)
 
 // The AMO assigns an instructor / department head to a department, which
 // decides whose requests a department head sees in History.
+// Admin sets a new username for an account (PUT /users/{id}/username). The
+// route existed without this method, so calling it returned a server error.
+// Same rules as creating a user (required, unique), plus: no spaces.
+public function setUsername(Request $request, $id)
+{
+    $user = User::find($id);
+    if (!$user) {
+        return response()->json(['message' => 'User not found.'], 404);
+    }
+
+    $validated = $request->validate([
+        'username' => [
+            'required',
+            'string',
+            'max:255',
+            'regex:/^\S+$/',
+            'unique:users,username,' . $user->idUsers . ',idUsers',
+        ],
+    ], [
+        'username.regex' => 'The username cannot contain spaces.',
+    ]);
+
+    $old = $user->username;
+    $new = trim($validated['username']);
+
+    if ($old === $new) {
+        return response()->json(['message' => 'That is already this account\'s username.', 'username' => $old]);
+    }
+
+    $user->username = $new;
+    $user->save();
+
+    $this->logActivity(
+        $request->user()->idUsers,
+        "Changed username of {$user->full_name} from '{$old}' to '{$new}'"
+    );
+
+    return response()->json(['message' => 'Username updated.', 'username' => $user->username]);
+}
+
 public function setDepartment(Request $request, $id)
 {
     $user = User::find($id);

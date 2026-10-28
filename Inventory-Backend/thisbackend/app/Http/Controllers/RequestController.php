@@ -681,9 +681,25 @@ public function approve(HttpRequest $httpRequest, $id)
             // reservations only).
             $holds[$variantId] = [];
             $heldQty = 0;
-            foreach (\App\Models\UniformReservation::where('idUsers', $request->idUsers)
-                ->where('idUnifvariant', $variantId)->where('status', 'Ready')
-                ->orderBy('idreservation')->get() as $res) {
+
+            // A reservation is for one student: only that student's own
+            // "Ready" reservations may be used by this request, otherwise a
+            // request for student B could use the stock held (and paid for)
+            // for student A. Older rows with no student ID only match
+            // requests that have none either.
+            $studentNumber = trim((string) ($request->student_number ?? ''));
+            $readyHolds = \App\Models\UniformReservation::where('idUsers', $request->idUsers)
+                ->where('idUnifvariant', $variantId)->where('status', 'Ready');
+
+            if ($studentNumber !== '') {
+                $readyHolds->where('student_number', $studentNumber);
+            } else {
+                $readyHolds->where(function ($q) {
+                    $q->whereNull('student_number')->orWhere('student_number', '');
+                });
+            }
+
+            foreach ($readyHolds->orderBy('idreservation')->get() as $res) {
                 if ($heldQty + (int) $res->quantity > $requestedQty) break;
                 $holds[$variantId][] = $res;
                 $heldQty += (int) $res->quantity;
