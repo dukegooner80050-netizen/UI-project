@@ -19,8 +19,8 @@ class RestockRequestController extends Controller
     private const ACTIVE = ['Open', 'Ordered'];
 
     /**
-     * Items at or below their Minimum stock level, most critical first.
-     * Level: Critical (<= critical_stock) or Minimum (<= minimum_stock).
+     * lists items at or below Minimum stock for the Needs Restocking panel, most critical first.
+     * Critical = at or below critical_stock; Minimum = at or below minimum_stock.
      */
     public function lowStock()
     {
@@ -28,9 +28,7 @@ class RestockRequestController extends Controller
             ->whereColumn('quantity', '<=', 'minimum_stock')
             ->orderBy('quantity')
             ->get()
-            // School Equipment and Type B items with an empty shelf that are
-            // only out on loan or placed in rooms are not out of stock, so
-            // there is nothing to restock.
+            /* Items whose empty shelf is only on loan or in rooms aren't out of stock, so skip them. */
             ->reject(function ($item) {
                 $away = $item->awayUnits();
                 return $away !== null && ($away['borrowed'] > 0 || $away['deployed'] > 0);
@@ -118,9 +116,9 @@ class RestockRequestController extends Controller
     }
 
     /**
-     * Open -> Ordered | Received | Cancelled
-     * Ordered -> Received | Cancelled
-     * Receiving adds the stock to the item using the existing restock logic.
+     * moves a restock request through its statuses.
+     * Open -> Ordered | Received | Cancelled; Ordered -> Received | Cancelled. Receiving adds the
+     * stock to the item.
      */
     public function updateStatus(Request $request, $id)
     {

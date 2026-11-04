@@ -14,13 +14,10 @@ import { listAccountRequests } from "../services/accountRequests";
 import { startPolling, throttled } from "../services/poller";
 import DueBadge from "./DueBadge.vue";
 
-// One bell for everything that used to sit on the page as a banner or panel:
-//   - request updates (forwarded / approved / rejected)
-//   - the user's own overdue returns
-//   - Critical-stock items nobody has raised a restock request for (AMO only)
-// The badge counts what still needs attention. Clicking the bell opens the
-// list; it can be closed and opened again at any time. Once per login the
-// list opens by itself if there are unread request updates.
+/*
+ * Notification bell: request updates, your overdue returns and Critical stock (AMO); opens itself once per
+ * login if unread.
+ */
 
 const REFRESH_MS = 60000;
 
@@ -35,8 +32,7 @@ const overdue = ref([]);
 const critical = ref([]);
 const returnsToCheck = ref([]); // AMO: borrowers' return reports awaiting a check
 const signups = ref([]); // AMO: new accounts waiting for approval
-// Updates that were unread when the panel opened stay highlighted until it
-// closes, even though they are marked as read on the server straight away.
+/* Updates unread at open stay highlighted until the panel closes. */
 const highlighted = ref(new Set());
 
 let stopPolling = null;
@@ -212,9 +208,9 @@ function goRequests(l) {
   router.push({ path: "/request", query: open ? { tab: "mine", open } : { tab: "mine" } });
 }
 
-// Where a request update leads, by who it is for:
-//   AMO review / return report  -> the page that handles it
-//   everything else (decisions, released, reservation ready...) -> My Requests
+/*
+ * Where an update leads: AMO review and return reports go to their page; everything else goes to My Requests.
+ */
 function openNote(n) {
   const t = n.event_type;
   let to = "/request";
@@ -290,8 +286,7 @@ onBeforeUnmount(() => {
   window.removeEventListener("cims:accounts-changed", loadSignups);
 });
 
-// Things change while moving around (returns, new requests, stock).
-// Navigating refreshes, but not more than once every 15 s.
+/* Refresh when navigating, at most once every 15 s. */
 watch(() => route.fullPath, throttled(load, 15000));
 </script>
 

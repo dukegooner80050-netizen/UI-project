@@ -11,6 +11,7 @@ import { getStudentIdMaxLength } from "../services/settings";
 import { printBorrowerForm, hasBorrowedItems } from "../services/borrowerForm";
 import { fulfilmentState } from "../services/requestState";
 
+/*  STATE  */
 const showAlert = ref(false);
 const alertType = ref("success");
 const alertMessage = ref("");
@@ -21,19 +22,16 @@ function notify(type, message) {
   showAlert.value = true;
 }
 
+/*  STATE  */
 const requests = ref([]);
 const admin = getCurrentUser();
 const userFilter = ref("");
 const expandedId = ref(null);
 
-// Tabs: Approving a request no longer means it's released -- those are
-// two separate admin actions now, so they get two separate tabs instead
-// of living in the same undifferentiated list.
+/* Approval and release are separate actions, so they get separate tabs. */
 const activeTab = ref("pending"); // "pending" | "release" | "all"
 
-// On the All tab the Actions buttons are collapsed behind a small toggle
-// so the table stays compact. Keyed by request id; other tabs always show
-// their buttons.
+/* On the All tab, action buttons sit behind a toggle (keyed by request id); other tabs show them. */
 const actionsOpen = reactive({});
 function toggleActions(id) {
   actionsOpen[id] = !actionsOpen[id];
@@ -42,8 +40,10 @@ watch(activeTab, () => {
   for (const key of Object.keys(actionsOpen)) delete actionsOpen[key];
 });
 
-// Due dates the admin picks per borrowed line before approving
-// (roadmap #8). Keyed "requestId:requestItemId". Blank = item default.
+/*
+ * Due dates the admin picks per borrowed line before approving; keyed "requestId:requestItemId", blank =
+ * default.
+ */
 const dueDates = ref({});
 
 function dueKey(r, item) {
@@ -100,6 +100,7 @@ async function confirmCancel() {
   }
 }
 
+/*  STATE  */
 const rejectModal = ref(false);
 const rejectReason = ref("");
 const rejectTargetId = ref(null);
@@ -126,6 +127,7 @@ async function refresh() {
   window.dispatchEvent(new Event("cims:counts-changed"));
 }
 
+/*  COMPUTED  */
 const pendingRequests = computed(() =>
   requests.value.filter((r) => ["with inventory", "pending"].includes((r.status || "").toLowerCase())),
 );
@@ -196,6 +198,7 @@ function itemSummary(r) {
   return `${names[0]} +${names.length - 1} more`;
 }
 
+/*  ACTIONS  */
 function toggleExpand(id) {
   expandedId.value = expandedId.value === id ? null : id;
 }
@@ -280,9 +283,7 @@ async function executeConfirm() {
   confirmModal.value = false;
 }
 
-// RELEASE (roadmap #15 / #19) //
-// Once a request is Approved, Inventory records whether the requester
-// is picking the items up or having them delivered.
+/* Release (roadmap #15 / #19): after approval, record whether items are picked up or delivered. */
 
 const ROLE_NAMES = {
   amo: "AMO",
@@ -298,6 +299,8 @@ function roleLabel(role) {
 
 const releaseModal = ref(false);
 const releaseTarget = computed(() => requests.value.find((r) => r.id === releaseTargetId.value) || null);
+
+/*  STATE  */
 const releaseTargetId = ref(null);
 const releaseMethod = ref("For Pick Up");
 const releaseStudent = ref("");
@@ -309,13 +312,13 @@ watch(releaseStudentId, (v) => {
 });
 
 
-// Uniform requests are handed to a student at the AMO office: the AMO checks
-// the student's ID and records who collected it. Stock is deducted then.
+/* Uniforms are handed to the student at the AMO office; the AMO checks ID and records who collected. */
 const releaseIsUniform = computed(() => {
   const t = requests.value.find((r) => r.id === releaseTargetId.value);
   return !!t && (t.uniforms || []).length > 0;
 });
 
+/*  ACTIONS  */
 function openReleaseModal(id) {
   const target = requests.value.find((r) => r.id === id);
   releaseTargetId.value = id;

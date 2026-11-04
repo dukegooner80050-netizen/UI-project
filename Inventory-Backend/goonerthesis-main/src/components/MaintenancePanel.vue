@@ -3,10 +3,12 @@ import { ref, computed, onMounted } from "vue";
 import { getMaintenanceRecords, resolveMaintenance } from "../services/maintenance";
 import AlertMessage from "./AlertMessage.vue";
 
-// The Maintenance view of the Inventory page: every batch of units sent for
-// repair, with the reported problem and the room it came from. Repaired units
-// go back to that room; units that can't be repaired move to the disposal list.
+/*
+ * Maintenance view: each batch sent for repair; repaired units return to their room, unrepairable ones go to
+ * disposal.
+ */
 
+/*  STATE  */
 const props = defineProps({
   search: { type: String, default: "" },
 });
@@ -53,10 +55,12 @@ function matches(r, keyword) {
     .some((v) => String(v).toLowerCase().includes(keyword));
 }
 
+/*  COMPUTED  */
 const keyword = computed(() => props.search.trim().toLowerCase());
 const openRows = computed(() => open.value.filter((r) => matches(r, keyword.value)));
 const historyRows = computed(() => history.value.filter((r) => matches(r, keyword.value)));
 
+/*  HELPERS  */
 function formatDate(value) {
   if (!value) return "-";
   const d = new Date(String(value).replace(" ", "T"));
@@ -98,6 +102,7 @@ const notes = ref("");
 const formError = ref("");
 const saving = ref(false);
 
+/*  ACTIONS  */
 function openResolve(r, which) {
   target.value = r;
   outcome.value = which;

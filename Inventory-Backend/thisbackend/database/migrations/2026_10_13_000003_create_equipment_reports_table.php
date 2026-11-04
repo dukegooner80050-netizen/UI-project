@@ -8,13 +8,9 @@ use Illuminate\Support\Facades\Schema;
 return new class extends Migration
 {
     /**
-     * Roadmap #13: reports that school equipment (e.g. an aircon in a room)
-     * needs maintenance or disposal. Status flow:
-     *   Open -> Sent to Inspection   (admin: units leave the room and wait in
-     *                                 Pending Inspection)
-     *   Open -> Dismissed            (admin: no action needed, reason stored)
-     * Building / room names are copied in as text so a report still reads
-     * correctly if the room is later renamed or deleted.
+     * creates reports that school equipment needs maintenance or disposal.
+     * Open -> Sent to Inspection (units leave the room) or Dismissed (reason stored). Building and
+     * room names are copied as text so a report stays readable if the room changes.
      */
     public function up(): void
     {
@@ -22,8 +18,7 @@ return new class extends Migration
             return;
         }
 
-        // The foreign key column must match items.iditems exactly
-        // (signed int(11) in some databases, unsigned in others).
+        /* FK column must match items.iditems exactly (signed or unsigned varies by database). */
         $unsigned = true;
         if (DB::getDriverName() === 'mysql') {
             $col = DB::selectOne(

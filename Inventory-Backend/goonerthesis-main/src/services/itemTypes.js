@@ -1,8 +1,4 @@
-// Office Supplies item types.
-//   Consumable            - used up, never returned
-//   Non-Consumable Type A - issued: handed over for good, never returned
-//   Non-Consumable Type B - tracked: lent out, must be returned
-// Any other item_type (e.g. School Equipment's "Equipment") is tracked.
+/* Office Supplies types: Consumable = used up; Type A = issued, never returned; Type B = must be returned. */
 export const TYPE_CONSUMABLE = "Consumable";
 export const TYPE_A = "Non-Consumable Type A";
 export const TYPE_B = "Non-Consumable Type B";

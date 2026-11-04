@@ -1,4 +1,5 @@
 <script setup>
+/*  STATE  */
 const modalOpen = ref(false);
 const modalMode = ref("");
 const modalQty = ref(1);
@@ -34,6 +35,7 @@ function notify(type, message) {
   showAlert.value = true;
 }
 
+/*  STATE  */
 const modalError = ref("");
 const addError = ref("");
 
@@ -65,9 +67,7 @@ function returnDaysProblem(value) {
   return "";
 }
 
-// Per-head limit (roadmap #9): max of this item one requester may hold
-// at once, counting what they already have pending/approved. Blank = no
-// limit.
+/* Per-head limit: most of this item one requester may hold at once (pending + approved); blank = none. */
 const addPerHeadLimit = ref("");
 const editPerHeadLimit = ref("");
 
@@ -114,6 +114,7 @@ function applyAddLevels() {
 }
 watch(addSubCategory, applyAddLevels);
 
+/*  ACTIONS  */
 function openAdd() {
   addSubCategory.value = TYPE_CONSUMABLE;
   addReturnDays.value = "";
@@ -253,10 +254,7 @@ async function refresh() {
   });
   items.value = officeInventory;
 
-  // The Borrower Details panel holds a snapshot of the selected item.
-  // refresh() rebuilds brand-new item objects every time (e.g. right
-  // after a partial return), so without this the panel would keep
-  // showing the old borrowedQty/requestItems instead of the new ones.
+  /* Keeps the Borrower Details panel in sync after refresh() rebuilds the items. */
   if (selectedSupply.value) {
     const updated = officeInventory.find(
       (i) => i.iditems === selectedSupply.value.iditems,
@@ -293,6 +291,7 @@ const typeBItems = computed(() =>
 const LEVELS = ["Out of Stock", "Borrowed", "Critical", "Minimum", "Adequate", "Optimal"];
 const LEVEL_ORDER = Object.fromEntries(LEVELS.map((l, n) => [l, n]));
 
+/*  STATE  */
 const search = ref("");
 const typeFilter = ref("ALL");
 const levelFilter = ref("ALL");

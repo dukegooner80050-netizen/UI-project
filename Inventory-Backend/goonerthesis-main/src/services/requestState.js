@@ -1,7 +1,4 @@
-// What an approved request is waiting for, shown as a small badge next to its
-// status. Returns null when there is nothing extra to say.
-//   uniforms: Paid · ready for pickup (paid at the cashier before the request)
-//   items:    Reserved · awaiting release  (stock is held, not yet deducted)
+/* Badge text for what an approved request is waiting on (null if nothing). */
 export function fulfilmentState(r) {
   if (!r || String(r.status || "").toLowerCase() !== "approved" || r.releasedAt) {
     return null;

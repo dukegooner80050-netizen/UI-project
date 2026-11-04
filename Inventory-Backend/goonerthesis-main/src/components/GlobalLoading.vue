@@ -2,9 +2,8 @@
 import { ref, watch, onBeforeUnmount } from "vue";
 import { isLoading } from "../services/loading";
 
-// The top bar shows immediately. Pages like the Dashboard, Inventory and
-// Pending Requests have no placeholder of their own, so a small "Loading..."
-// pill appears too, but only when a load is slow enough to be noticed.
+/*  CONSTANTS  */
+/* The top bar shows at once; a "Loading..." pill appears only when a load is slow. */
 const SHOW_BADGE_AFTER_MS = 600;
 
 const showBadge = ref(false);

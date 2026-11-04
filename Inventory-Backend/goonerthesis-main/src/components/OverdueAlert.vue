@@ -6,13 +6,9 @@ import { getCurrentUser } from "../services/storage";
 import DueBadge from "./DueBadge.vue";
 import { startPolling, throttled } from "../services/poller";
 
-// Roadmap #8: tells whoever borrowed something that it is overdue.
-//  - A red banner on every page while anything of theirs is overdue.
-//  - A pop-up the first time it is noticed in a login session (and again if a
-//    new item becomes overdue), so it cannot be missed.
-// It only ever shows the signed-in user's own items. What the admin sees
-// about everybody is the Overdue Returns card on the dashboard.
+/* Red banner (plus a pop-up for newly overdue items) for the signed-in user's own overdue items. */
 
+/*  CONSTANTS  */
 const REFRESH_MS = 300000; // looks again every 5 minutes (the bell checks every minute)
 
 const route = useRoute();
@@ -24,6 +20,7 @@ function goToRequest(l) {
   router.push({ path: "/request", query: { tab: "mine", open: l.requestId } });
 }
 
+/*  STATE  */
 const lines = ref([]);
 const expanded = ref(false);
 const noticeOpen = ref(false);
@@ -31,6 +28,7 @@ const noticeOpen = ref(false);
 const bannerDismissed = ref(readBannerDismissed());
 let stopPolling = null;
 
+/*  HELPERS  */
 function seenKey() {
   return `overdueNoticeSeen:${getCurrentUser()?.idUsers ?? "anon"}`;
 }
@@ -108,6 +106,7 @@ function place(line) {
   return [line.location, line.room].filter(Boolean).join(" / ");
 }
 
+/*  LIFECYCLE  */
 onMounted(() => {
   load();
   stopPolling = startPolling(load, REFRESH_MS);

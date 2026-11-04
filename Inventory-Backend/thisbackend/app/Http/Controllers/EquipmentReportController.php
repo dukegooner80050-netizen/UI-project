@@ -9,9 +9,7 @@ use App\Traits\ActivityLogger;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 
-// Roadmap #13: anyone can report that equipment in a room needs maintenance
-// or disposal. The admin then either sends the units to Pending Inspection
-// (the existing evaluation flow) or dismisses the report with a reason.
+/* Reports of equipment needing maintenance or disposal; the AMO sends them to inspection or dismisses them. */
 class EquipmentReportController extends Controller
 {
     use ActivityLogger;
@@ -23,10 +21,10 @@ class EquipmentReportController extends Controller
         return $type === 'Disposal' ? 'For Disposal' : 'Needs Maintenance';
     }
 
-    /**
-     * Rooms that have equipment, for the report form. Includes how many units
-     * of each can still be reported (assigned minus units already in an open
-     * report), so nobody can report more than the room holds.
+    /*
+     * feeds the Report Equipment form with rooms that have equipment.
+     * Each shows how many units can still be reported (assigned minus units already in an open
+     * report).
      */
     public function locations()
     {
@@ -186,8 +184,7 @@ class EquipmentReportController extends Controller
         });
     }
 
-    // Admin: take the reported units out of the room and queue them in
-    // Pending Inspection, the same as returning equipment from a room.
+    /* AMO: takes the reported units out of the room and queues them for inspection. */
     public function sendToInspection(Request $request, $id)
     {
         $userId = $request->user()->idUsers;

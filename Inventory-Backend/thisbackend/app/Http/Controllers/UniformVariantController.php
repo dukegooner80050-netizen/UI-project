@@ -34,7 +34,7 @@ class UniformVariantController extends Controller
     public function store(Request $request)
     {
         $validated = $request->validate([
-            'idUniftype' => 'required|exists:uniformType,idUniftype',
+            'idUniftype' => 'required|exists:uniformtype,idUniftype',
             'iddept'     => 'required|exists:dept,iddept',
             'size'       => 'required|string|max:50',
             'gender'     => 'required|in:Male,Female,Unisex',
@@ -68,7 +68,7 @@ class UniformVariantController extends Controller
         }
 
         $validated = $request->validate([
-            'idUniftype' => 'required|exists:uniformType,idUniftype',
+            'idUniftype' => 'required|exists:uniformtype,idUniftype',
             'iddept'     => 'required|exists:dept,iddept',
             'size'       => 'required|string|max:50',
             'gender'     => 'required|in:Male,Female,Unisex',
@@ -146,10 +146,10 @@ class UniformVariantController extends Controller
         $variant->quantity += $validated['quantity'];
         $variant->save();
 
-        // Fulfil the oldest waiting reservations that the new stock covers.
-        // The student already paid, so each one becomes an Approved request
-        // for the AMO right away (stock held), ready for pickup. The cashier
-        // is notified through the bell.
+        /*
+         * New stock fulfils the oldest waiting reservations: each becomes an Approved request and the cashier
+         * is notified.
+         */
         $available = max(0, (int) $variant->quantity - (int) ($variant->reserved_quantity ?? 0));
         $waiting = \App\Models\UniformReservation::where('idUnifvariant', $variant->idUnifvariant)
             ->where('status', 'Waiting')

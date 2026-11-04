@@ -22,8 +22,7 @@ class ItemController extends Controller
         ->groupBy('iditems')
         ->pluck('total', 'iditems');
 
-    // Units out on approved requests, per item, in ONE grouped query. This used
-    // to run two queries for every single item on every page that lists items.
+    /* Units out on approved requests per item, in one grouped query. */
     $borrowed = DB::table('requestitem')
         ->join('request', 'request.idrequest', '=', 'requestitem.idrequest')
         ->where('request.status', 'Approved')
@@ -71,8 +70,7 @@ class ItemController extends Controller
             'optimal_stock'  => 'nullable|integer|min:0',
             'return_days'    => 'nullable|integer|min:1|max:3650',
             'per_head_limit' => 'nullable|integer|min:1',
-            // Roadmap #10: fixed assets (a room's one projector, an aircon)
-            // opt out of having a per-head limit at all. Defaults to true.
+            /* Fixed assets (e.g. a projector) can opt out of per-head limits. Default: true. */
             'is_limitable'   => 'sometimes|boolean',
         ]);
 
@@ -87,8 +85,7 @@ class ItemController extends Controller
         }
 
         $validated['price'] = $validated['price'] ?? 0;
-        // Levels left blank fall back to the Settings defaults for this kind of
-        // item (School Equipment / Type B), else the built-in 2 / 5 / 20.
+        /* Blank stock levels use the Settings defaults, else the built-in 2 / 5 / 20. */
         $group = \App\Http\Controllers\SettingController::stockGroupFor($validated['category'], $validated['item_type']);
         $defaults = $group
             ? \App\Http\Controllers\SettingController::stockLevelsFor($group)
@@ -125,8 +122,7 @@ class ItemController extends Controller
             ], 404);
         }
 
-        // 'status' is no longer accepted from the client: it is always
-        // recomputed from quantity, item type and the stock thresholds.
+        /* Status is never taken from the client; it is recomputed from quantity and thresholds. */
         $validated = $request->validate([
             'item_name' => 'required|string|max:255|unique:items,item_name,' . $id . ',iditems',
             'description' => 'nullable|string|max:255',
@@ -137,12 +133,9 @@ class ItemController extends Controller
             'critical_stock' => 'nullable|integer|min:0',
             'minimum_stock'  => 'nullable|integer|min:0',
             'optimal_stock'  => 'nullable|integer|min:0',
-            // Sent as null to clear the item's own period (falls back to the
-            // category default); left out entirely to keep it unchanged.
+            /* null clears the item's own return period (category default applies); omitted keeps it. */
             'return_days'    => 'nullable|integer|min:1|max:3650',
-            // Sent as null to clear the limit (no cap); left out entirely to
-            // keep it unchanged. Unlike the thresholds below, a null here is
-            // meaningful on purpose, so it's not folded back to the old value.
+            /* null clears the limit (no cap); omitted keeps it. */
             'per_head_limit' => 'nullable|integer|min:1',
             // Roadmap #10: not sent keeps the item's current value.
             'is_limitable'   => 'sometimes|boolean',
@@ -179,8 +172,7 @@ class ItemController extends Controller
             $wasReturnable = $item->isReturnable();
             $willBeReturnable = !in_array($validated['item_type'], Item::nonReturnableTypes(), true);
 
-            // Becoming tracked: every past issuance would suddenly look like
-            // an unreturned loan, so only allow it for items never requested.
+            /* Only never-requested items can become tracked; past issuances would look unreturned. */
             if (
                 $willBeReturnable && !$wasReturnable &&
                 RequestItem::where('iditems', $item->iditems)->exists()
@@ -381,10 +373,7 @@ private function formatMissingStock(StockAdjustment $record): array
     ];
 }
 
-// Roadmap #11: write off stock that went missing / lost / stolen. Admin
-// only and applied immediately; every adjustment is stored in
-// stock_adjustments (status 'Applied', so an approval step can be added
-// later) and written to the Activity Logs.
+/* AMO writes off missing, lost or stolen stock; saved in stock_adjustments and the logs. */
 public function adjustStock(Request $request, $id)
 {
     $validated = $request->validate([
@@ -507,8 +496,7 @@ $item->save();
 
 private function getBorrowedQuantity($itemId, ?Item $item = null)
 {
-    // Issued items (Consumable / Type A) are never returned, so they are
-    // never "borrowed".
+    /* Issued items (Consumable / Type A) are never borrowed. */
     $item = $item ?? Item::find($itemId);
     if ($item && !$item->isReturnable()) {
         return 0;
@@ -538,9 +526,7 @@ private function itemTypeError($category, $type)
     return null;
 }
 
-// Roadmap #10: a fixed-asset item (is_limitable = false) can't carry a
-// per-head limit at all. $item is passed on update() so an unsent
-// per_head_limit still falls back to whatever the item currently has.
+/* Fixed assets can't have a per-head limit; an unsent value keeps the item's current one. */
 private function perHeadLimitError(array $data, ?Item $item = null)
 {
     if (!empty($data['is_limitable'])) {

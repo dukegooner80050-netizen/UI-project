@@ -13,6 +13,7 @@ protected $primaryKey = 'idUniftype';
 protected $fillable = [
     'uniform_name',
     'description',
+    'iddept',
 ];
 
 public $timestamps = false;
@@ -20,6 +21,12 @@ public $timestamps = false;
 public function variants()
 {
     return $this->hasMany(UniformVariant::class, 'idUniftype', 'idUniftype');
+}
+
+/* The course that owns this type; null means every course can use it. */
+public function department()
+{
+    return $this->belongsTo(Department::class, 'iddept', 'iddept');
 }
 }
 

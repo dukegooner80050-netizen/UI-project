@@ -8,9 +8,8 @@ use Illuminate\Support\Facades\Schema;
 return new class extends Migration
 {
     /**
-     * Restock requests raised when an item reaches Critical / Minimum stock.
-     * Status flow: Open -> Ordered -> Received  (or Cancelled).
-     * Receiving a request adds the stock to the item.
+     * creates restock requests, raised when an item reaches Critical / Minimum stock.
+     * Status: Open -> Ordered -> Received (or Cancelled); receiving adds the stock.
      */
     public function up(): void
     {
@@ -19,8 +18,7 @@ return new class extends Migration
             return;
         }
 
-        // The foreign key column must match items.iditems exactly
-        // (signed int(11) in some databases, unsigned in others).
+        /* FK column must match items.iditems exactly (signed or unsigned varies by database). */
         $unsigned = true;
         if (DB::getDriverName() === 'mysql') {
             $col = DB::selectOne(

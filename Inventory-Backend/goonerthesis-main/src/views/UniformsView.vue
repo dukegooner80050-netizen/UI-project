@@ -187,6 +187,16 @@ function statusClass(quantity) {
 const typeModalOpen = ref(false);
 const typeName = ref("");
 const typeDescription = ref("");
+// The course that will own the new type; "" means every course shares it.
+const typeDepartmentId = ref("");
+
+const typeCourseName = computed(() => {
+  const department = departments.value.find(
+    (d) => String(d.iddept) === String(typeDepartmentId.value),
+  );
+
+  return department ? department.dept_name : "All courses (shared)";
+});
 
 /* CONFIMATION */
 
@@ -195,6 +205,9 @@ const typeConfirmModalOpen = ref(false);
 function openAddType() {
   typeName.value = "";
   typeDescription.value = "";
+  typeDepartmentId.value = courseDepartment.value
+    ? String(courseDepartment.value.iddept)
+    : "";
 
   typeModalOpen.value = true;
 }
@@ -233,6 +246,9 @@ async function proceedAddType() {
     await createUniformType({
       uniform_name: name,
       description: description,
+      iddept: typeDepartmentId.value
+        ? Number(typeDepartmentId.value)
+        : null,
     });
 
     await loadAll();
@@ -370,6 +386,35 @@ const addableDepartments = computed(() =>
     ? departments.value
     : departments.value.filter((d) => d.dept_name === course.value),
 );
+
+// A uniform type belongs to one course (iddept); a type without one is shared
+// by every course. A course page offers its own types, the shared ones, and any
+// type it already stocks variants of, so older rows keep working.
+const courseDepartment = computed(() =>
+  departments.value.find((d) => d.dept_name === course.value),
+);
+
+const addableTypes = computed(() => {
+  if (isAllView.value) {
+    return uniformTypes.value;
+  }
+
+  const departmentId = courseDepartment.value
+    ? String(courseDepartment.value.iddept)
+    : "";
+
+  return uniformTypes.value.filter((type) => {
+    if (!type.iddept || String(type.iddept) === departmentId) {
+      return true;
+    }
+
+    return uniformVariants.value.some(
+      (variant) =>
+        String(variant.idUniftype) === String(type.idUniftype) &&
+        getDepartmentName(variant) === course.value,
+    );
+  });
+});
 
 function openAddVariant() {
   variantTypeId.value = "";
@@ -984,6 +1029,17 @@ const visibleTypes = computed(() => {
           <label for="un-type-description" class="form-label"> Description </label>
 
           <textarea class="form-control" rows="3" v-model="typeDescription" placeholder="Enter uniform description" id="un-type-description" name="type-description"></textarea>
+
+          <label for="un-type-course" class="form-label mt-3"> Course </label>
+          <select class="form-select" v-model="typeDepartmentId" id="un-type-course" name="type-course" :disabled="!isAllView">
+            <option value="">All courses (shared)</option>
+            <option v-for="department in departments" :key="department.iddept" :value="String(department.iddept)">
+              {{ department.dept_name }}
+            </option>
+          </select>
+          <div class="form-text">
+            A uniform type only appears on the page of the course that owns it. Choose "All courses (shared)" for a uniform every course sells.
+          </div>
         </div>
 
         <div class="modal-footer">
@@ -1026,6 +1082,12 @@ const visibleTypes = computed(() => {
             </div>
           </div>
 
+          <!-- COURSE -->
+          <div class="mb-3">
+            <label class="form-label"> Course </label>
+            <div class="form-control bg-light">{{ typeCourseName }}</div>
+          </div>
+
           <div class="alert alert-warning mb-0">
             Are you sure you want to create this uniform type?
           </div>
@@ -1059,10 +1121,13 @@ const visibleTypes = computed(() => {
           <select class="form-select mb-3" v-model="variantTypeId" id="un-variant-type-id" name="variant-type-id">
             <option value="">Select uniform type</option>
 
-            <option v-for="type in uniformTypes" :key="type.idUniftype" :value="String(type.idUniftype)">
+            <option v-for="type in addableTypes" :key="type.idUniftype" :value="String(type.idUniftype)">
               {{ type.uniform_name }}
             </option>
           </select>
+          <div v-if="!addableTypes.length" class="form-text mb-3">
+            No uniform types for {{ course }} yet. Add a new uniform type first.
+          </div>
           <div v-if="variantType?.description" class="form-text mb-3">
             {{ variantType.description }}
           </div>

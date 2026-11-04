@@ -1,10 +1,7 @@
-// Small shared cache for the few GET requests that several parts of the app
-// make at the same moment (the bell, the overdue banner and the critical
-// stock banner all ask for the same lists). Concurrent callers share ONE
-// request, and the answer is reused for a few seconds.
-//
-// Any successful change to the data (POST / PUT / PATCH / DELETE) clears it,
-// so a screen that reloads right after an action never sees old data.
+/*
+ * Shares identical GET requests made at the same moment and reuses the answer for seconds; any change clears
+ * it.
+ */
 const store = new Map(); // key -> { at, promise }
 
 const DEFAULT_TTL_MS = 15000;

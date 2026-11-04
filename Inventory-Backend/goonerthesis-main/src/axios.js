@@ -19,14 +19,12 @@ axios.interceptors.request.use(config => {
     return config;
 }, (error) => Promise.reject(error));
 
-// Every request ends here, success or failure, so the counter always
-// comes back down.
+/* Every request ends here, so the loading counter always comes back down. */
 axios.interceptors.response.use(
     (response) => {
         loadingFinished(response.config);
 
-        // Something changed on the server: forget the short-lived copies of
-        // the shared lists so the next look is fresh.
+        /* Data changed on the server: drop the cached lists so the next view is fresh. */
         if ((response.config?.method || "get").toLowerCase() !== "get") {
             clearSharedCache();
         }
@@ -39,10 +37,10 @@ axios.interceptors.response.use(
         const status = error.response?.status;
         const url = error.config?.url || "";
 
-        // The session is gone: the admin idle timeout ran out, the account
-        // was signed out from another device, or the AMO reset its password.
-        // Without this the page just sits there with every request failing.
-        // (A 401 from /login itself only means a wrong password.)
+        /*
+         * Lost session (timeout, signed out elsewhere, password reset) returns to login; a /login 401 is just a
+         * wrong password.
+         */
         if (status === 401 && !url.includes("/login") && localStorage.getItem("token")) {
             endSession(error.response?.data?.message);
         }

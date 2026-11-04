@@ -153,11 +153,7 @@ return response()->json(
 );
 }
 
-// Borrowed lines the signed-in user still has out past their due date
-// (roadmap #8). Only ever the caller's own requests, so borrowers can be
-// told what they have to return without seeing anybody else's. Overdue is
-// decided by ReturnPolicy::dueInfo(), the same rule the admin's Overdue
-// Returns card and every due badge use.
+/* Returns the signed-in user's own overdue borrowed items (due date from ReturnPolicy). */
 public function myOverdue()
 {
     $requests = Request::where('idUsers', request()->user()->idUsers)
@@ -201,9 +197,7 @@ app()->terminating(fn () => ReturnPolicy::forgetPending());
     return response()->json($lines);
 }
 
-// Monthly Consumption page: what was actually handed out (issued items and
-// uniforms on Approved/Returned requests). The AMO gets everyone's records;
-// every other role only ever gets their own -- enforced here, not in the page.
+/* Monthly Consumption data: the AMO gets all records, other roles only their own. */
 public function consumption()
 {
     $user = request()->user();
@@ -391,16 +385,14 @@ if (
     $idUsers = $request->user()->idUsers;
     $role = $request->user()->role;
 
-    // Uniforms are handled on their own: a uniform request cannot also
-    // carry office supplies or school equipment.
+    /* A uniform request can't also include office supplies or school equipment. */
     if (!empty($validated['uniforms']) && !empty($validated['items'])) {
         return response()->json([
             'message' => 'A uniform request cannot include office supplies or school equipment. Submit them as separate requests.'
         ], 422);
     }
 
-    // A cashier's uniform request is made for a specific student, so the AMO
-    // knows who is coming to collect it.
+    /* Cashier uniform requests must name the student, so the AMO knows who collects. */
     if (strtolower((string) $role) === 'cashier' && !empty($validated['uniforms']) && trim((string) ($validated['student_name'] ?? '')) === '') {
         return response()->json([
             'message' => 'Enter the full name of the student this uniform request is for.',
@@ -408,8 +400,7 @@ if (
         ], 422);
     }
 
-    // An instructor may skip the department head (not present, unavailable,
-    // or none assigned) but must say why; the reason is kept on the request.
+    /* An instructor may skip the department head but must give a reason, which is saved. */
     $sendDirect = strtolower((string) $role) === 'instructor' && !empty($validated['send_direct']);
     $directReason = trim((string) ($validated['direct_reason'] ?? ''));
     if ($sendDirect && mb_strlen($directReason) < 3) {
@@ -419,8 +410,7 @@ if (
         ], 422);
     }
 
-    // The student pays at the cashier first; the cashier confirms it when
-    // submitting, and the AMO only hands the uniforms over afterwards.
+    /* The student pays the cashier first; the AMO hands over the uniforms afterwards. */
     if (strtolower((string) $role) === 'cashier' && !empty($validated['uniforms']) && empty($validated['paid'])) {
         return response()->json([
             'message' => 'Confirm that the student has already paid for the uniforms.',
@@ -445,8 +435,7 @@ if (
         && !empty($validated['uniforms'])
         && empty($validated['items']);
 
-    // Monthly request limit applies to everyone except the AMO, and not to
-    // cashier uniform requests (which also don't count toward it).
+    /* The monthly limit applies to everyone except the AMO and cashier uniform requests. */
     if ($role !== 'amo' && !$isCashierUniformRequest) {
         $limitSetting = \App\Models\Setting::where('setting_key', 'monthly_request_limit')->first();
         $limit = $limitSetting
@@ -475,8 +464,7 @@ if (
             'approved_by' => null,
             // Server time, with the time of day (the browser used to send only a date).
             'request_date' => now(),
-            // Only instructors go through the Department Head. Everyone else
-            // (Department Head, Admin, Cashier, AMO) goes straight to the AMO.
+            /* Only instructors go through the Department Head; everyone else goes straight to the AMO. */
             'status' => (strtolower((string) request()->user()->role) === 'instructor' && !$sendDirect) ? 'With Coordinator' : 'With Inventory',
             'direct_to_amo_reason' => $sendDirect ? mb_substr($directReason, 0, 255) : null,
             'location' => $validated['location'],
@@ -497,12 +485,7 @@ if (!$itemModel) {
     throw new \Exception("Item not found.");
 }
 
-// Per-head limit (roadmap #9, revised): how much of this item the
-// requester may hold/have pending at once, counting everything they've
-// already requested - not just the lines in this submission. NULL = no
-// limit. Lines for the same item within this submission are added
-// together first (requestedPerItem), then on top of what they already
-// have outstanding (perHeadUsage).
+/* Per-head limit check on submit: requested plus already held or pending; null = no limit. */
 $requestedPerItem[$itemModel->iditems] =
     ($requestedPerItem[$itemModel->iditems] ?? 0) + (int) $item['quantity'];
 
@@ -620,8 +603,7 @@ return response()->json([
 
 public function approve(HttpRequest $httpRequest, $id)
 {
-    // Optional due dates chosen per borrowed line: { requestItemId: "Y-m-d" }.
-    // A line left out (or blank) uses the item's default return period.
+    /* Optional per-line due dates {requestItemId: "Y-m-d"}; a blank line uses the default period. */
     $validated = $httpRequest->validate([
         'due_dates' => 'nullable|array',
         'due_dates.*' => 'nullable|date_format:Y-m-d|after_or_equal:today',
@@ -662,9 +644,7 @@ public function approve(HttpRequest $httpRequest, $id)
             }
         }
 
-        // Check available uniform stock, excluding quantities already reserved
-        // by other approved requests. Lock each variant to prevent two approvals
-        // from reserving the same stock concurrently.
+        /* Check uniform stock minus other approved holds; lock each variant to avoid double reservations. */
         $uniformTotals = $request->uniforms
             ->groupBy('idUnifvariant')
             ->map(fn ($lines) => (int) $lines->sum('quantity'));
@@ -676,17 +656,14 @@ public function approve(HttpRequest $httpRequest, $id)
             $uniform = UniformVariant::where('idUnifvariant', $variantId)
                 ->lockForUpdate()
                 ->first();
-            // Stock being held for this cashier's own "Ready" reservations
-            // counts as available to this request (oldest first, whole
-            // reservations only).
+            /* Stock held for this cashier's own Ready reservations counts as available (oldest first). */
             $holds[$variantId] = [];
             $heldQty = 0;
 
-            // A reservation is for one student: only that student's own
-            // "Ready" reservations may be used by this request, otherwise a
-            // request for student B could use the stock held (and paid for)
-            // for student A. Older rows with no student ID only match
-            // requests that have none either.
+            /*
+             * Only the same student's Ready reservations are used; old rows with no student ID match requests
+             * with none.
+             */
             $studentNumber = trim((string) ($request->student_number ?? ''));
             $readyHolds = \App\Models\UniformReservation::where('idUsers', $request->idUsers)
                 ->where('idUnifvariant', $variantId)->where('status', 'Ready');
@@ -722,8 +699,7 @@ public function approve(HttpRequest $httpRequest, $id)
 
             $item = Item::find($requestedItem->iditems);
 
-            // Hold the units for this request; they leave the shelf when the
-            // AMO releases it (see release()).
+            /* Hold the units for this request; they leave the shelf at release(). */
             $item->reserved_quantity = (int) ($item->reserved_quantity ?? 0) + (int) $requestedItem->quantity;
             $item->save();
 
@@ -735,8 +711,7 @@ public function approve(HttpRequest $httpRequest, $id)
             }
         }
 
-        // Reserve uniforms on approval; do not deduct physical stock until
-        // the cashier confirms the student has actually received them.
+        /* Uniforms are reserved on approval; stock is only deducted when the student receives them. */
         foreach ($uniformTotals as $variantId => $requestedQty) {
             $uniform = $lockedUniforms[$variantId];
             // Units already held for this cashier are converted, not added again.
@@ -922,8 +897,7 @@ public function coordinatorQueue()
         ->where('status', 'With Coordinator')->orderBy('request_date')->get()->map(fn ($r) => $this->formatWorkflowRequest($r)));
 }
 
-// Requests an instructor sent straight to the AMO, for the department head
-// to review afterwards (acknowledge or flag). Never blocks the AMO.
+/* Requests an instructor sent straight to the AMO, for the department head to acknowledge or flag. */
 public function directQueue()
 {
     $user = request()->user();
@@ -941,10 +915,7 @@ public function directQueue()
         ])));
 }
 
-// History for the department head: every request from instructors in their
-// own department (a head with no department set sees all instructors), with
-// date range, instructor and source filters, plus per-instructor counts.
-//   source = review (went through the head) | direct (skipped the head)
+/* Department head's History tab: their department's instructors, filtered by date, instructor and source. */
 public function coordinatorHistory(HttpRequest $httpRequest)
 {
     $user = $httpRequest->user();
@@ -1037,8 +1008,7 @@ public function coordinatorReview(HttpRequest $httpRequest, $id)
     ]);
 }
 
-// Department head declines a request that is waiting for their review.
-// Nothing was reserved yet, so no stock changes. The requester is told why.
+/* Department head declines a request under review; nothing was reserved, so no stock changes. */
 public function coordinatorReject(HttpRequest $httpRequest, $id)
 {
     $actor = $httpRequest->user();
@@ -1112,8 +1082,7 @@ public function notifications()
     return response()->json(DB::table('request_notifications')->where('recipient_idUsers', $userId)->orderByDesc('created_at')->limit(100)->get());
 }
 
-// Clears the notification bell badge: marks all of the signed-in user's
-// request updates as read. They stay listed; only read_at is set.
+/* Marks all the user's request updates as read (clears the bell badge). */
 public function readNotifications()
 {
     $updated = DB::table('request_notifications')
@@ -1124,16 +1093,9 @@ public function readNotifications()
     return response()->json(['updated' => $updated]);
 }
 
-// ---------------------------------------------------------------------
-// Return reports. The borrower reports that they brought something back;
-// the AMO then confirms (which records the return as usual and sends the
-// units to inspection) or disputes it. While a report is waiting the
-// borrower is not shown as overdue for those units, and the AMO is
-// reminded through the notification bell and the dashboard.
-// ---------------------------------------------------------------------
+/* Return reports: a borrower reports a return and the AMO confirms or disputes it; no overdue while pending. */
 
-// When true, returnEquipment() does not auto-settle pending reports (the
-// confirm action below settles the one report it is dealing with itself).
+/* When true, returnEquipment() doesn't auto-settle pending reports (confirm settles its own). */
 private bool $skipReportSettle = false;
 
 public function reportReturn(HttpRequest $httpRequest, $id)
@@ -1215,8 +1177,7 @@ public function reportReturn(HttpRequest $httpRequest, $id)
     });
 }
 
-// AMO: returns the borrowers say they made that nobody has checked yet,
-// oldest first.
+/* AMO: returns borrowers reported that are not yet checked, oldest first. */
 public function returnReports()
 {
     $reports = ReturnReport::where('status', 'Pending')
@@ -1265,8 +1226,7 @@ public function confirmReturnReport($id)
         return response()->json(['message' => 'The request item no longer exists.'], 404);
     }
 
-    // If the AMO already recorded part of this return from another screen,
-    // only the units still out can be recorded now.
+    /* If part was already recorded elsewhere, only the units still out can be recorded. */
     $open = max(0, $requestItem->quantity - $requestItem->returned_quantity);
     $qty = min((int) $report->quantity, $open);
 
@@ -1366,12 +1326,7 @@ public function resendNotification($id)
     return response()->json(['message' => 'In-app notification recorded and made available to the requester.', 'notified_at' => $r->notified_at]);
 }
 
-// Roadmap #15 / #19: once a request is Approved, Inventory Management
-// records how the items are going out -- picked up by the requester, or
-// delivered to the request's location/room. This does not change the
-// request's status (it stays "Approved"); it just attaches the release
-// choice to it, same way "borrowed_at" already does for the approval
-// itself.
+/* Records how an Approved request goes out (pick up or delivery); status stays 'Approved'. */
 public function release(HttpRequest $httpRequest, $id)
 {
     $actor = $httpRequest->user();
@@ -1428,9 +1383,7 @@ public function release(HttpRequest $httpRequest, $id)
         }
 
         if ($isUniformRequest) {
-            // Uniforms are handed to the student at the AMO office, so the AMO
-            // (who physically gives them out) records the handover. The cashier
-            // is notified automatically. Uniform requests are pickup-only.
+            /* The AMO records uniform handover at their office (pick-up only); the cashier is notified. */
             if (strtolower((string) $actor->role) !== 'amo') {
                 return response()->json(['message' => 'Only the AMO can record a uniform handover.'], 403);
             }
@@ -1471,8 +1424,7 @@ public function release(HttpRequest $httpRequest, $id)
             'released_at' => now(),
             'released_by' => $actor->idUsers,
             ...($isUniformRequest ? ['released_to_student' => trim($validated['released_to_student']), 'released_student_id' => trim($validated['released_student_id'])] : []),
-            // For uniform requests the AMO records the real handover, so the
-            // student does not need a C.I.M.S. account to confirm receipt.
+            /* For uniforms the AMO records the handover, so the student needs no account to confirm. */
             ...($isUniformRequest ? ['received_at' => now()] : []),
         ]);
 
@@ -1496,10 +1448,7 @@ public function release(HttpRequest $httpRequest, $id)
     });
 }
 
-// Requester confirms they received what was released (proof of receipt).
-// Optional item_ids confirms only those lines (requestitem ids); without it,
-// every line not yet confirmed is confirmed. The request counts as received
-// once every line has been.
+/* Requester confirms receipt (all lines or item_ids); received once every line is confirmed. */
 public function confirmReceived(HttpRequest $httpRequest, $id)
 {
     $user = request()->user();
@@ -1560,8 +1509,7 @@ public function confirmReceived(HttpRequest $httpRequest, $id)
     });
 }
 
-// The AMO cancels an approved request nothing has been handed over for, e.g.
-// the student never came. Held stock goes back on the shelf.
+/* AMO cancels an approved request with nothing handed over; held stock goes back. */
 public function cancelApproved(HttpRequest $httpRequest, $id)
 {
     $actor = $httpRequest->user();
@@ -1698,16 +1646,14 @@ if (is_null($requestItem->received_at)) {
         $requestItem->returned_quantity += $qty;
 $requestItem->save();
 
-        // Anything the borrower had reported as returned for this line is
-        // now covered, so it drops off the AMO's "to check" list.
+        /* Reported returns for this line are now covered, so they leave the AMO's to-check list. */
         if (!$this->skipReportSettle) {
             ReturnReport::settle($requestItem->idrequestItem, (int) $qty, request()->user()->idUsers);
         }
 
 $request = $requestItem->request;
 
-// Only tracked items count: issued ones (Consumable / Type A) are never
-// returned and must not keep the request open forever.
+/* Only tracked items count; issued ones are never returned and mustn't keep the request open. */
 $allReturned = $request->items()
     ->whereColumn('returned_quantity', '<', 'quantity')
     ->whereHas('item', function ($query) {
@@ -1723,9 +1669,7 @@ if ($allReturned) {
 
         $item = Item::findOrFail($requestItem->iditems);
 
-        // CHANGED: returned items no longer go straight back into
-        // available stock. Instead they sit in pending_inspections until
-        // an admin confirms their condition (see InspectionController).
+        /* Returned items go to pending_inspections until the AMO confirms their condition. */
         \App\Models\PendingInspection::create([
             'idrequestItem' => $requestItem->idrequestItem,
             'iditems' => $item->iditems,
@@ -1752,16 +1696,9 @@ if ($allReturned) {
 }
 
 /**
- * How much of $item the given requester currently has against their
- * per-head limit (roadmap #9).
- *
- *   - Non-returnable items (Consumable, Non-Consumable Type A): handed
- *     out for good, so every non-Rejected request ever made counts
- *     forever - it never frees back up.
- *   - Returnable items (Non-Consumable Type B, School Equipment):
- *     only what's currently outstanding counts - Pending or Approved
- *     requests, minus whatever's already been returned. Returning it
- *     frees up the allowance again.
+ * works out how much of an item a requester currently holds against their per-head limit.
+ * Consumable / Type A count forever (never freed); Type B and School Equipment count only what is
+ * outstanding (Pending or Approved minus returned).
  */
 private function perHeadUsage(int $userId, Item $item): int
 {

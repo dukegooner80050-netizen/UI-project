@@ -14,6 +14,7 @@ import DueBadge from "../components/DueBadge.vue";
 import StockAdjustmentModal from "../components/StockAdjustmentModal.vue";
 import { getErrorMessage } from "../services/errors";
 
+/*  STATE  */
 const showAlert = ref(false);
 const alertType = ref("success");
 const alertMessage = ref("");
@@ -24,6 +25,7 @@ function notify(type, message) {
   showAlert.value = true;
 }
 
+/*  STATE  */
 // STATES
 const items = ref([]);
 const currentItem = ref(null);
@@ -56,9 +58,7 @@ function returnDaysProblem(value) {
   return "";
 }
 
-// Per-head limit (roadmap #9): max of this item one requester may hold
-// at once, counting what they already have pending/approved. Blank = no
-// limit.
+/* Per-head limit: most of this item one requester may hold at once (pending + approved); blank = none. */
 const addPerHeadLimit = ref("");
 const editPerHeadLimit = ref("");
 
@@ -71,16 +71,11 @@ function perHeadLimitProblem(value) {
   return "";
 }
 
-// Fixed asset split (roadmap #10): a fixed asset (e.g. a room's one
-// projector or aircon) can't carry a per-head limit at all - there's
-// nothing to "limit" about a single unique unit. Defaults to limitable
-// (true) for ordinary, stockable School Equipment.
+/* Fixed-asset flag: a fixed asset (e.g. a projector) can't have a per-head limit. Default: limitable. */
 const addIsLimitable = ref(true);
 const editIsLimitable = ref(true);
 
-// Keep the UI consistent with the backend rule: a fixed asset can't have
-// a per-head limit, so clear it the moment the box is unchecked instead
-// of letting the admin hit the server error.
+/* Matches the backend rule: unchecking clears the per-head limit instead of causing a server error. */
 function onAddLimitableChange() {
   if (!addIsLimitable.value) addPerHeadLimit.value = "";
 }
@@ -125,6 +120,7 @@ onMounted(async () => {
   }
 });
 
+/*  ACTIONS  */
 function openAdd() {
   addName.value = "";
   addQty.value = 1;
@@ -205,9 +201,11 @@ onMounted(load);
 const modalMax = computed(() => {
   if (!currentItem.value) return 0;
 
-  // if (modalMode.value === "borrow") {
-  //   return Number(currentItem.value.qty) || 0;
-  // }
+  /*
+   * if (modalMode.value === "borrow") {
+   *   return Number(currentItem.value.qty) || 0;
+   * }
+   */
 
   if (modalMode.value === "return") {
     return Number(currentItem.value.borrowedQty) || 0;
@@ -268,10 +266,7 @@ async function load() {
   });
   items.value = equipments;
 
-  // Keep the Borrower Details panel in sync with live data. load()
-  // rebuilds brand-new item objects each time (e.g. right after a
-  // partial return), so without this the panel would keep showing
-  // the old borrowedQty/requestItems instead of the new ones.
+  /* Keeps the Borrower Details panel in sync after load() rebuilds the items. */
   if (selectedEquipment.value) {
     const updated = equipments.find(
       (e) => e.id === selectedEquipment.value.id,
@@ -281,6 +276,7 @@ async function load() {
   }
 }
 
+/*  COMPUTED  */
 const equipments = computed(() => items.value);
 const borrowedEquipments = computed(() => {
   return items.value

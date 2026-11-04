@@ -1,8 +1,8 @@
 <script setup>
 import { computed } from "vue";
 
-// Colour-coded badge for an item's stock level (roadmap #6).
-// level: "Out of Stock" | "Critical" | "Minimum" | "Adequate" | "Optimal"
+/*  STATE  */
+/* Colour-coded stock level badge: Out of Stock, Critical, Minimum, Adequate, Optimal. */
 const props = defineProps({
   level: { type: String, default: "" },
 });

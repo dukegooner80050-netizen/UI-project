@@ -4,12 +4,7 @@ use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
 
-// Roadmap #15 / #19: once a request is Approved, the admin/AMO records
-// how the items are going out the door -- "For Pick Up" or "For Delivery"
-// -- rather than that just being understood informally. This does NOT
-// introduce a new request status; it extends the existing "Approved"
-// state with release details, so nothing that already filters/behaves
-// on status === 'Approved' (overdue tracking, returns, badges) changes.
+/* Adds release details (For Pick Up / For Delivery) to Approved requests; no new status. */
 return new class extends Migration
 {
     public function up(): void

@@ -10,11 +10,9 @@ use App\Models\Setting;
 use Carbon\Carbon;
 
 /**
- * Return due dates for borrowed items (roadmap #8).
- *
- * A borrowed line is due `return_days` after the request was approved
- * (request.borrowed_at). return_days comes from the item itself, falling
- * back to the default for the item's category (Settings page).
+ * computes return due dates for borrowed items.
+ * A line is due return_days after approval, using the item's own value or the category default from
+ * Settings.
  */
 class ReturnPolicy
 {
@@ -26,9 +24,7 @@ class ReturnPolicy
 
     private static ?array $defaults = null;
 
-    // requestItem id => units waiting to be checked. Filled by
-    // preloadPending() so a list of requests costs ONE query for this
-    // instead of one per line.
+    /* requestItem id => units awaiting a check; preloadPending() fills it in one query for a whole list. */
     private static ?array $pendingMap = null;
 
     /** @param iterable<int> $requestItemIds */
@@ -101,21 +97,14 @@ class ReturnPolicy
     }
 
     /**
-     * Fields merged into every request-item payload.
-     *
-     *   defaultReturnDays - the item's own / category default period, so the
-     *                       approval screen can prefill a due date (null = none)
-     *   returnDays   - allowed days (null = no due date)
-     *   dueDate      - Y-m-d, or null
-     *   overdue      - still has units out past the due date
-     *   daysOverdue  - whole days past due (0 when not overdue)
+     * extra fields added to every request item.
+     * defaultReturnDays, returnDays (null = no due date), dueDate (Y-m-d), overdue, daysOverdue.
      */
     public static function dueInfo(Request $request, RequestItem $requestItem): array
     {
         $default = self::daysFor($requestItem->item);
 
-        // Units the borrower says they already brought back, still waiting
-        // for the AMO to check. They are not counted as overdue meanwhile.
+        /* Units the borrower reported returned but the AMO hasn't checked; not counted as overdue. */
         $id = $requestItem->idrequestItem;
         if (!$id) {
             $pendingReturn = 0;
@@ -138,11 +127,10 @@ class ReturnPolicy
             return $none;
         }
 
-        // The clock starts when the item is actually in the borrower's hands:
-        // their receipt for this line, else the request's receipt, else the
-        // release. Older approved requests (items deducted at approval, never
-        // released) fall back to the approval date. Reserved items that have
-        // not been handed over yet have no due date.
+        /*
+         * Borrowing starts at the line's receipt, else the request's, else release, else approval; unreleased
+         * items have no due date.
+         */
         $basis = $requestItem->received_at
             ?? $request->received_at
             ?? $request->released_at
@@ -151,8 +139,7 @@ class ReturnPolicy
             return $none;
         }
 
-        // A due date picked by the admin at approval wins over the default
-        // period. Only tracked (returnable) items ever get one.
+        /* An admin-picked due date overrides the default period; only returnable items get one. */
         $borrowed = Carbon::parse($basis)->startOfDay();
         if ($requestItem->due_date && $requestItem->item && $requestItem->item->isReturnable()) {
             // A date the AMO picked stays that exact date.

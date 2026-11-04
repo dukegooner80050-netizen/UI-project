@@ -85,9 +85,7 @@ public function update(Request $request, $id)
     ]);
 }
 
-// AMO only (route middleware). Sets a temporary password, shown once to
-// the AMO to pass on. The user is signed out everywhere and must choose a
-// new password at their next login.
+/* AMO only: sets a temporary password (shown once); the user is signed out and must pick a new one. */
 public function resetPassword($id)
 {
     $user = User::find($id);
@@ -127,11 +125,7 @@ public function resetPassword($id)
     ]);
 }
 
-// The AMO assigns an instructor / department head to a department, which
-// decides whose requests a department head sees in History.
-// Admin sets a new username for an account (PUT /users/{id}/username). The
-// route existed without this method, so calling it returned a server error.
-// Same rules as creating a user (required, unique), plus: no spaces.
+/* Changes an account's username (PUT /users/{id}/username): required, unique, no spaces. */
 public function setUsername(Request $request, $id)
 {
     $user = User::find($id);
@@ -169,6 +163,7 @@ public function setUsername(Request $request, $id)
     return response()->json(['message' => 'Username updated.', 'username' => $user->username]);
 }
 
+// assigns an instructor / department head to a department; it decides whose requests a head sees.
 public function setDepartment(Request $request, $id)
 {
     $user = User::find($id);
@@ -188,8 +183,7 @@ public function setDepartment(Request $request, $id)
     return response()->json(['message' => 'Department saved.', 'iddept' => $user->iddept]);
 }
 
-// Switch an account off (it can't sign in, history is kept) or back on.
-// Safer than Remove: nothing is lost and it can be undone any time.
+/* Deactivate (can't sign in, history kept) or reactivate an account; safer than Remove. */
 public function setStatus(Request $request, $id)
 {
     $user = User::find($id);

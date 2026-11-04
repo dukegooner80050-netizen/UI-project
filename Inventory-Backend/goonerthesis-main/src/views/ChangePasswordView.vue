@@ -3,8 +3,8 @@ import { useRouter } from "vue-router";
 import { logout } from "../services/auth";
 import ChangePasswordForm from "../components/ChangePasswordForm.vue";
 
-// Shown on its own (no sidebar) when the AMO has reset this account to a
-// temporary password. Nothing else works until a new one is chosen.
+/*  STATE  */
+/* Standalone page (no sidebar) for accounts reset to a temporary password; a new one must be chosen. */
 const router = useRouter();
 
 function done() {

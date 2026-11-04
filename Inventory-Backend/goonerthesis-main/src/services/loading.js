@@ -1,9 +1,6 @@
 import { ref, computed } from "vue";
 
-// Counts API requests that are in flight so the app can show that it is
-// busy. Background polling (the notification bell, etc.) passes
-// { silent: true } to axios so it never makes the page look like it is
-// loading.
+/* Counts in-flight API requests to show the busy state; background polls pass { silent: true }. */
 const pending = ref(0);
 
 export const isLoading = computed(() => pending.value > 0);

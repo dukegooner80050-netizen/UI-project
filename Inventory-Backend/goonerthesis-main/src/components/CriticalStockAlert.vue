@@ -5,12 +5,9 @@ import { getLowStock } from "../services/restock";
 import { getCurrentUser } from "../services/storage";
 import { isAdmin } from "../services/session";
 
-// Roadmap #12: tells the admin, on every page, when items have reached
-// Critical stock (or run out) and nobody has raised a restock request for
-// them yet. The request itself is made from the "Needs Restocking" panel on
-// the dashboard. Dismissing hides the banner for this browser session; it
-// comes back if the set of items changes.
+/* Admin banner for items at Critical stock with no restock request; dismissed until the set changes. */
 
+/*  STATE  */
 const route = useRoute();
 const router = useRouter();
 
@@ -52,6 +49,7 @@ async function load() {
   }
 }
 
+/*  LIFECYCLE  */
 onMounted(() => {
   load();
   // The restock panel fires this after a request is created or changed.

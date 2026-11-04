@@ -35,15 +35,13 @@ const lastUpdated = ref("");
 const selectedDayRequests = ref([]);
 const selectedDay = ref("");
 const showDayModal = ref(false);
-// Request statuses (review workflow, roadmap #14). "In flight" = still
-// waiting on a decision; "actionable" = Inventory Management can act now.
+/* Statuses: in flight = awaiting a decision; actionable = the AMO can act now. */
 const IN_FLIGHT = ["pending", "with coordinator", "with inventory"];
 const ACTIONABLE = ["pending", "with inventory"];
 const isInFlight = (s) => IN_FLIGHT.includes((s || "").toLowerCase());
 const isActionable = (s) => ACTIONABLE.includes((s || "").toLowerCase());
 
-// One colour per status, matching the calendar badges. (Returned used to
-// fall through to red, so it looked like a rejection.)
+/* One colour per status, matching the calendar badges (Returned no longer looks like a rejection). */
 function statusBadgeClass(status) {
   const s = (status || "").toLowerCase();
   if (isInFlight(s)) return "bg-warning text-dark";
@@ -56,12 +54,10 @@ function statusBadgeClass(status) {
 const lowStockModal = ref(false);
 const overdueModal = ref(false);
 
-// Items at Critical stock (or out), straight from the restock API so we know
-// whether a restock request already exists for each one.
+/* Critical or out-of-stock items from the restock API, to know if a restock request exists. */
 const criticalStock = ref([]);
 
-// The urgent card can be closed. It stays closed for this browser session and
-// comes back if a different set of items reaches Critical.
+/* The urgent card can be closed; it stays closed this session unless a different set reaches Critical. */
 function urgentKey() {
   return `urgentCardDismissed:${getCurrentUser()?.idUsers ?? "anon"}`;
 }
@@ -74,8 +70,7 @@ function readUrgentDismissed() {
 }
 const urgentDismissed = ref(readUrgentDismissed());
 
-// The signed-in user's own overdue lines (borrowers). Admins use the list
-// built from every request instead.
+/* The user's own overdue lines; the AMO uses the list built from all requests. */
 const myOverdue = ref([]);
 const showPendingRequestsModal = ref(false);
 /*  CLOCK  */
@@ -84,11 +79,7 @@ const clockStatus = ref("syncing"); // "syncing" | "synced" | "offline"
 let clockTimer = null;
 let resyncTimer = null;
 
-// Philippine time without trusting the device clock: ask a time service once
-// (and every 10 minutes), remember how far the device is off, and read the
-// device clock plus that offset every second. The clock shows straight away
-// and keeps running even when the service is unreachable (a school network
-// may have no internet), and a request that hangs is cut off after 4 seconds.
+/* Philippine time without trusting the device clock: sync every 10 min, keep the offset, tick every second. */
 let clockOffsetMs = 0;
 
 async function fetchPHTime() {
@@ -132,8 +123,7 @@ function tickPH() {
 }
 /* LOAD */
 async function loadAll() {
-  // Each part loads on its own and in parallel, so one failing request can't
-  // blank the whole dashboard.
+  /* Each part loads independently and in parallel, so one failure can't blank the dashboard. */
   const run = async (label, job) => {
     try {
       await job();
@@ -262,15 +252,13 @@ const totalItems = computed(() =>
   items.value.reduce((a, i) => a + (Number(i.qty) || 0), 0),
 );
 
-// Low stock = at or below the item's own Minimum level (Critical, Minimum
-// or Out of Stock) -- see roadmap #6.
+/* Low stock = Critical, Minimum or Out of Stock against that item's own levels. */
 const LOW_LEVELS = ["Out of Stock", "Critical", "Minimum"];
 const lowStockCount = computed(
   () => items.value.filter((i) => LOW_LEVELS.includes(i.stockLevel)).length,
 );
 
-// Borrowed lines still out past their due date (roadmap #8). The server
-// works out due/overdue per line; this just flattens them for the list.
+/* Borrowed lines past their due date; the server computes due/overdue, this just flattens them. */
 const overdueLines = computed(() => {
   // Borrowers see only their own overdue items.
   if (!isAdmin.value) {
@@ -340,14 +328,12 @@ const myRejectedCount = computed(
 );
 
 /*  KPI CARDS  */
-// Ordered by what needs attention first. Each card says what the number
-// counts, and clickable cards open the list behind the number.
+/* Ordered by what needs attention first; each card explains its number and clickable ones open the list. */
 const overdueBorrowers = computed(
   () => new Set(overdueLines.value.map((l) => l.requester)).size,
 );
 
-// School Equipment placed in rooms (Equipment Distribution), so it is not
-// mistaken for stock that went missing from the shelf.
+/* Equipment placed in rooms, so it isn't mistaken for stock missing from the shelf. */
 const deployedUnits = computed(() =>
   items.value
     .filter((i) => i.category === "School Equipment")
@@ -472,8 +458,7 @@ const lowStockItems = computed(() =>
   items.value.filter((i) => LOW_LEVELS.includes(i.stockLevel)),
 );
 
-// A request can hold items, uniforms, or both. Uniform-only requests (the
-// cashier's) have no items, so these helpers cover both lists.
+/* A request can hold items, uniforms or both; these helpers cover both lists. */
 function uniformLabel(u) {
   const name = u.uniformName || "Uniform";
   return u.size ? `${name} (${u.size})` : name;

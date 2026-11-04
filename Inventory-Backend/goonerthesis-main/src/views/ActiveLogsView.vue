@@ -4,9 +4,9 @@ import { getLogsPage, getLogUsers } from "../services/logs"
 import { requireUser } from "../services/session"
 import AlertMessage from "../components/AlertMessage.vue"
 
-// The server filters, sorts and pages the logs, so this page only ever
-// holds one page of rows no matter how large the table grows.
+/* The server filters, sorts and pages the logs, so the page only holds one page of rows. */
 
+/*  STATE  */
 const logs = ref([])
 const users = ref([])
 const loading = ref(false)
@@ -33,8 +33,7 @@ function notify(message, type = "success") {
   showAlert.value = true
 }
 
-// Only the newest request may fill the table: a slow earlier answer (fast
-// typing, quick clicks) must not overwrite a newer one.
+/* Only the newest request may fill the table, so a slow earlier answer can't overwrite it. */
 let requestSeq = 0
 
 async function load() {
@@ -80,9 +79,10 @@ onMounted(async () => {
   await load()
 })
 
-// Typing in the search box waits a moment so we don't ask the server on
-// every keystroke.
+/* Debounce: wait after typing before asking the server. */
 let searchTimer = null
+
+/*  LIFECYCLE  */
 watch(search, () => {
   clearTimeout(searchTimer)
   searchTimer = setTimeout(() => {
@@ -99,6 +99,7 @@ watch([dateFrom, dateTo, userId, perPage], () => {
 
 watch(page, load)
 
+/*  ACTIONS  */
 function sortBy(key) {
   if (sortKey.value === key) {
     sortDir.value = sortDir.value === "asc" ? "desc" : "asc"
@@ -106,8 +107,7 @@ function sortBy(key) {
     sortKey.value = key
     sortDir.value = key === "time" ? "desc" : "asc"
   }
-  // Moving to page 1 already reloads (the page watcher); only reload by hand
-  // when we are on it already.
+  /* Changing to page 1 reloads via the watcher; reload by hand only if already on page 1. */
   if (page.value !== 1) page.value = 1
   else load()
 }
@@ -124,6 +124,7 @@ function clearFilters() {
   userId.value = ""
 }
 
+/*  COMPUTED  */
 const firstRow = computed(() =>
   meta.value.total === 0 ? 0 : (meta.value.current_page - 1) * meta.value.per_page + 1,
 )

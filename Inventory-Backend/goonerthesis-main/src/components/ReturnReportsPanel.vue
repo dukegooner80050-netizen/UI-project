@@ -7,14 +7,15 @@ import {
   rejectReturnReport,
 } from "../services/returnReports";
 
-// AMO dashboard panel: returns the borrowers say they made that nobody has
-// checked yet. The longer one waits, the redder it gets, so a forgotten
-// return can't sit unnoticed. Confirming records the return exactly like
-// the normal Return button (the units go to inspection).
+/*
+ * AMO panel: borrower-reported returns not yet checked; older ones turn redder; confirming records the return.
+ */
 
+/*  CONSTANTS  */
 const URGENT_HOURS = 24;
 const REFRESH_MS = 60000;
 
+/*  STATE  */
 const rows = ref([]);
 const loading = ref(true);
 const busyId = ref(null);
@@ -46,6 +47,7 @@ function place(r) {
   return [r.location, r.room].filter(Boolean).join(" / ");
 }
 
+/*  ACTIONS  */
 async function confirm(r) {
   busyId.value = r.id;
   message.value = { type: "", text: "" };

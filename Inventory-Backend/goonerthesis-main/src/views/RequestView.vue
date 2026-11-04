@@ -19,15 +19,14 @@ import DueBadge from "../components/DueBadge.vue";
 import { reportReturn } from "../services/returnReports";
 import { isReturnableType } from "../services/itemTypes";
 
+/*  STATE  */
 const user = getCurrentUser();
 const userRole = String(user?.role || "").toLowerCase();
 const listContainer = ref(null);
 const activeTab = ref("create");
 const route = useRoute();
 
-// What happened to one line of a request, for the details panel. Consumables
-// and Type A are issued (received, never returned); Type B and equipment are
-// borrowed, so they also show how many came back.
+/* Status of one request line; issued items show received, borrowed ones also show how many came back. */
 function lineStatus(item, req) {
   const st = String(req.status || "").toLowerCase();
   if (!["approved", "returned"].includes(st)) return null;
@@ -51,6 +50,8 @@ const expandedMine = ref(null);
 function toggleMine(id) {
   expandedMine.value = expandedMine.value === id ? null : id;
 }
+
+/*  HELPERS  */
 function mineLines(r) {
   return [
     ...(r.items || []).map((i) => ({ name: i.itemName, qty: Number(i.qty) || 0 })),
@@ -77,6 +78,8 @@ function applyRouteQuery() {
     }
   }
 }
+
+/*  STATE  */
 const lastReceipt = ref(null);
 const myRequests = ref([]);
 const selected = ref(null);
@@ -102,6 +105,8 @@ const directReason = computed(() =>
     ? directReasonOther.value.trim()
     : directReasonChoice.value,
 );
+
+/*  STATE  */
 const error = ref("");
 const invItems = ref([]);
 const requestItems = ref([]);
@@ -169,8 +174,8 @@ function startReport(item) {
   reportQty.value = reportable(item);
 }
 
-// Send only validates and asks "are you sure?"; the report itself goes out
-// from the confirmation modal (doReport).
+/*  STATE  */
+/* Send only asks "are you sure?"; the report goes out from the confirmation modal (doReport). */
 const receiveConfirmOpen = ref(false);
 const receiveBusy = ref(false);
 
@@ -261,6 +266,7 @@ async function doReport() {
 
 // INVENTORY //
 
+/*  LOAD DATA  */
 async function loadInventory() {
   try {
     const data = await getItems();
@@ -342,11 +348,10 @@ const totalRequestedMap = computed(() => {
   return map;
 });
 
-// UNIFORM //
-// Uniform-only requests are picked up by the student at the AMO office,
-// so there is no building/room to choose. Mixed requests (uniforms +
-// items) still ask for location/room because the items may be delivered.
+/* Uniform-only requests are picked up at the AMO office (no location asked); mixed requests still ask. */
 const AMO_OFFICE = "AMO Office";
+
+/*  COMPUTED  */
 const uniformOnly = computed(
   () => requestItems.value.length === 0 && requestUniforms.value.length > 0,
 );
@@ -393,9 +398,7 @@ const uniformOptions = computed(() => {
   });
 });
 
-// CASHIER: pick Course, Gender and Size one by one instead of one long list.
-// Each choice only offers what exists for the choices before it; once all three
-// are set, the matching variant is selected.
+/* Cashier picks Course, Gender and Size step by step; each step offers only what exists so far. */
 const pickCourse = ref("");
 const pickGender = ref("");
 const pickSize = ref("");
@@ -430,6 +433,8 @@ function syncPickedVariant() {
   );
   selectedUniformVariantId.value = v ? String(v.idUnifvariant) : "";
 }
+
+/*  LIFECYCLE  */
 watch(selectedUniformTypeId, () => {
   pickCourse.value = "";
   pickGender.value = "";
@@ -446,6 +451,7 @@ watch([pickCourse, pickGender, pickSize], syncPickedVariant);
 
 // SELECTED ITEM //
 
+/*  COMPUTED  */
 // The chosen uniform type, so its description can be shown under the picker.
 const selectedUniformType = computed(() =>
   uniformTypes.value.find(
@@ -496,9 +502,7 @@ const maxQty = computed(() => {
   return available;
 });
 
-// Units the cashier can still request: on the shelf, minus what approved
-// requests are holding, plus anything held for this cashier's own Ready
-// reservations (the server counts those as available to them too).
+/* Units the cashier can still request: shelf minus approved holds, plus their own Ready reservations. */
 function availableUniformStock(variant) {
   if (!variant) return 0;
   const held = uniformReservations.value
@@ -637,9 +641,7 @@ async function loadMyRequests() {
 
 // ADD ITEM TO REQUEST LIST //
 
-// Uniforms are requested on their own, never mixed with office supplies or
-// school equipment. If the list already holds the other kind, ask whether
-// to submit it or discard it first.
+/* Uniforms are requested alone; if the list has the other kind, ask to submit or discard it first. */
 const mixConflictOpen = ref(false);
 const mixConflictHas = computed(() =>
   requestUniforms.value.length > 0 ? "uniforms" : "items",
@@ -661,6 +663,7 @@ async function mixConflictDiscard() {
   await addToList();
 }
 
+/*  ACTIONS  */
 async function addToList() {
   error.value = "";
   const quantity = Number(qty.value);
@@ -693,10 +696,9 @@ async function addToList() {
       error.value = "Please select a uniform variant.";
       return;
     }
-    // What is on the shelf goes out as a normal request line; anything
-    // beyond it (or everything, when out of stock) becomes a reservation
-    // line, held for the paid student once the AMO restocks. Both go out
-    // with the same student name, ID and payment confirmation.
+    /*
+     * Splits a uniform order: shelf stock becomes a request line, the rest a reservation for the paid student.
+     */
     const variant = selectedUniformVariant.value;
     const sameVariant = (u) =>
       String(u.uniformVariantId) === String(variant.idUnifvariant);
@@ -810,8 +812,7 @@ function showWarning(title, message) {
 
 // SUBMIT REQUEST //
 
-// Called with no argument from the button (shows the confirmation first)
-// and with `true` from the confirmation modal (really submits).
+/* No argument = show the confirmation; true = really submit. */
 async function submitRequest(confirmed = false) {
   error.value = "";
 

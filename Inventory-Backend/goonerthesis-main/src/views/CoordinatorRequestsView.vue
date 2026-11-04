@@ -3,6 +3,7 @@ import { ref, onMounted, watch } from 'vue'
 import axios from '../axios'
 import AlertMessage from '../components/AlertMessage.vue'
 
+/*  STATE  */
 const requests = ref([])
 const directRequests = ref([])
 const tab = ref('queue')
@@ -55,8 +56,7 @@ async function doReject() {
   } catch (e) { notify('danger', e.response?.data?.message || 'Could not return the request.') }
   finally { busyId.value = null }
 }
-// Review of requests an instructor sent straight to the AMO. Neither action
-// blocks the AMO; Flag also tells the AMO.
+/* Review of requests an instructor sent straight to the AMO; Flag also alerts the AMO. */
 const flagTarget = ref(null)
 const flagNote = ref('')
 async function review(r, action, note = '') {

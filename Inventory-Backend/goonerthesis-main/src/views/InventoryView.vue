@@ -10,6 +10,7 @@ import StockBadge from "../components/StockBadge.vue";
 import DueBadge from "../components/DueBadge.vue";
 import { isIssuedType, isReturnableType } from "../services/itemTypes";
 
+/*  STATE  */
 const search = ref("");
 const statusFilter = ref("ALL");
 const borrowerFilter = ref("ALL");
@@ -22,15 +23,13 @@ const ROOMS = ["Room 201", "Room 202", "Room 203", "N/A"];
 const items = ref([]);
 const requests = ref([]);
 
-// "Item Locator" is a tab inside this same page (not a separate view) so
-// that borrowed/location lookups live in one place rather than being
-// duplicated across pages.
+/*  COMPUTED  */
+/* Item Locator is a tab on this page so borrowed/location lookups live in one place. */
 const isLocationView = computed(() => activeTab.value === "LOCATOR");
-// The Status filter already had a "Damaged" option, but nothing ever set
-// item.status to "Damaged" -- damaged items are tracked separately via
-// damaged_quantity (from the Return Inspection feature). When that filter
-// is selected, show a dedicated damaged-items table instead. Displayed as
-// "Disposal" in the UI, matching the renamed inspection outcome.
+/*
+ * The 'Damaged' status filter: shows the damaged-items table (labelled 'Disposal'), since no item.status is
+ * 'Damaged'.
+ */
 const isDamagedView = computed(
   () => !isLocationView.value && statusFilter.value === "Damaged",
 );
@@ -39,8 +38,7 @@ const damagedItems = computed(() =>
   items.value.filter((item) => Number(item.damaged_quantity) > 0),
 );
 
-// Items marked "Need Maintenance" during inspection. The Maintenance view is
-// its own component (MaintenancePanel) with a record per batch sent for repair.
+/* Maintenance view (MaintenancePanel): one record per batch sent for repair. */
 const isMaintenanceView = computed(
   () => !isLocationView.value && statusFilter.value === "Maintenance",
 );
@@ -48,12 +46,12 @@ const isMissingView = computed(
   () => !isLocationView.value && statusFilter.value === "Missing",
 );
 
+/*  STATE  */
 const showAlert = ref(false);
 const alertType = ref("success");
 const alertMessage = ref("");
 
-// Disposal step: formally dispose of units flagged for disposal at inspection.
-// Each disposal is saved as a permanent record (see Disposal Records).
+/* Disposal: formally dispose of units flagged at inspection; each is saved as a Disposal Record. */
 const disposeTarget = ref(null);
 const disposeForm = ref({ quantity: 1, method: "Discarded", disposed_on: "", notes: "" });
 const disposeError = ref("");
@@ -66,6 +64,7 @@ function todayISO() {
   return `${d.getFullYear()}-${m}-${day}`;
 }
 
+/*  ACTIONS  */
 function openDispose(item) {
   disposeTarget.value = item;
   disposeForm.value = {
@@ -151,6 +150,7 @@ onMounted(loadData);
 
 // BORROWED ITEMS
 
+/*  COMPUTED  */
 const borrowedRows = computed(() => {
   const rows = [];
 
@@ -174,8 +174,7 @@ const borrowedRows = computed(() => {
         continue;
       }
 
-      // Issued items (Consumable / Type A) are never returned, so they are
-      // not "borrowed".
+      /* Issued items (Consumable / Type A) are never borrowed. */
       if (isIssuedType(item.itemType)) {
         continue;
       }
@@ -269,8 +268,7 @@ const filteredItems = computed(() => {
       category.includes(keyword) ||
       itemType.includes(keyword);
 
-    // Low Stock / Critical / Minimum / Out of Stock are driven by each
-    // item's own stock thresholds; everything else matches item.status.
+    /* Low Stock / Critical / Minimum / Out of Stock use each item's thresholds; the rest match item.status. */
     const f = statusFilter.value;
     const matchesStatus =
       f === "ALL" ||

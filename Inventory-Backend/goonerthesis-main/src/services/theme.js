@@ -1,13 +1,4 @@
-// Light/Dark mode for the whole app.
-//
-// Uses Bootstrap 5.3's built-in color-mode support: setting
-// data-bs-theme="dark" on <html> automatically re-themes every Bootstrap
-// component (cards, tables, forms, modals, badges, buttons, etc.) via CSS
-// variables -- no per-component dark styles needed for those.
-//
-// The choice is saved in localStorage so it persists across reloads and
-// is applied as early as possible (see main.js) to avoid a flash of the
-// wrong theme on load.
+/* Light/dark mode via Bootstrap's data-bs-theme; saved in localStorage and applied early (main.js). */
 
 const STORAGE_KEY = "cims_theme";
 
@@ -34,8 +25,7 @@ export function setTheme(theme) {
   try {
     localStorage.setItem(STORAGE_KEY, resolved);
   } catch {
-    // localStorage unavailable (private browsing, etc.) -- theme just
-    // won't persist across reloads, but still applies for this session.
+    /* localStorage unavailable: the theme applies for this session but won't persist. */
   }
 
   applyTheme(resolved);

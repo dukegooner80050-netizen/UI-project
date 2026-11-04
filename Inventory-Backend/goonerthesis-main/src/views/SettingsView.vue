@@ -25,11 +25,10 @@ import ChangePasswordForm from "../components/ChangePasswordForm.vue";
 import { getErrorMessage } from "../services/errors";
 import AlertMessage from "../components/AlertMessage.vue";
 
-// Only admins get the Account Requests / Account Management tabs. Everyone
-// else only ever sees General. The server enforces this too (those
-// endpoints are role:amo-gated) -- this just keeps the page from
-// showing tabs/controls a non-admin couldn't use anyway.
+/* Only the AMO gets the Account Requests / Management tabs; the server enforces it, this hides the controls. */
 const canEditLimit = computed(() => isAdmin(getCurrentUser()));
+
+/*  STATE  */
 const currentUser = getCurrentUser();
 
 const activeTab = ref("GENERAL"); // GENERAL | ACCOUNT_REQUESTS | ACCOUNT_MANAGEMENT
@@ -69,6 +68,7 @@ function chooseTheme(value) {
   notify("success", value === "dark" ? "Dark mode enabled." : "Light mode enabled.");
 }
 
+/*  STATE  */
 const loading = ref(true);
 const saving = ref(false);
 const currentLimit = ref(null);
@@ -109,6 +109,7 @@ async function saveReturnPeriods() {
   }
 }
 
+/*  STATE  */
 // Default stock levels for School Equipment and Type B office supplies.
 const slEquipment = reactive({ critical: 2, minimum: 5, optimal: 20 });
 const slTypeB = reactive({ critical: 2, minimum: 5, optimal: 20 });
@@ -189,6 +190,7 @@ async function loadGeneral() {
   }
 }
 
+/*  ACTIONS  */
 function openConfirm() {
   if (!canEditLimit.value) return;
 
@@ -278,12 +280,14 @@ function formatDate(date) {
   });
 }
 
+/*  STATE  */
 const arConfirmOpen = ref(false);
 const arConfirmAction = ref(""); // "approve" | "decline"
 const arConfirmTarget = ref(null);
 const arConfirmRole = ref("instructor");
 const arWorking = ref(false);
 
+/*  HELPERS  */
 function arOpenApprove(request) {
   arConfirmAction.value = "approve";
   arConfirmTarget.value = request;
@@ -338,8 +342,7 @@ async function arRunConfirmed() {
 
 const amLoading = ref(true);
 const amUsers = ref([]);
-// Instructors / department heads with no department: their requests can't be
-// routed to one department's head, so the AMO is reminded to set it.
+/* Instructors / department heads with no department can't be routed, so remind the AMO to set it. */
 const amNoDept = computed(() =>
   amUsers.value.filter(
     (u) => ["instructor", "department_head"].includes(String(u.role || "").toLowerCase())
@@ -358,6 +361,8 @@ async function saveDept(user) {
     notify("danger", getErrorMessage(e));
   }
 }
+
+/*  STATE  */
 const amActionsOpen = reactive({}); // { [idUsers]: true } rows whose action buttons are shown
 const amRoleChoice = reactive({}); // { [idUsers]: "amo" | "department_head" | "admin" | "instructor" | "cashier" }
 
@@ -425,6 +430,7 @@ function amOpenRoleChange(user) {
   amConfirmOpen.value = true;
 }
 
+/*  STATE  */
 const unOpen = ref(false);
 const unTarget = ref(null);
 const unValue = ref("");
@@ -501,10 +507,10 @@ function amOpenReset(user) {
 const amTemp = ref(null); // { name, username, password }
 const amCopied = ref(false);
 
+/*  HELPERS  */
 async function amCopyTemp() {
   const text = amTemp.value.password;
-  // navigator.clipboard only works on https or localhost. On a plain
-  // http://192.168.x.x address it is undefined, so fall back to the old way.
+  /* navigator.clipboard needs https or localhost; fall back to the old copy method otherwise. */
   try {
     if (navigator.clipboard && window.isSecureContext) {
       await navigator.clipboard.writeText(text);

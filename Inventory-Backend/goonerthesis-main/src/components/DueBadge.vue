@@ -1,8 +1,8 @@
 <script setup>
 import { computed } from "vue";
 
-// Due date / overdue badge for a borrowed line (roadmap #8).
-// dueDate: "YYYY-MM-DD" or empty. overdue/daysOverdue come from the server.
+/*  STATE  */
+/* Due / overdue badge for a borrowed line; dueDate is YYYY-MM-DD, overdue values come from the server. */
 const props = defineProps({
   dueDate: { type: String, default: "" },
   overdue: { type: Boolean, default: false },
@@ -14,6 +14,7 @@ function parseLocal(ymd) {
   return new Date(y, m - 1, d);
 }
 
+/*  COMPUTED  */
 const pretty = computed(() =>
   props.dueDate
     ? parseLocal(props.dueDate).toLocaleDateString("en-PH", {

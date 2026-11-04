@@ -1,14 +1,8 @@
-// Roadmap #17: printable Borrower's Form (QF-AMO-03-07-01July.13), built
-// from an existing request. No new data entry -- items, purpose and
-// location already come from the request. REMARKS is left blank on
-// purpose: on paper it is written by hand at return time.
-// "Recommending Approval" and "Approved by" are paper-only sign-offs the
-// software does not model, so they print as blank signature lines.
+/* Prints the Borrower's Form from a request; REMARKS and approval signatures are left blank. */
 
 import { isReturnableType } from "./itemTypes";
 
-// The form is for items that come back. Consumables, issued (Type A)
-// items and uniforms are handed over for good, so they are not listed.
+/* Only items that come back are listed; consumables, Type A and uniforms are excluded. */
 export function borrowedLines(request) {
   return (request?.items || []).filter((i) => isReturnableType(i.itemType));
 }

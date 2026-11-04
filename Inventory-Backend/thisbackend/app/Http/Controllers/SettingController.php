@@ -59,8 +59,7 @@ class SettingController extends Controller
         ]);
     }
 
-    // Any authenticated role can read this -- everyone except the AMO
-    // needs to know their own limit.
+    /* Readable by any role (non-AMO users need to see their own limit). */
     public function monthlyRequestLimit()
     {
         $setting = Setting::where('setting_key', 'monthly_request_limit')->first();
@@ -95,10 +94,7 @@ class SettingController extends Controller
         ]);
     }
 
-    // Default stock levels (Critical / Minimum / Optimal) for School Equipment
-    // and Non-Consumable Type B office supplies. They pre-fill the Add Item
-    // forms and are used when a new item is saved without its own levels.
-    // AMO only (route middleware).
+    /* AMO-set default stock levels for School Equipment and Type B items; they pre-fill the Add forms. */
     public const STOCK_GROUPS = [
         'school_equipment' => 'stock_levels_school_equipment',
         'type_b' => 'stock_levels_type_b',
@@ -191,9 +187,7 @@ class SettingController extends Controller
         ]);
     }
 
-    // Default return period (in days) per category, used by borrowed items
-    // that have no period of their own (roadmap #8). null = no default.
-    // Any authenticated role can read it; admin only can change it.
+    /* Default return days per category (null = none). Any role can read; only admin can change. */
     public function returnPeriods()
     {
         $defaults = ReturnPolicy::categoryDefaults();

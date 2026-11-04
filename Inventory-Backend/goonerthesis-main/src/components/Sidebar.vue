@@ -9,8 +9,7 @@ import appAxios from "../axios"
 
 const showUniforms = ref(false)
 
-// Course links come from the database so a course the AMO adds shows up
-// here too. The old fixed list is only used if the request fails.
+/* Courses come from the database; this fixed list is only a fallback if the request fails. */
 const FALLBACK_COURSES = ["BSMT", "BSCrim", "BSHM", "BSIT", "Senior High School"]
 const courses = ref(FALLBACK_COURSES)
 async function loadCourses() {
@@ -49,10 +48,7 @@ const isAdmin = computed(
 )
 const isDean = computed(() => (user.value?.role || "").toLowerCase() === "department_head")
 
-/* SIDEBAR BADGES
- * One cheap request returns all four counts (the server just COUNTs rows).
- * It used to download the full request, inspection and report lists every
- * 2 seconds. */
+/* SIDEBAR BADGES: one cheap request returns all the counts (the server only COUNTs rows). */
 
 async function refreshCounts() {
   if (!isAdmin.value) {
@@ -87,8 +83,7 @@ const active = (path) => route.path === path
 
 /* AUTO REFRESH */
 
-// Every 30 s while the tab is visible, plus right away when something on
-// screen changes a count (pages fire these events) or the user navigates.
+/* Refresh counts every 30 s while visible, and right away on count-change events or navigation. */
 const refreshSoon = throttled(refreshCounts, 3000)
 let stopPolling = null
 

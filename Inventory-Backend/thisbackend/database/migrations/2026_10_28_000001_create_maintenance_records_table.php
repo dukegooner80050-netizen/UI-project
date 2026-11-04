@@ -8,13 +8,10 @@ use Illuminate\Support\Facades\Schema;
 return new class extends Migration
 {
     /**
-     * One row per batch of units sent for repair (created when inspection
-     * marks units "Need Maintenance"). items.maintenance_quantity stays as the
-     * running total; these rows say why, where from, since when, and how each
-     * batch ended (repaired / can't be repaired).
-     *
-     * No foreign keys on purpose: item and room details are copied in as text
-     * so the history stays readable if an item or room is deleted later.
+     * creates one row per batch of units sent for repair (items.maintenance_quantity keeps
+     * the running total).
+     * Records why, where from, since when and how each batch ended. No foreign keys: names are
+     * copied as text.
      */
     public function up(): void
     {
@@ -48,9 +45,7 @@ return new class extends Migration
             $table->index('iditems');
         });
 
-        // Units already under maintenance before this feature have no history.
-        // Give each item's existing count a "Before records" row so they can
-        // be resolved like everything else.
+        /* Gives units already in maintenance a "Before records" row so they can be resolved too. */
         DB::table('items')
             ->where('maintenance_quantity', '>', 0)
             ->get(['iditems', 'item_name', 'category', 'maintenance_quantity'])

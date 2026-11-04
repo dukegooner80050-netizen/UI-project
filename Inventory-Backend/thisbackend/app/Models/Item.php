@@ -6,11 +6,9 @@ use Illuminate\Database\Eloquent\Model;
 
 class Item extends Model
 {
-    // Office Supplies item types.
-    //   Consumable            - used up, never returned
-    //   Non-Consumable Type A - issued: handed over for good, never returned
-    //   Non-Consumable Type B - tracked: lent out, must be returned
-    // Any other item_type (e.g. School Equipment's "Equipment") is tracked.
+    /*
+     * Office Supplies types: Consumable = used up; Type A = issued, never returned; Type B = must be returned.
+     */
     public const TYPE_CONSUMABLE = 'Consumable';
     public const TYPE_A = 'Non-Consumable Type A';
     public const TYPE_B = 'Non-Consumable Type B';
@@ -55,8 +53,7 @@ class Item extends Model
         'is_limitable' => 'boolean',
     ];
 
-    // Computed from quantity + thresholds, so it can never go stale when an
-    // admin edits the levels. Included in every JSON response.
+    /* Computed from quantity and thresholds, so it never goes stale; included in every JSON response. */
     protected $appends = ['stock_level', 'effective_return_days'];
 
     public $timestamps = false;
@@ -67,12 +64,9 @@ class Item extends Model
     }
 
     /**
-     * School Equipment and Type B office supplies are lent or placed somewhere
-     * and come back, so an empty shelf is not "out of stock" while units are
-     * out on loan (Borrowed) or placed in rooms (Deployed). Returns
-     * ['borrowed' => n, 'deployed' => n] when the shelf is empty for one of
-     * those items, else null. Only queries when the shelf is empty, so normal
-     * item lists cost nothing extra.
+     * tells whether an empty shelf is really out of stock.
+     * School Equipment and Type B units may be borrowed or deployed in rooms; returns ['borrowed'
+     * => n, 'deployed' => n] when the shelf is empty, else null (queries only then).
      */
     public function awayUnits(): ?array
     {
@@ -103,8 +97,7 @@ class Item extends Model
         return $away !== null && $away['borrowed'] === 0 && $away['deployed'] > 0;
     }
 
-    // Stored status is "Borrowed" whenever the shelf is empty; say "Deployed"
-    // when the empty shelf is only because the units are in rooms.
+    /* Shows "Deployed" instead of "Borrowed" when the shelf is empty only because units are in rooms. */
     public function getStatusAttribute($value)
     {
         if ($value === 'Borrowed' && $this->isFullyDeployed()) {
@@ -143,9 +136,9 @@ class Item extends Model
     }
 
     /**
-     * Days a borrower may keep this item before it is overdue: the item's own
-     * return_days, else its category default, else null (no due date).
-     * Always null for issued (never-returned) types. Roadmap #8.
+     * how many days a borrower may keep this item before it is overdue.
+     * Uses the item's own return_days, else the category default, else null (no due date); always
+     * null for issued types.
      */
     public function getEffectiveReturnDaysAttribute(): ?int
     {
@@ -165,10 +158,8 @@ class Item extends Model
     }
 
     /**
-     * False for "fixed asset" equipment (roadmap #10) - unique/large-ticket
-     * School Equipment like a room's projector or aircon, where a per-head
-     * limit (roadmap #9) doesn't make sense. Defaults to true for every
-     * other item.
+     * tells whether a per-head limit applies to this item.
+     * False for fixed assets (e.g. a room's projector); true for every other item.
      */
     public function canHaveLimit(): bool
     {
@@ -176,12 +167,9 @@ class Item extends Model
     }
 
     /**
-     * The single place that sets items.status (previously copy-pasted into
-     * four controllers). Does not save; callers save as before.
-     *
-     * Office Supplies, Consumable or Type A: Out of Stock / Low Stock (at or
-     *   below minimum_stock) / Available
-     * Everything else: Borrowed (nothing on the shelf) / Available
+     * the single place that works out items.status (does not save).
+     * Consumable / Type A: Out of Stock, Low Stock (at or below minimum_stock) or Available.
+     * Everything else: Borrowed (nothing on the shelf) or Available.
      */
     public function refreshStatus(): void
     {

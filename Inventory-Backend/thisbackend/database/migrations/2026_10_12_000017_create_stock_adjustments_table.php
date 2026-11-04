@@ -8,10 +8,9 @@ use Illuminate\Support\Facades\Schema;
 return new class extends Migration
 {
     /**
-     * Formal record of stock shrinkage (missing / lost / stolen items).
-     * `status` is 'Applied' for now (admin-only, immediate). It exists so an
-     * approval step can be added later without changing this table, once the
-     * client decides whether adjustments need a second approver.
+     * creates the record of stock shrinkage (missing / lost / stolen).
+     * status is 'Applied' for now, so an approval step can be added later without changing the
+     * table.
      */
     public function up(): void
     {
@@ -19,8 +18,7 @@ return new class extends Migration
             return;
         }
 
-        // The foreign key column must match items.iditems exactly
-        // (signed int(11) in some databases, unsigned in others).
+        /* FK column must match items.iditems exactly (signed or unsigned varies by database). */
         $unsigned = true;
         if (DB::getDriverName() === 'mysql') {
             $col = DB::selectOne(
