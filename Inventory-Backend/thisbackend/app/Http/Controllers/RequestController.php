@@ -1046,11 +1046,12 @@ public function coordinatorReject(HttpRequest $httpRequest, $id)
 public function forwardToInventory(HttpRequest $httpRequest, $id)
 {
     $actor = $httpRequest->user();
-    $note = trim((string) $httpRequest->validate(['note' => 'nullable|string|max:500'])['note'] ?? '');
+    $httpRequest->validate(['note' => 'nullable|string|max:500']);
+    $note = trim((string) ($httpRequest->input('note') ?? ''));
     if (strtolower((string) $actor->role) !== 'department_head') {
         return response()->json(['message' => 'Only the Dean/Academic Coordinator can forward requests.'], 403);
     }
-    return DB::transaction(function () use ($id, $actor) {
+    return DB::transaction(function () use ($id, $actor, $note) {
         $r = Request::where('idrequest', $id)->lockForUpdate()->first();
         if (!$r) return response()->json(['message' => 'Request not found.'], 404);
         if ($r->status !== 'With Coordinator') return response()->json(['message' => 'Only requests awaiting coordinator review can be forwarded.'], 422);
@@ -1073,6 +1074,37 @@ public function forwardToInventory(HttpRequest $httpRequest, $id)
         $r->update(['notified_at' => now(), 'notified_by' => $actor->idUsers]);
         $this->logActivity($actor->idUsers, 'Forwarded Request #' . $r->idrequest . ' to Inventory Management');
         return response()->json(['message' => 'Request forwarded to Inventory Management.', 'status' => $r->status]);
+    });
+}
+
+/* AMO takes over a request that is stuck With Coordinator (head absent or unreachable); a reason is required and recorded. */
+public function amoTakeOver(HttpRequest $httpRequest, $id)
+{
+    $actor = $httpRequest->user();
+    if (strtolower((string) $actor->role) !== 'amo') {
+        return response()->json(['message' => 'Only the AMO can take over a request.'], 403);
+    }
+    $validated = $httpRequest->validate(['reason' => 'required|string|min:3|max:500']);
+    $reason = trim($validated['reason']);
+
+    return DB::transaction(function () use ($id, $actor, $reason) {
+        $r = Request::with('user')->where('idrequest', $id)->lockForUpdate()->first();
+        if (!$r) return response()->json(['message' => 'Request not found.'], 404);
+        if ($r->status !== 'With Coordinator') {
+            return response()->json(['message' => 'Only requests waiting for the department head can be taken over.'], 422);
+        }
+        $r->update([
+            'status' => 'With Inventory',
+            'coord_review_status' => 'Bypassed',
+            'coord_reviewed_by' => $actor->idUsers,
+            'coord_reviewed_at' => now(),
+            'coord_review_note' => $reason,
+            'notified_at' => now(),
+            'notified_by' => $actor->idUsers,
+        ]);
+        $this->createRequestNotification($r, (int) $r->idUsers, 'forwarded', 'Your request #' . $r->idrequest . ' was moved to Inventory Management by the AMO. Reason: ' . $reason, (int) $actor->idUsers);
+        $this->logActivity($actor->idUsers, "Took over Request #{$r->idrequest} from the department head: {$reason}");
+        return response()->json(['message' => 'Request taken over and moved to Inventory Management.', 'status' => $r->status]);
     });
 }
 

@@ -57,6 +57,12 @@ export async function approveRequest(id, dueDates = {}, approvalRemarks = "") {
     return response.data;
 }
 
+// The AMO moves a request stuck With Coordinator to Inventory; a reason is required.
+export async function takeOverRequest(id, reason) {
+    const response = await axios.put(`/requests/${id}/amo-takeover`, { reason });
+    return response.data;
+}
+
 export async function rejectRequest(id, rejectReason) {
     const response = await axios.put(
         `/requests/${id}/reject`,

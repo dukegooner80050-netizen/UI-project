@@ -1,6 +1,6 @@
 <script setup>
 import { ref, reactive, computed, onMounted, watch } from "vue";
-import { getRequests, approveRequest, rejectRequest, releaseRequest, cancelApprovedRequest } from "../services/requests";
+import { getRequests, approveRequest, rejectRequest, takeOverRequest, releaseRequest, cancelApprovedRequest } from "../services/requests";
 import { getCurrentUser } from "../services/storage";
 import { requireAdmin } from "../services/session";
 import AlertMessage from "../components/AlertMessage.vue";
@@ -101,6 +101,9 @@ async function confirmCancel() {
 }
 
 /*  STATE  */
+const takeoverModal = ref(false);
+const takeoverReason = ref("");
+const takeoverTargetId = ref(null);
 const rejectModal = ref(false);
 const rejectReason = ref("");
 const rejectTargetId = ref(null);
@@ -132,6 +135,11 @@ const pendingRequests = computed(() =>
   requests.value.filter((r) => ["with inventory", "pending"].includes((r.status || "").toLowerCase())),
 );
 
+// Waiting on the department head; the AMO can take these over if the head is unavailable.
+const coordinatorRequests = computed(() =>
+  requests.value.filter((r) => (r.status || "").toLowerCase() === "with coordinator"),
+);
+
 // Approved, but Inventory hasn't recorded For Pick Up / For Delivery yet.
 const releaseRequests = computed(() =>
   requests.value.filter(
@@ -149,6 +157,7 @@ const uniqueRequesters = computed(() => {
 
 const tabBase = computed(() => {
   if (activeTab.value === "release") return releaseRequests.value;
+  if (activeTab.value === "coordinator") return coordinatorRequests.value;
   if (activeTab.value === "all") return requests.value;
   return pendingRequests.value;
 });
@@ -232,6 +241,29 @@ async function approve(id) {
   };
 
   confirmModal.value = true;
+}
+
+function openTakeoverModal(id) {
+  takeoverTargetId.value = id;
+  takeoverReason.value = "";
+  takeoverModal.value = true;
+}
+
+async function confirmTakeover() {
+  const reason = takeoverReason.value.trim();
+  if (reason.length < 3) {
+    notify("warning", "A reason is required.");
+    return;
+  }
+
+  try {
+    const res = await takeOverRequest(takeoverTargetId.value, reason);
+    notify("success", res.message || "Request moved to Inventory Management.");
+    takeoverModal.value = false;
+    await refresh();
+  } catch (e) {
+    notify("danger", getErrorMessage(e));
+  }
 }
 
 function openRejectModal(id) {
@@ -407,11 +439,11 @@ function statusBadgeClass(status) {
       </div>
     </div>
 
-    <div class="d-flex flex-wrap gap-2 mb-3">
+    <div class="nav nav-tabs mb-3" role="tablist">
       <button
         type="button"
-        class="btn"
-        :class="activeTab === 'pending' ? 'btn-primary' : 'btn-outline-primary'"
+        class="nav-link"
+        :class="{ active: activeTab === 'pending' }"
         @click="activeTab = 'pending'; expandedId = null"
       >
         Pending
@@ -419,8 +451,8 @@ function statusBadgeClass(status) {
       </button>
       <button
         type="button"
-        class="btn"
-        :class="activeTab === 'release' ? 'btn-primary' : 'btn-outline-primary'"
+        class="nav-link"
+        :class="{ active: activeTab === 'release' }"
         @click="activeTab = 'release'; expandedId = null"
       >
         For Release
@@ -428,8 +460,17 @@ function statusBadgeClass(status) {
       </button>
       <button
         type="button"
-        class="btn"
-        :class="activeTab === 'all' ? 'btn-primary' : 'btn-outline-primary'"
+        class="nav-link"
+        :class="{ active: activeTab === 'coordinator' }"
+        @click="activeTab = 'coordinator'; expandedId = null"
+      >
+        With Dept. Head
+        <span class="badge bg-secondary ms-1">{{ coordinatorRequests.length }}</span>
+      </button>
+      <button
+        type="button"
+        class="nav-link"
+        :class="{ active: activeTab === 'all' }"
         @click="activeTab = 'all'; expandedId = null"
       >
         All
@@ -505,7 +546,15 @@ function statusBadgeClass(status) {
                     :class="activeTab === 'all' ? 'd-flex flex-column align-items-stretch gap-1 mt-2 text-nowrap' : 'd-flex gap-1 text-nowrap'"
                   >
                     <button
-                      v-if="activeTab !== 'release'"
+                      v-if="(r.status || '').toLowerCase() === 'with coordinator'"
+                      class="btn btn-sm btn-warning text-dark"
+                      title="The department head is unavailable: move this request to Inventory"
+                      @click="openTakeoverModal(r.id)"
+                    >
+                      Take over
+                    </button>
+                    <button
+                      v-if="activeTab !== 'release' && activeTab !== 'coordinator'"
                       class="btn btn-sm btn-success"
                       :disabled="!['with inventory', 'pending'].includes((r.status || '').toLowerCase())"
                       @click="approve(r.id)"
@@ -514,7 +563,7 @@ function statusBadgeClass(status) {
                     </button>
 
                     <button
-                      v-if="activeTab !== 'release'"
+                      v-if="activeTab !== 'release' && activeTab !== 'coordinator'"
                       class="btn btn-sm btn-danger text-white"
                       :disabled="!['with inventory', 'pending'].includes((r.status || '').toLowerCase())"
                       @click="openRejectModal(r.id)"
@@ -631,7 +680,8 @@ function statusBadgeClass(status) {
                         <div class="mb-1"><strong>Purpose:</strong> {{ r.purpose || "—" }}</div>
                         <div v-if="r.directReason" class="mb-1 text-warning-emphasis"><strong>Sent directly (skipped department head):</strong> {{ r.directReason }}</div>
                         <div v-if="r.coordReview" class="mb-1" :class="['Flagged', 'Rejected'].includes(r.coordReview) ? 'text-danger' : 'text-success'">
-                          <strong>Department head {{ r.coordReview.toLowerCase() }}</strong>
+                          <strong v-if="r.coordReview === 'Bypassed'">AMO took over (department head unavailable)</strong>
+                          <strong v-else>Department head {{ r.coordReview.toLowerCase() }}</strong>
                           <span v-if="r.coordReviewedBy"> ({{ r.coordReviewedBy }})</span>
                           <span v-if="r.coordReviewNote"> — {{ r.coordReviewNote }}</span>
                         </div>
@@ -720,6 +770,35 @@ function statusBadgeClass(status) {
       <button class="btn btn-secondary text-white" @click="cancelModal = false">Back</button>
       <button class="btn btn-danger" :disabled="cancelBusy || cancelReason.trim().length < 3" @click="confirmCancel">
         Cancel approval
+      </button>
+    </div>
+  </div>
+</div>
+<div v-if="takeoverModal" class="modal-backdrop-custom">
+  <div class="modal-custom">
+    <div class="modal-header">
+      <h5 class="mb-0">Take Over Request</h5>
+      <button class="btn-close" @click="takeoverModal = false"></button>
+    </div>
+
+    <div class="modal-body">
+      <p class="small text-muted">
+        This skips the department head review and moves the request to Inventory.
+        The reason is saved on the request and the instructor is notified.
+      </p>
+      <label class="form-label">Reason</label>
+      <textarea
+        v-model="takeoverReason"
+        class="form-control"
+        rows="3"
+        placeholder="e.g. Department head is on leave"
+      ></textarea>
+    </div>
+
+    <div class="modal-footer">
+      <button class="btn btn-secondary text-white" @click="takeoverModal = false">Cancel</button>
+      <button class="btn btn-warning" @click="confirmTakeover" :disabled="takeoverReason.trim().length < 3">
+        Take over
       </button>
     </div>
   </div>
