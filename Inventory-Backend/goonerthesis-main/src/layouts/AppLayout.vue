@@ -4,6 +4,7 @@ import Sidebar from "../components/Sidebar.vue";
 import CriticalStockAlert from "../components/CriticalStockAlert.vue";
 import OverdueAlert from "../components/OverdueAlert.vue";
 import NotificationBell from "../components/NotificationBell.vue";
+import IdleLogout from "../components/IdleLogout.vue";
 
 const sidebarCollapsed = ref(false);
 const mobileOpen = ref(false);
@@ -59,6 +60,7 @@ onBeforeUnmount(() => window.removeEventListener("resize", onResize));
       <div v-if="!isMobile" class="main-topbar">
         <NotificationBell />
       </div>
+      <IdleLogout />
       <CriticalStockAlert />
       <OverdueAlert />
       <RouterView />

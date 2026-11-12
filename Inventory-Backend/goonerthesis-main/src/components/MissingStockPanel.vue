@@ -112,11 +112,11 @@ async function confirmFound() {
 
     <div class="card shadow-sm">
       <div class="card-header d-flex flex-wrap justify-content-between align-items-center gap-2">
-        <div class="btn-group btn-group-sm">
-          <button class="btn" :class="view === 'open' ? 'btn-primary' : 'btn-outline-primary'" @click="view = 'open'">
+        <div class="nav nav-tabs" role="tablist">
+          <button class="nav-link" :class="{ active: view === 'open' }" @click="view = 'open'">
             Currently missing ({{ missingTotal }} units)
           </button>
-          <button class="btn" :class="view === 'history' ? 'btn-primary' : 'btn-outline-primary'" @click="view = 'history'">
+          <button class="nav-link" :class="{ active: view === 'history' }" @click="view = 'history'">
             Found history
           </button>
         </div>

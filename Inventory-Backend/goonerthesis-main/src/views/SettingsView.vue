@@ -620,11 +620,11 @@ onMounted(async () => {
     </p>
 
     <!-- TABS (General is always available; the other two are admin-only) -->
-    <div class="d-flex gap-2 mb-3">
+    <div class="nav nav-tabs mb-3" role="tablist">
       <button
         type="button"
-        class="btn"
-        :class="activeTab === 'GENERAL' ? 'btn-primary' : 'btn-outline-primary'"
+        class="nav-link"
+        :class="{ active: activeTab === 'GENERAL' }"
         @click="activeTab = 'GENERAL'"
       >
         General
@@ -633,8 +633,8 @@ onMounted(async () => {
       <button
         v-if="canEditLimit"
         type="button"
-        class="btn d-flex align-items-center gap-2"
-        :class="activeTab === 'ACCOUNT_REQUESTS' ? 'btn-primary' : 'btn-outline-primary'"
+        class="nav-link d-flex align-items-center gap-2"
+        :class="{ active: activeTab === 'ACCOUNT_REQUESTS' }"
         @click="activeTab = 'ACCOUNT_REQUESTS'"
       >
         Account Requests
@@ -644,8 +644,8 @@ onMounted(async () => {
       <button
         v-if="canEditLimit"
         type="button"
-        class="btn"
-        :class="activeTab === 'ACCOUNT_MANAGEMENT' ? 'btn-primary' : 'btn-outline-primary'"
+        class="nav-link"
+        :class="{ active: activeTab === 'ACCOUNT_MANAGEMENT' }"
         @click="activeTab = 'ACCOUNT_MANAGEMENT'"
       >
         Account Management
@@ -657,9 +657,13 @@ onMounted(async () => {
     <!-- ============================================================ -->
 
     <template v-if="activeTab === 'GENERAL'">
-    <div class="row g-3 align-items-start">
+    <div class="row g-3 align-items-start" style="max-width: 760px">
 
-      <div class="col-12 col-md-6 col-xl-4">
+      <div v-if="canEditLimit" class="col-12">
+        <h6 class="text-uppercase text-muted small fw-semibold mb-0">My preferences</h6>
+      </div>
+
+      <div class="col-12">
       <!-- APPEARANCE -->
       <div class="card shadow-sm mb-3">
         <div class="card-body">
@@ -693,6 +697,28 @@ onMounted(async () => {
         </div>
       </div>
 
+      </div>
+      <div class="col-12">
+      <!-- CHANGE PASSWORD (everyone) -->
+      <div class="card shadow-sm mb-3">
+        <div class="card-body">
+          <h6 class="mb-2">Change Password</h6>
+          <p class="text-muted small">
+            Choose a new password for your own account. Your other devices
+            will be signed out.
+          </p>
+          <ChangePasswordForm />
+        </div>
+      </div>
+
+      </div>
+
+      <template v-if="canEditLimit">
+      <div class="col-12 mt-2">
+        <h6 class="text-uppercase text-muted small fw-semibold mb-0">System rules (AMO only)</h6>
+      </div>
+
+      <div class="col-12">
       <div v-if="canEditLimit && !loading" class="card shadow-sm mb-3">
         <div class="card-body">
           <h6 class="mb-2">Student ID Length</h6>
@@ -752,21 +778,7 @@ onMounted(async () => {
       </div>
 
       </div>
-      <div class="col-12 col-md-6 col-xl-4">
-      <!-- CHANGE PASSWORD (everyone) -->
-      <div class="card shadow-sm mb-3">
-        <div class="card-body">
-          <h6 class="mb-2">Change Password</h6>
-          <p class="text-muted small">
-            Choose a new password for your own account. Your other devices
-            will be signed out.
-          </p>
-          <ChangePasswordForm />
-        </div>
-      </div>
-
-      </div>
-      <div class="col-12 col-md-6 col-xl-4">
+      <div class="col-12">
       <div v-if="canEditLimit && !loading" class="card shadow-sm mb-3">
         <div class="card-body">
 
@@ -862,7 +874,9 @@ onMounted(async () => {
           <button class="btn btn-primary" :disabled="slSaving" @click="askSaveStockLevels">Save</button>
         </div>
       </div>
+
       </div>
+      </template>
 
     </div>
     </template>

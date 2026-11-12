@@ -117,17 +117,17 @@ onMounted(load);
   <div class="card shadow-sm mb-3">
     <div class="card-header d-flex flex-wrap justify-content-between align-items-center gap-2">
       <h6 class="mb-0">Needs Restocking</h6>
-      <div class="btn-group btn-group-sm">
+      <div class="nav nav-tabs" role="tablist">
         <button
-          class="btn"
-          :class="tab === 'low' ? 'btn-primary' : 'btn-outline-primary'"
+          class="nav-link"
+          :class="{ active: tab === 'low' }"
           @click="tab = 'low'"
         >
           Low stock ({{ needsAction.length }})
         </button>
         <button
-          class="btn"
-          :class="tab === 'requests' ? 'btn-primary' : 'btn-outline-primary'"
+          class="nav-link"
+          :class="{ active: tab === 'requests' }"
           @click="tab = 'requests'"
         >
           Requests ({{ requests.length }})

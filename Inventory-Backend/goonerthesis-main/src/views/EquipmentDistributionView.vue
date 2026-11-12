@@ -550,19 +550,19 @@ const addItemAvailable = computed(() => {
       Distributing equipment here reserves it from the general available stock.
     </p>
 
-    <div class="d-flex gap-2 mb-3">
+    <div class="nav nav-tabs mb-3" role="tablist">
       <button
         type="button"
-        class="btn"
-        :class="viewTab === 'rooms' ? 'btn-primary' : 'btn-outline-primary'"
+        class="nav-link"
+        :class="{ active: viewTab === 'rooms' }"
         @click="viewTab = 'rooms'"
       >
         Buildings &amp; Rooms
       </button>
       <button
         type="button"
-        class="btn"
-        :class="viewTab === 'items' ? 'btn-primary' : 'btn-outline-primary'"
+        class="nav-link"
+        :class="{ active: viewTab === 'items' }"
         @click="openItemsTab"
       >
         Items

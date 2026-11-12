@@ -446,6 +446,7 @@ if (
             ->where(function ($q) {
                 $q->whereHas('items')->orWhereDoesntHave('uniforms');
             })
+            ->whereNotIn('status', ['Rejected', 'Cancelled'])   // a rejected or cancelled request does not use up the limit
             ->whereMonth('request_date', now()->month)
             ->whereYear('request_date', now()->year)
             ->count();

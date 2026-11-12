@@ -109,10 +109,10 @@ onMounted(refresh)
 </button>
     </div>
     <AlertMessage v-model:show="showAlert" :type="alertType" :message="alertMessage" />
-    <div class="d-flex flex-wrap gap-2 mb-3">
-      <button class="btn" :class="tab === 'queue' ? 'btn-primary' : 'btn-outline-primary'" @click="tab = 'queue'">Waiting for review ({{ requests.length }})</button>
-      <button class="btn" :class="tab === 'direct' ? 'btn-primary' : 'btn-outline-primary'" @click="tab = 'direct'">Sent directly to AMO ({{ unreviewedCount() }} to review)</button>
-      <button class="btn" :class="tab === 'history' ? 'btn-primary' : 'btn-outline-primary'" @click="tab = 'history'">History</button>
+    <div class="nav nav-tabs mb-3" role="tablist">
+      <button class="nav-link" :class="{ active: tab === 'queue' }" @click="tab = 'queue'">Waiting for review ({{ requests.length }})</button>
+      <button class="nav-link" :class="{ active: tab === 'direct' }" @click="tab = 'direct'">Sent directly to AMO ({{ unreviewedCount() }} to review)</button>
+      <button class="nav-link" :class="{ active: tab === 'history' }" @click="tab = 'history'">History</button>
     </div>
 
     <template v-if="tab === 'history'">

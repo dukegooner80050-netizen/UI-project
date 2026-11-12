@@ -136,6 +136,11 @@ function studentLabel(r) {
   return name || id || "—";
 }
 
+// Show the Student column only when at least one listed record has a student.
+const showStudentColumn = computed(() =>
+  sortedRecords.value.some((r) => studentLabel(r) !== "—"),
+);
+
 // REQUESTER-FOCUSED: group by requester
 const byRequester = computed(() => {
   const map = new Map();
@@ -193,23 +198,22 @@ function toggleExpand(key) {
     <div class="card shadow-sm mb-4">
       <div class="card-body">
         <div class="d-flex flex-wrap gap-3 align-items-end justify-content-between">
-          <div class="d-flex gap-2">
+          <div class="nav nav-tabs" role="tablist">
             <button
-              class="btn"
-              :class="viewMode === 'item' ? 'btn-primary' : 'btn-outline-primary'"
+              class="nav-link"
+              :class="{ active: viewMode === 'item' }"
               @click="viewMode = 'item'"
             >
               By Item
             </button>
             <button
-              class="btn"
-              :class="viewMode === 'records' ? 'btn-primary' : 'btn-outline-primary'"
+              class="nav-link"
+              :class="{ active: viewMode === 'records' }"
               @click="viewMode = 'records'"
             >
               All Records
             </button>
-            <button v-if="isInventoryManagement" class="btn" :class=" viewMode === 'requester'
-             ? 'btn-primary' : 'btn-outline-primary'" @click="viewMode = 'requester'">
+            <button v-if="isInventoryManagement" class="nav-link" :class="{ active: viewMode === 'requester' }" @click="viewMode = 'requester'">
               By Requester
             </button>
           </div>
@@ -279,7 +283,7 @@ function toggleExpand(key) {
                 <th v-if="isInventoryManagement">User</th>
                 <th>Item / Uniform</th>
                 <th>Type</th>
-                <th>Student</th>
+                <th v-if="showStudentColumn">Student</th>
                 <th style="width: 100px">Qty</th>
                 <th style="width: 110px">Request</th>
               </tr>
@@ -290,12 +294,12 @@ function toggleExpand(key) {
                 <td v-if="isInventoryManagement">{{ r.requester }}</td>
                 <td>{{ r.name }}</td>
                 <td>{{ r.type }}</td>
-                <td>{{ studentLabel(r) }}</td>
+                <td v-if="showStudentColumn">{{ studentLabel(r) }}</td>
                 <td>{{ r.qty }}</td>
                 <td>#{{ r.requestId }}</td>
               </tr>
               <tr v-if="sortedRecords.length === 0">
-                <td :colspan="isInventoryManagement ? 7 : 6" class="text-center text-muted py-4">
+                <td :colspan="(isInventoryManagement ? 6 : 5) + (showStudentColumn ? 1 : 0)" class="text-center text-muted py-4">
                   {{ emptyText }}
                 </td>
               </tr>

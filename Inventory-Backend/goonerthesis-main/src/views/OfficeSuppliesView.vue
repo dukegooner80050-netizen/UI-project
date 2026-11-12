@@ -295,7 +295,8 @@ const LEVEL_ORDER = Object.fromEntries(LEVELS.map((l, n) => [l, n]));
 const search = ref("");
 const typeFilter = ref("ALL");
 const levelFilter = ref("ALL");
-const sortKey = ref("name");
+// null = default order (by name, A to Z). Click a header: ascending -> descending -> back to default.
+const sortKey = ref(null);
 const sortDir = ref("asc");
 
 function typeShort(type) {
@@ -309,17 +310,29 @@ function typeBadge(type) {
 }
 
 function sortBy(key) {
-  if (sortKey.value === key) {
-    sortDir.value = sortDir.value === "asc" ? "desc" : "asc";
-  } else {
+  if (sortKey.value !== key) {
     sortKey.value = key;
+    sortDir.value = "asc";
+  } else if (sortDir.value === "asc") {
+    sortDir.value = "desc";
+  } else {
+    sortKey.value = null;
     sortDir.value = "asc";
   }
 }
 
+// Arrow shown in a header: ▲ ascending, ▼ descending, ⇅ not sorted by this column.
 function sortMark(key) {
-  if (sortKey.value !== key) return "";
-  return sortDir.value === "asc" ? " ▲" : " ▼";
+  const activeKey = sortKey.value ?? "name";
+  if (activeKey !== key) return "⇅";
+  const dir = sortKey.value ? sortDir.value : "asc";
+  return dir === "asc" ? "▲" : "▼";
+}
+
+function sortAria(key) {
+  const activeKey = sortKey.value ?? "name";
+  if (activeKey !== key) return "none";
+  return (sortKey.value ? sortDir.value : "asc") === "asc" ? "ascending" : "descending";
 }
 
 const tableRows = computed(() => {
@@ -333,7 +346,7 @@ const tableRows = computed(() => {
   );
 
   const value = (i) => {
-    switch (sortKey.value) {
+    switch (sortKey.value ?? "name") {
       case "type":
         return typeShort(i.item_type);
       case "level":
@@ -347,7 +360,7 @@ const tableRows = computed(() => {
     }
   };
 
-  const dir = sortDir.value === "asc" ? 1 : -1;
+  const dir = (sortKey.value ? sortDir.value : "asc") === "asc" ? 1 : -1;
   return [...rows].sort((x, y) => {
     const a = value(x);
     const b = value(y);
@@ -459,21 +472,17 @@ async function proceedAction() {
 
     <h3 class="mb-4">Office Supplies</h3>
     <div class="d-flex justify-content-between align-items-center mb-3">
-      <div class="d-flex gap-2">
+      <div class="nav nav-tabs" role="tablist">
         <button
-          class="btn"
-          :class="
-            activeTab === 'inventory' ? 'btn-primary' : 'btn-outline-primary'
-          "
+          class="nav-link"
+          :class="{ active: activeTab === 'inventory' }"
           @click="activeTab = 'inventory'"
         >
           Inventory
         </button>
         <button
-          class="btn"
-          :class="
-            activeTab === 'borrowed' ? 'btn-primary' : 'btn-outline-primary'
-          "
+          class="nav-link"
+          :class="{ active: activeTab === 'borrowed' }"
           @click="activeTab = 'borrowed'"
         >
           Borrowed Items
@@ -534,11 +543,56 @@ async function proceedAction() {
           <table class="table table-striped table-hover align-middle mb-0">
             <thead class="table-light">
               <tr>
-                <th class="sortable" @click="sortBy('name')">Name{{ sortMark("name") }}</th>
-                <th class="sortable" @click="sortBy('type')">Type{{ sortMark("type") }}</th>
-                <th class="sortable" @click="sortBy('level')">Stock Level{{ sortMark("level") }}</th>
-                <th class="sortable" style="width: 90px" @click="sortBy('qty')">Qty{{ sortMark("qty") }}</th>
-                <th class="sortable" style="width: 100px" @click="sortBy('borrowed')">Borrowed{{ sortMark("borrowed") }}</th>
+                <th
+                  class="sortable"
+                  role="button"
+                  tabindex="0"
+                  title="Click to sort"
+                  :aria-sort="sortAria('name')"
+                  @click="sortBy('name')"
+                  @keydown.enter.prevent="sortBy('name')"
+                  @keydown.space.prevent="sortBy('name')"
+                >Name <span class="sort-arrow">{{ sortMark("name") }}</span></th>
+                <th
+                  class="sortable"
+                  role="button"
+                  tabindex="0"
+                  title="Click to sort"
+                  :aria-sort="sortAria('type')"
+                  @click="sortBy('type')"
+                  @keydown.enter.prevent="sortBy('type')"
+                  @keydown.space.prevent="sortBy('type')"
+                >Type <span class="sort-arrow">{{ sortMark("type") }}</span></th>
+                <th
+                  class="sortable"
+                  role="button"
+                  tabindex="0"
+                  title="Click to sort"
+                  :aria-sort="sortAria('level')"
+                  @click="sortBy('level')"
+                  @keydown.enter.prevent="sortBy('level')"
+                  @keydown.space.prevent="sortBy('level')"
+                >Stock Level <span class="sort-arrow">{{ sortMark("level") }}</span></th>
+                <th
+                  class="sortable" style="width: 90px"
+                  role="button"
+                  tabindex="0"
+                  title="Click to sort"
+                  :aria-sort="sortAria('qty')"
+                  @click="sortBy('qty')"
+                  @keydown.enter.prevent="sortBy('qty')"
+                  @keydown.space.prevent="sortBy('qty')"
+                >Qty <span class="sort-arrow">{{ sortMark("qty") }}</span></th>
+                <th
+                  class="sortable" style="width: 100px"
+                  role="button"
+                  tabindex="0"
+                  title="Click to sort"
+                  :aria-sort="sortAria('borrowed')"
+                  @click="sortBy('borrowed')"
+                  @keydown.enter.prevent="sortBy('borrowed')"
+                  @keydown.space.prevent="sortBy('borrowed')"
+                >Borrowed <span class="sort-arrow">{{ sortMark("borrowed") }}</span></th>
                 <th>Return Period</th>
                 <th style="width: 110px">Per-Head Limit</th>
                 <th style="width: 260px; text-align: center">Action</th>
@@ -1059,5 +1113,13 @@ async function proceedAction() {
   cursor: pointer;
   user-select: none;
   white-space: nowrap;
+}
+.sortable:hover {
+  color: #0d6efd;
+}
+.sort-arrow {
+  font-size: 0.7rem;
+  margin-left: 4px;
+  opacity: 0.7;
 }
 </style>

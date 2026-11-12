@@ -1033,18 +1033,18 @@ watch(activeTab, async () => {
 <template>
   <div class="container-fluid">
     <!-- Tabs -->
-    <div class="d-flex gap-2 mb-3">
+    <div class="nav nav-tabs mb-3" role="tablist">
       <button
-        class="btn"
-        :class="activeTab === 'create' ? 'btn-primary' : 'btn-outline-primary'"
+        class="nav-link"
+        :class="{ active: activeTab === 'create' }"
         @click="activeTab = 'create'"
       >
         Create Request
       </button>
 
       <button
-        class="btn"
-        :class="activeTab === 'mine' ? 'btn-primary' : 'btn-outline-primary'"
+        class="nav-link"
+        :class="{ active: activeTab === 'mine' }"
         @click="
           loadMyRequests();
           activeTab = 'mine';
@@ -1054,8 +1054,8 @@ watch(activeTab, async () => {
       </button>
       <button
         v-if="canRequestUniforms"
-        class="btn"
-        :class="activeTab === 'reservations' ? 'btn-primary' : 'btn-outline-primary'"
+        class="nav-link"
+        :class="{ active: activeTab === 'reservations' }"
         @click="loadReservations(); activeTab = 'reservations'"
       >
         Uniform Reservations
@@ -1575,7 +1575,7 @@ watch(activeTab, async () => {
 
       <!-- Table + Details Layout -->
       <!-- My Requests Card -->
-      <div class="d-flex gap-3" style="height: 75vh">
+      <div class="d-flex gap-3 my-requests-layout">
         <!-- LEFT: My Requests -->
         <div class="card shadow-sm d-flex flex-column" style="flex: 2">
           <div class="card-body d-flex flex-column p-3">
@@ -2068,5 +2068,22 @@ ul {
 }
 .detail-panel {
   padding: 0.5rem;
+}
+
+/* My Requests: list and details side by side on wide screens, stacked on phones/tablets */
+.my-requests-layout {
+  height: 75vh;
+}
+@media (max-width: 991.98px) {
+  .my-requests-layout {
+    flex-direction: column;
+    height: auto;
+  }
+  .my-requests-layout > .card {
+    flex: none !important;
+  }
+  .my-requests-layout .table-responsive {
+    max-height: 60vh;
+  }
 }
 </style>

@@ -277,7 +277,20 @@ async function load() {
 }
 
 /*  COMPUTED  */
-const equipments = computed(() => items.value);
+const sortKey = ref(null); // "qty" | "borrowedQty" | "deployedQty" | null
+const sortDir = ref("asc");
+// Click a column: lowest first -> highest first -> original order.
+function toggleSort(key) {
+  if (sortKey.value !== key) { sortKey.value = key; sortDir.value = "asc"; }
+  else if (sortDir.value === "asc") { sortDir.value = "desc"; }
+  else { sortKey.value = null; sortDir.value = "asc"; }
+}
+const equipments = computed(() => {
+  if (!sortKey.value) return items.value;
+  const dir = sortDir.value === "asc" ? 1 : -1;
+  const k = sortKey.value;
+  return [...items.value].sort((a, b) => dir * ((Number(a[k]) || 0) - (Number(b[k]) || 0)));
+});
 const borrowedEquipments = computed(() => {
   return items.value
     .filter((item) => Number(item.borrowedQty) > 0)
@@ -401,21 +414,17 @@ async function confirmModal() {
   <!-- ACTION BAR -->
   <div class="d-flex justify-content-between align-items-center mb-3">
     <!-- LEFT -->
-    <div class="d-flex gap-2">
+    <div class="nav nav-tabs" role="tablist">
       <button
-        class="btn"
-        :class="
-          activeTab === 'inventory' ? 'btn-primary' : 'btn-outline-primary'
-        "
+        class="nav-link"
+        :class="{ active: activeTab === 'inventory' }"
         @click="activeTab = 'inventory'"
       >
         Equipment Inventory
       </button>
       <button
-        class="btn"
-        :class="
-          activeTab === 'borrowed' ? 'btn-primary' : 'btn-outline-primary'
-        "
+        class="nav-link"
+        :class="{ active: activeTab === 'borrowed' }"
         @click="activeTab = 'borrowed'"
       >
         Borrowed Equipment
@@ -446,9 +455,33 @@ async function confirmModal() {
               <th>Name</th>
               <th>Status</th>
               <th>Stock Level</th>
-              <th style="width: 110px" title="On the shelf, ready to be borrowed or deployed">Available</th>
-              <th style="width: 110px" title="Out on loan to a requester. It must be returned.">Borrowed</th>
-              <th style="width: 110px" title="Placed in a building room. It stays there until the AMO returns it.">Deployed</th>
+              <th
+                class="sortable-th" style="width: 110px" title="On the shelf, ready to be borrowed or deployed. Click to sort."
+                role="button"
+                tabindex="0"
+                :aria-sort="sortKey === 'qty' ? (sortDir === 'asc' ? 'ascending' : 'descending') : 'none'"
+                @click="toggleSort('qty')"
+                @keydown.enter.prevent="toggleSort('qty')"
+                @keydown.space.prevent="toggleSort('qty')"
+              >Available <span class="sort-arrow">{{ sortKey === 'qty' ? (sortDir === 'asc' ? '▲' : '▼') : '⇅' }}</span></th>
+              <th
+                class="sortable-th" style="width: 110px" title="Out on loan to a requester. It must be returned. Click to sort."
+                role="button"
+                tabindex="0"
+                :aria-sort="sortKey === 'borrowedQty' ? (sortDir === 'asc' ? 'ascending' : 'descending') : 'none'"
+                @click="toggleSort('borrowedQty')"
+                @keydown.enter.prevent="toggleSort('borrowedQty')"
+                @keydown.space.prevent="toggleSort('borrowedQty')"
+              >Borrowed <span class="sort-arrow">{{ sortKey === 'borrowedQty' ? (sortDir === 'asc' ? '▲' : '▼') : '⇅' }}</span></th>
+              <th
+                class="sortable-th" style="width: 110px" title="Placed in a building room. It stays there until the AMO returns it. Click to sort."
+                role="button"
+                tabindex="0"
+                :aria-sort="sortKey === 'deployedQty' ? (sortDir === 'asc' ? 'ascending' : 'descending') : 'none'"
+                @click="toggleSort('deployedQty')"
+                @keydown.enter.prevent="toggleSort('deployedQty')"
+                @keydown.space.prevent="toggleSort('deployedQty')"
+              >Deployed <span class="sort-arrow">{{ sortKey === 'deployedQty' ? (sortDir === 'asc' ? '▲' : '▼') : '⇅' }}</span></th>
               <th>Return Period</th>
               <th style="width: 110px">Per-Head Limit</th>
               <th style="width: 110px">Type</th>
@@ -924,6 +957,10 @@ async function confirmModal() {
 </template>
 
 <style scoped>
+.sortable-th { cursor: pointer; user-select: none; white-space: nowrap; }
+.sortable-th:hover { color: #0d6efd; }
+.sort-arrow { font-size: 0.7rem; margin-left: 4px; opacity: 0.7; }
+
 .badge-deployed {
   background-color: #6f42c1;
   color: #fff;

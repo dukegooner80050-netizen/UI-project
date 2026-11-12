@@ -158,17 +158,17 @@ async function confirmResolve() {
 
     <div class="card shadow-sm">
       <div class="card-header d-flex flex-wrap justify-content-between align-items-center gap-2">
-        <div class="btn-group btn-group-sm">
+        <div class="nav nav-tabs" role="tablist">
           <button
-            class="btn"
-            :class="view === 'open' ? 'btn-primary' : 'btn-outline-primary'"
+            class="nav-link"
+            :class="{ active: view === 'open' }"
             @click="view = 'open'"
           >
             In repair ({{ open.length }})
           </button>
           <button
-            class="btn"
-            :class="view === 'history' ? 'btn-primary' : 'btn-outline-primary'"
+            class="nav-link"
+            :class="{ active: view === 'history' }"
             @click="view = 'history'"
           >
             History

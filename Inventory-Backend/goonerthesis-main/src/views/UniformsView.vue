@@ -104,7 +104,9 @@ const loading = ref(false);
 
 /* FILTERED VARIANTS*/
 
-const filteredVariants = computed(() => {
+const searchQuery = ref("");
+
+const departmentVariants = computed(() => {
   if (isAllView.value) {
     return uniformVariants.value;
   }
@@ -113,6 +115,45 @@ const filteredVariants = computed(() => {
 
     return departmentName === course.value;
   });
+});
+
+// Search: every typed word must match name, description, department,
+// gender, size, price, status or quantity of the row.
+const searchedVariants = computed(() => {
+  const words = searchQuery.value.toLowerCase().split(/\s+/).filter(Boolean);
+  if (!words.length) {
+    return departmentVariants.value;
+  }
+  return departmentVariants.value.filter((variant) => {
+    const text = [
+      getTypeName(variant),
+      variant.type?.description,
+      getDepartmentName(variant),
+      variant.gender || "Unisex",
+      variant.size,
+      Number(variant.price || 0).toFixed(2),
+      getStatus(variant.quantity),
+      variant.quantity,
+    ]
+      .join(" ")
+      .toLowerCase();
+    return words.every((w) => text.includes(w));
+  });
+});
+
+// Sort: click Price or Qty. Lowest first -> highest first -> original order.
+const sortKey = ref(null); // "price" | "quantity" | null
+const sortDir = ref("asc");
+function toggleSort(key) {
+  if (sortKey.value !== key) { sortKey.value = key; sortDir.value = "asc"; }
+  else if (sortDir.value === "asc") { sortDir.value = "desc"; }
+  else { sortKey.value = null; sortDir.value = "asc"; }
+}
+const filteredVariants = computed(() => {
+  if (!sortKey.value) return searchedVariants.value;
+  const dir = sortDir.value === "asc" ? 1 : -1;
+  const k = sortKey.value;
+  return [...searchedVariants.value].sort((a, b) => dir * ((Number(a[k]) || 0) - (Number(b[k]) || 0)));
 });
 
 /* LOAD DATA */
@@ -810,6 +851,23 @@ const visibleTypes = computed(() => {
       </div>
 
       <div class="d-flex gap-2 flex-wrap">
+        <div class="input-group uniform-search">
+          <input
+            v-model="searchQuery"
+            type="search"
+            class="form-control"
+            placeholder="Search uniform, size, gender, status..."
+            aria-label="Search uniforms"
+          />
+          <button
+            v-if="searchQuery"
+            class="btn btn-outline-secondary"
+            type="button"
+            @click="searchQuery = ''"
+          >
+            Clear
+          </button>
+        </div>
         <button class="btn btn-primary text-white" @click="courseModalOpen = true">
           Manage Courses
         </button>
@@ -847,9 +905,25 @@ const visibleTypes = computed(() => {
               <th>Department</th>
               <th>Gender</th>
               <th>Size</th>
-              <th style="width: 120px">Price</th>
+              <th
+                class="sortable-th" style="width: 120px" title="Click to sort"
+                role="button"
+                tabindex="0"
+                :aria-sort="sortKey === 'price' ? (sortDir === 'asc' ? 'ascending' : 'descending') : 'none'"
+                @click="toggleSort('price')"
+                @keydown.enter.prevent="toggleSort('price')"
+                @keydown.space.prevent="toggleSort('price')"
+              >Price <span class="sort-arrow">{{ sortKey === 'price' ? (sortDir === 'asc' ? '▲' : '▼') : '⇅' }}</span></th>
               <th>Status</th>
-              <th style="width: 100px">Qty</th>
+              <th
+                class="sortable-th" style="width: 100px" title="Click to sort"
+                role="button"
+                tabindex="0"
+                :aria-sort="sortKey === 'quantity' ? (sortDir === 'asc' ? 'ascending' : 'descending') : 'none'"
+                @click="toggleSort('quantity')"
+                @keydown.enter.prevent="toggleSort('quantity')"
+                @keydown.space.prevent="toggleSort('quantity')"
+              >Qty <span class="sort-arrow">{{ sortKey === 'quantity' ? (sortDir === 'asc' ? '▲' : '▼') : '⇅' }}</span></th>
               <th style="width: 260px" class="text-center">Action</th>
             </tr>
           </thead>
@@ -922,8 +996,8 @@ const visibleTypes = computed(() => {
             <!-- EMPTY -->
 
             <tr v-if="!filteredVariants.length">
-              <td colspan="7" class="text-center text-muted py-4">
-                No uniforms found.
+              <td colspan="8" class="text-center text-muted py-4">
+                {{ searchQuery ? "No uniforms match your search." : "No uniforms found." }}
               </td>
             </tr>
           </tbody>
@@ -1232,11 +1306,11 @@ const visibleTypes = computed(() => {
 
         <!-- TABS -->
         <div class="px-3 pt-3">
-          <div class="btn-group w-100" role="tablist" aria-label="What to edit">
+          <div class="nav nav-tabs w-100" role="tablist" aria-label="What to edit">
             <button
               type="button"
-              class="btn"
-              :class="editTab === 'variant' ? 'btn-primary' : 'btn-outline-primary'"
+              class="nav-link flex-fill"
+              :class="{ active: editTab === 'variant' }"
               role="tab"
               :aria-selected="editTab === 'variant'"
               @click="switchEditTab('variant')"
@@ -1245,8 +1319,8 @@ const visibleTypes = computed(() => {
             </button>
             <button
               type="button"
-              class="btn"
-              :class="editTab === 'type' ? 'btn-primary' : 'btn-outline-primary'"
+              class="nav-link flex-fill"
+              :class="{ active: editTab === 'type' }"
               role="tab"
               :aria-selected="editTab === 'type'"
               :disabled="!editingType"
@@ -1534,6 +1608,14 @@ const visibleTypes = computed(() => {
 </template>
 
 <style scoped>
+.sortable-th { cursor: pointer; user-select: none; white-space: nowrap; }
+.sortable-th:hover { color: #0d6efd; }
+.sort-arrow { font-size: 0.7rem; margin-left: 4px; opacity: 0.7; }
+
+.uniform-search {
+  width: 280px;
+  max-width: 100%;
+}
 .table-scroll {
   max-height: 520px;
   overflow-y: auto;

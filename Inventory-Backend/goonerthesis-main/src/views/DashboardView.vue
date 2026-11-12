@@ -2,6 +2,7 @@
 import { ref, computed, onMounted, watch, onBeforeUnmount, nextTick } from "vue";
 import { useRouter } from "vue-router";
 import { getItems } from "../services/items";
+import { getUniformVariants } from "../services/uniformVariants";
 import StockBadge from "../components/StockBadge.vue";
 import DueBadge from "../components/DueBadge.vue";
 import { getRequests, getMyOverdue } from "../services/requests";
@@ -29,6 +30,7 @@ const isAdmin = computed(
 
 /*  STATE  */
 const items = ref([]);
+const uniformVariants = ref([]);
 const requests = ref([]);
 const logs = ref([]);
 const lastUpdated = ref("");
@@ -134,6 +136,7 @@ async function loadAll() {
 
   await Promise.all([
     run("items", async () => (items.value = await getItems())),
+    run("uniforms", async () => (uniformVariants.value = await getUniformVariants())),
     run("requests", async () => (requests.value = await getRequests())),
     isAdmin.value
       ? run("activity logs", async () => (logs.value = await getLogs({ limit: 5 })))
@@ -504,6 +507,13 @@ const categoryCounts = computed(() => {
     const cat = i.category || "Uncategorized";
     map[cat] = (map[cat] || 0) + (Number(i.qty) || 0);
   }
+  // Uniforms live in their own table (uniform variants), not in items.
+  if (uniformVariants.value.length) {
+    map["Uniforms"] = uniformVariants.value.reduce(
+      (sum, v) => sum + (Number(v.quantity) || 0),
+      0,
+    );
+  }
   return map;
 });
 
@@ -618,7 +628,7 @@ function renderCharts() {
   }
 }
 
-watch([items, requests], () => {
+watch([items, requests, uniformVariants], () => {
   renderCharts();
 });
 
